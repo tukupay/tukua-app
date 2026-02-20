@@ -1,0 +1,1 @@
+/home/codeninja/Documents/dart/tuku/build/app/intermediates/cxx/Debug/464hxx1f/obj/armeabi-v7a

@@ -1,0 +1,2 @@
+/home/codeninja/Documents/dart/tuku/android/app/.cxx/RelWithDebInfo/1d2y4h3q/armeabi-v7a/CMakeFiles/edit_cache.dir
+/home/codeninja/Documents/dart/tuku/android/app/.cxx/RelWithDebInfo/1d2y4h3q/armeabi-v7a/CMakeFiles/rebuild_cache.dir
