@@ -21,7 +21,7 @@ class _CameraState extends State<Camera> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      final kyc = Provider.of<KycIndividualProvider>(context, listen: false);
+      final kyc = Provider.of<TukuIndividualKycProvider>(context, listen: false);
       final cameraProvider =
           Provider.of<CameraProvider>(context, listen: false);
       await cameraProvider.initializeCamera(isFront: kyc.isSelfie);
@@ -45,13 +45,13 @@ class _CameraState extends State<Camera> {
       onPopInvoked: (didPop) {
         if (didPop) {
           // Clean up when the user navigates away
-          Provider.of<KycIndividualProvider>(context, listen: false).resetIsSelfie();
+          Provider.of<TukuIndividualKycProvider>(context, listen: false).resetIsSelfie();
           Provider.of<CameraProvider>(context, listen: false).disposeController();
         }
       },
       child: Scaffold(
         backgroundColor: Colors.black,
-        body: Consumer2<CameraProvider, KycIndividualProvider>(
+        body: Consumer2<CameraProvider, TukuIndividualKycProvider>(
           builder: (_, camera, kyc, __) {
             if (!camera.isInitialized) {
               // checking & initializing cameras
@@ -178,7 +178,7 @@ class _CameraState extends State<Camera> {
                                       Provider.of<CameraProvider>(context,
                                           listen: false);
                                   final kycProvider =
-                                      Provider.of<KycIndividualProvider>(
+                                      Provider.of<TukuIndividualKycProvider>(
                                           context,
                                           listen: false);
 

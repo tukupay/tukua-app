@@ -49,11 +49,11 @@ class EntryPointScreen extends StatelessWidget {
         if (user.type == Strings.individualAcc) {
           final missingKyc =
               user.firstName == null || user.profileImg == null;
-
+          // TODO: CHECK IF TUKU, SASA KYC ARE BOTH COMPLETED
           WidgetsBinding.instance.addPostFrameCallback((_) {
             Navigator.pushReplacementNamed(
               context,
-              missingKyc ? Routes.kycIndividualSetup : Routes.home,
+              missingKyc ? Routes.tukuIndividualKyc : Routes.home,
             );
           });
         }
@@ -64,11 +64,11 @@ class EntryPointScreen extends StatelessWidget {
               user.certificateNumber == null ||
                   user.kraPin == null ||
                   user.profileImg == null;
-
+          // TODO: CHECK IF TUKU, SASA KYC ARE BOTH COMPLETED
           WidgetsBinding.instance.addPostFrameCallback((_) {
             Navigator.pushReplacementNamed(
               context,
-              missingKyc ? Routes.kycBusinessSetup : Routes.home,
+              missingKyc ? Routes.tukuBusinessKyc : Routes.home,
             );
           });
         }

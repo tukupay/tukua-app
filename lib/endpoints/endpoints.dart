@@ -17,6 +17,7 @@ export 'payment_endpoints.dart';
 export 'transaction_endpoints.dart';
 export 'notification_endpoints.dart';
 export 'pos_endpoints.dart';
+export 'sasapay_endpoints.dart';
 
 
 export 'fav_wallets_endpoints.dart';

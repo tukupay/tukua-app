@@ -40,13 +40,16 @@ class RouteManager {
 
 
       // ## KYC ##
-      Routes.kycIndividualSetup: (_) => const KycIndividualSetup(),
-      Routes.kycBusinessSetup: (_) => const KycBusinessSetup(),
+      Routes.tukuIndividualKyc: (_) => const TukuIndividualKyc(),
+      Routes.tukuBusinessKyc: (_) => const TukuBusinessKyc(),
+      Routes.sasaIndividualKyc: (_) => const SasaIndividualKyc(),
+      Routes.sasaBusinessKyc: (_) => const SasaBusinessKyc(),
       Routes.capture: (_) => const Camera(),
       Routes.documentCamera: (_) => const DocumentCamera(),
       Routes.capturedImg: (_) => const CapturedImg(),
 
       // ## WALLETS ##
+      Routes.walletTypeSelect: (_) => const WalletTypeSelect(),
       Routes.newWallet: (_) => const NewWallet(),
       Routes.walletTransactions: (_) => const WalletTransactions(),
 

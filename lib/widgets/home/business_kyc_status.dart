@@ -56,7 +56,7 @@ class BusinessKycStatus extends StatelessWidget {
 
   void _handleTap(BuildContext context, ProfileProvider profile) {
     if (profile.user?.profileImg == null || profile.user?.kycStatus == Strings.kycRejected) {
-      Navigator.pushNamed(context, Routes.kycBusinessSetup);
+      Navigator.pushNamed(context, Routes.tukuBusinessKyc);
     } else if (profile.user?.profileImg != null && profile.user?.kycStatus == Strings.kycPending) {
       showGeneralDialog(
         context: context,

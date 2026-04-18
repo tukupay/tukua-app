@@ -12,7 +12,7 @@ class CapturedImg extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Consumer2<KycIndividualProvider,CameraProvider>(
+      body: Consumer2<TukuIndividualKycProvider,CameraProvider>(
         builder: (_,kyc,camera,__) {
           return Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -37,13 +37,13 @@ class CapturedImg extends StatelessWidget {
                 ),
               ),
               Spaces.smallTopSpace,
-              Consumer<KycIndividualProvider>(
+              Consumer<TukuIndividualKycProvider>(
                 builder: (_,kyc,__) {
                   return AuthButton(
                       text: 'SUBMIT',
                       enabled: kyc.submittingSelfie!=true,
                       tapped: ()async{
-                        final kycProvider=Provider.of<KycIndividualProvider>(context,listen: false);
+                        final kycProvider=Provider.of<TukuIndividualKycProvider>(context,listen: false);
                         final cameraProvider=Provider.of<CameraProvider>(context,listen: false);
                         final authProvider=Provider.of<AuthProvider>(context,listen: false);
                         // if(!kyc.isSelfie){

@@ -441,7 +441,6 @@ Additional documentation can be found in the `/docs` directory:
 - **[API Documentation](./docs/API_DOCUMENTATION.md)** - Complete API endpoint reference with request/response examples
 - **[Widget Catalog](./docs/WIDGET_CATALOG.md)** - Catalog of reusable UI components with usage examples
 - **[Feature Guide](./docs/FEATURE_GUIDE.md)** - Detailed documentation for each feature module
-- **[Insufficient Balance Dialog Guide](./docs/INSUFFICIENT_BALANCE_DIALOG_GUIDE.md)** - Guide for balance dialog implementation
 
 ---
 

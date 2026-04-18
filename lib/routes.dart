@@ -8,9 +8,13 @@ class Routes{
 
   static const verifyPhone = '/verifyPhone';
 
-  static const kycIndividualSetup = '/kycIndividualSetup';
+  static const tukuIndividualKyc = '/tukuIndividualKyc';
 
-  static const kycBusinessSetup = '/kycBusinessSetup';
+  static const tukuBusinessKyc = '/tukuBusinessKyc';
+
+  static const sasaIndividualKyc = '/sasaIndividualKyc';
+
+  static const sasaBusinessKyc = '/sasaBusinessKyc';
 
   static const verifyEmail = '/verifyEmail';
 
@@ -46,7 +50,10 @@ class Routes{
 
 
   // WALLETS
+  static const walletTypeSelect='/walletTypeSelect';
+
   static const newWallet='/newWallet';
+
   static const walletTransactions='/walletTransactions';
 
 

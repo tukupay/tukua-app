@@ -1,4 +1,3 @@
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'package:fluttertoast/fluttertoast.dart';
@@ -10,7 +9,6 @@ import 'package:tuku/providers/providers.dart';
 import 'package:tuku/routes.dart';
 import 'package:tuku/utils/utils.dart';
 import 'package:tuku/widgets/widget.dart';
-import 'package:loading_animation_widget/loading_animation_widget.dart';
 
 class Login extends StatefulWidget {
   const Login({super.key});
@@ -53,13 +51,27 @@ class _LoginState extends State<Login> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               // ### LOGO & PARTNER ###
-              LogoPartners(),
+              GestureDetector(
+                  onTap: (){
+                    Provider.of<AppState>(context,listen: false).setAccountType(Strings.businessAcc);
+                    Navigator.pushNamed(context, Routes.sasaBusinessKyc);
+                  },
+                  child: LogoPartners()),
               Spaces.smallTopSpace,
               // ### BANK GPT CHIP ###
-              BankGptChip(),
+              GestureDetector(
+                  onTap: (){
+                    Provider.of<AppState>(context,listen: false).setAccountType(Strings.individualAcc);
+                    Navigator.pushNamed(context, Routes.sasaIndividualKyc);
+                  },
+                  child: BankGptChip()),
               Spaces.smallTopSpace,
               // ### LOGIN FORM COMPONENTS ###
-              Text('Login to your account', style: Blacks.regularSemiPoppins),
+              GestureDetector(
+                  onTap: (){
+                    Navigator.pushNamed(context, Routes.walletTypeSelect);
+                  },
+                  child: Text('Login to your account', style: Blacks.regularSemiPoppins)),
               Spaces.smallTopSpace,
               SizedBox(
                 width: size.width / 1.2,
@@ -124,7 +136,7 @@ class _LoginState extends State<Login> {
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           Expanded(
-                            child: Consumer3<AuthProvider,KycIndividualProvider,KycBusinessProvider>(
+                            child: Consumer3<AuthProvider,TukuIndividualKycProvider,TukuBusinessKycProvider>(
                                 builder: (_, auth,individual,business, __) {
                               return auth.loading == true ||
                                   individual.loadingKycs == true ||

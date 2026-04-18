@@ -1,6 +1,7 @@
 export 'user/user.dart';
 export 'auth/auth.dart';
 export 'kyc/kyc.dart';
+export 'sasapay/sasapay.dart';
 
 export 'wallet/wallet.dart';
 export 'bank/bank.dart';

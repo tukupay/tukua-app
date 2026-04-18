@@ -218,11 +218,11 @@ class AuthProvider extends ChangeNotifier {
       _localUser = await localUserRepo.saveUser(user!);
 
       if (_localUser!.type == Strings.individualAcc && _localUser!.profileImg == null) {
-        await Provider.of<KycIndividualProvider>(context, listen: false).getUserKycs(context);
-        Navigator.pushNamed(context, Routes.kycIndividualSetup);
+        await Provider.of<TukuIndividualKycProvider>(context, listen: false).getUserKycs(context);
+        Navigator.pushNamed(context, Routes.tukuIndividualKyc);
       } else if (_localUser!.type == Strings.businessAcc && _localUser!.profileImg == null) {
-        await Provider.of<KycBusinessProvider>(context, listen: false).getUserKycs(context);
-        Navigator.pushNamed(context, Routes.kycBusinessSetup);
+        await Provider.of<TukuBusinessKycProvider>(context, listen: false).getUserKycs(context);
+        Navigator.pushNamed(context, Routes.tukuBusinessKyc);
       } else {
         Provider.of<ProfileProvider>(context, listen: false).setUser(_localUser!);
         Navigator.pushNamedAndRemoveUntil(context, Routes.home, (route) => false);
@@ -275,7 +275,7 @@ class AuthProvider extends ChangeNotifier {
                   title: 'Profile Created!',
                   content: 'Welcome to the Tuku, enjoy seamless transacting and banking.',
                   tapped: () async {
-                    await Provider.of<KycIndividualProvider>(context, listen: false).resetSteps();
+                    await Provider.of<TukuIndividualKycProvider>(context, listen: false).resetSteps();
 
                     Provider.of<ProfileProvider>(context, listen: false).setUser(_localUser!);
                     Navigator.pop(context);

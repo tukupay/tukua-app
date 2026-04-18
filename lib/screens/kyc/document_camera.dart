@@ -13,7 +13,7 @@ class DocumentCamera extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Consumer<KycIndividualProvider>(
+      body: Consumer<TukuIndividualKycProvider>(
         builder: (_,kyc,__) {
           return Stack(
             children: [

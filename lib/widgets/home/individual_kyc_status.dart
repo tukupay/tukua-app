@@ -55,7 +55,7 @@ class IndividualKycStatus extends StatelessWidget {
 
   void _handleTap(BuildContext context, ProfileProvider profile) {
     if (profile.user?.profileImg == null || profile.user?.kycStatus == Strings.kycRejected) {
-      Navigator.pushNamed(context, Routes.kycIndividualSetup);
+      Navigator.pushNamed(context, Routes.tukuIndividualKyc);
     } else if (profile.user?.profileImg != null && profile.user?.kycStatus == Strings.kycPending) {
       showGeneralDialog(
         context: context,

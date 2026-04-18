@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hexcolor/hexcolor.dart';
+import 'package:pinput/pinput.dart';
 import 'app_colors.dart';
 
 /// Reusable shadows and glassmorphism styling constants
@@ -155,5 +156,29 @@ class GlassMorphism {
       boxShadow: isFocused ? AppShadows.greenLight : [],
     );
   }
+}
+
+class OtpDecorations{
+  static PinTheme get defaultPinTheme => PinTheme(
+      height: 56,width: 50,
+      decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+              color: HexColor('#E7EAEB')
+          )
+      )
+  );
+
+  static PinTheme get focusedPinTheme => PinTheme(
+      height: 56,width: 50,
+      decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+              color: HexColor('#007B5D')
+          )
+      )
+  );
 }
 

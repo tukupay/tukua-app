@@ -1,6 +1,10 @@
 export 'auth_provider.dart';
-export 'kyc_individual_provider.dart';
-export 'kyc_business_provider.dart';
+export 'tuku_individual_kyc_provider.dart';
+export 'tuku_business_kyc_provider.dart';
+export 'sasa_individual_kyc_provider.dart';
+export 'sasa_business_kyc_provider.dart';
+export 'sasa_payments_provider.dart';
+
 export 'wallet_provider.dart';
 export 'signatory_provider.dart';
 export 'banking_provider.dart';

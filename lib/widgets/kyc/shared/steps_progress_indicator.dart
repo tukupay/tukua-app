@@ -16,7 +16,7 @@ class StepProgressIndicator extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const totalSteps = 3;
-    return Consumer<KycIndividualProvider>(
+    return Consumer<TukuIndividualKycProvider>(
       builder: (_,kycProvider,__) {
         return Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,

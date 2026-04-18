@@ -1,6 +1,7 @@
 export 'local/local.dart';
 export 'auth_service.dart';
 export 'kyc_service.dart';
+export 'sasapay_service.dart';
 export 'biometric_service.dart';
 export 'bankgpt_service.dart';
 

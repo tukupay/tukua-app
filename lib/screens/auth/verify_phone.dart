@@ -135,26 +135,8 @@ class _VerifyPhoneState extends State<VerifyPhone> with WidgetsBindingObserver ,
                 // OTP INPUT
                 Pinput(
                   controller: otpController,
-                  focusedPinTheme: PinTheme(
-                      height: 56,width: 50,
-                      decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                              color: HexColor('#007B5D')
-                          )
-                      )
-                  ),
-                  defaultPinTheme: PinTheme(
-                      height: 56,width: 50,
-                      decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                              color: HexColor('#E7EAEB')
-                          )
-                      )
-                  ),
+                  focusedPinTheme:OtpDecorations.focusedPinTheme,
+                  defaultPinTheme: OtpDecorations.defaultPinTheme,
                   length: 6,
                   onCompleted: (val)async{
                     await Provider.of<AuthProvider>(context,listen: false)

@@ -2,6 +2,7 @@ export 'local/local.dart';
 
 export 'auth_repository.dart';
 export 'kyc_repository.dart';
+export 'sasapay_repository.dart';
 
 export 'profile_repository.dart';
 export 'wallet_repository.dart';
