@@ -27,7 +27,6 @@ export function PublicWebScreen({ navigation, route }: Props) {
   const webRef = useRef<WebView>(null);
   const { session } = useAuth();
   const [loading, setLoading] = useState(true);
-  const bootstrappedRef = useRef(false);
   const shellUrl = tukuaSpaShellUrl();
 
   const preInject = useMemo(() => {
@@ -36,14 +35,11 @@ export function PublicWebScreen({ navigation, route }: Props) {
   }, [session]);
 
   const bootstrap = useCallback(() => {
-    if (!session || !webRef.current || bootstrappedRef.current) return;
-    bootstrappedRef.current = true;
+    if (!session || !webRef.current) return;
     webRef.current.injectJavaScript(`${buildPublicPageNavigateScript(path)}\ntrue;`);
-    setTimeout(() => setLoading(false), 600);
   }, [path, session]);
 
   useEffect(() => {
-    bootstrappedRef.current = false;
     setLoading(true);
   }, [path]);
 
@@ -74,10 +70,13 @@ export function PublicWebScreen({ navigation, route }: Props) {
       )}
 
       <WebView
+        key={`public-${path}`}
         ref={webRef}
         source={{ uri: shellUrl }}
         style={styles.web}
         originWhitelist={['https://*', 'http://*']}
+        cacheEnabled={false}
+        incognito={Platform.OS === 'android'}
         injectedJavaScriptBeforeContentLoaded={preInject}
         onLoadEnd={() => bootstrap()}
         onNavigationStateChange={(nav) => {

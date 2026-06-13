@@ -2,10 +2,16 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import {
   clearBiometricCredentials,
   getBiometricCredentials,
-  saveBiometricCredentials,
   getCachedPassword,
+  normalizeBiometricEmail,
+  refreshBiometricCredentialsIfEnabled,
+  saveBiometricCredentials,
 } from './biometricStorage';
 import { fetchProfile, signInWithEmail } from './auth';
+
+export type BiometricEnableResult =
+  | { ok: true }
+  | { ok: false; reason: 'unsupported' | 'cancelled' | 'no_password' };
 
 export async function checkBiometricSupport() {
   const compatible = await LocalAuthentication.hasHardwareAsync();
@@ -46,26 +52,54 @@ export async function setupBiometricsAfterLogin(email: string) {
   const canAuth = await checkBiometricSupport();
   if (!canAuth) return false;
 
+  const normalized = normalizeBiometricEmail(email);
   const stored = await getBiometricCredentials();
-  if (stored.email && stored.email !== email) {
+  if (stored.email && stored.email.toLowerCase() !== normalized) {
     await clearBiometricCredentials();
+    return false;
   }
 
-  if (stored.enabled && stored.email === email) return true;
+  if (stored.enabled && stored.email?.toLowerCase() === normalized && stored.pass) {
+    const cached = await getCachedPassword();
+    if (cached) {
+      await saveBiometricCredentials(normalized, cached);
+    }
+    return true;
+  }
 
   return false;
 }
 
-export async function enableBiometrics(email: string): Promise<boolean> {
+export async function enableBiometrics(
+  email: string,
+  password?: string,
+): Promise<BiometricEnableResult> {
   const canAuth = await checkBiometricSupport();
-  if (!canAuth) return false;
+  if (!canAuth) return { ok: false, reason: 'unsupported' };
 
   const ok = await authenticateDevice('Confirm identity to enable biometric login');
-  if (!ok) return false;
+  if (!ok) return { ok: false, reason: 'cancelled' };
 
-  const pass = await getCachedPassword();
-  if (!pass) return false;
+  const pass = password ?? (await getCachedPassword());
+  if (!pass) return { ok: false, reason: 'no_password' };
 
-  await saveBiometricCredentials(email, pass);
-  return true;
+  await saveBiometricCredentials(normalizeBiometricEmail(email), pass);
+  return { ok: true };
+}
+
+export async function repairBiometricsAfterPasswordLogin(email: string, password: string) {
+  await refreshBiometricCredentialsIfEnabled(email, password);
+}
+
+export function biometricEnableMessage(reason: Exclude<BiometricEnableResult, { ok: true }>['reason']) {
+  switch (reason) {
+    case 'unsupported':
+      return 'This device does not have fingerprint or face unlock set up.';
+    case 'cancelled':
+      return 'Biometric confirmation was cancelled.';
+    case 'no_password':
+      return 'Sign out and sign in with your password once, then try enabling biometrics again.';
+    default:
+      return 'Could not enable biometric login.';
+  }
 }

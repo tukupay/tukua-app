@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 
 import {
 
@@ -20,8 +20,6 @@ import {
 
 import { Ionicons } from '@expo/vector-icons';
 
-import { useNavigation } from '@react-navigation/native';
-
 import { useAuth } from '../../context/AuthContext';
 
 import { useDialog } from '../../context/DialogContext';
@@ -29,6 +27,7 @@ import { useDialog } from '../../context/DialogContext';
 import { useWebViewControl } from '../../context/WebViewControlContext';
 
 import { toggleSavageMode } from '../../lib/userPreferences';
+import { biometricEnableMessage, enableBiometrics } from '../../lib/biometrics';
 
 import { Colors } from '../../theme/yana';
 
@@ -36,13 +35,11 @@ import { Colors } from '../../theme/yana';
 
 export function NativeAppHeader() {
 
-  const navigation = useNavigation();
-
-  const { profile, logout } = useAuth();
+  const { profile, logout, session } = useAuth();
 
   const { showDialog } = useDialog();
 
-  const { navigate, sendChatCommand } = useWebViewControl();
+  const { navigate, sendChatCommand, jumpToTab } = useWebViewControl();
 
   const [open, setOpen] = useState(false);
 
@@ -122,6 +119,30 @@ export function NativeAppHeader() {
 
 
 
+  const handleEnableBiometrics = useCallback(() => {
+    const email = session?.user?.email;
+    if (!email) return;
+    setOpen(false);
+    void (async () => {
+      const result = await enableBiometrics(email);
+      if (result.ok) {
+        showDialog({
+          title: 'Biometrics enabled',
+          message: 'Fingerprint or face unlock is ready on the login screen.',
+          variant: 'success',
+          icon: 'finger-print-outline',
+        });
+        return;
+      }
+      showDialog({
+        title: 'Could not enable biometrics',
+        message: biometricEnableMessage(result.reason),
+        variant: 'warning',
+        icon: 'finger-print-outline',
+      });
+    })();
+  }, [session?.user?.email, showDialog]);
+
   const menuSections = useMemo(
 
     () => [
@@ -140,7 +161,9 @@ export function NativeAppHeader() {
 
             icon: 'add-circle-outline' as const,
 
-            onPress: () => sendChatCommand('new_chat'),
+            onPress: (): void => {
+              sendChatCommand('new_chat');
+            },
 
           },
 
@@ -152,7 +175,9 @@ export function NativeAppHeader() {
 
             icon: 'flame-outline' as const,
 
-            onPress: () => void handleSavageToggle(),
+            onPress: (): void => {
+              void handleSavageToggle();
+            },
 
           },
 
@@ -214,6 +239,18 @@ export function NativeAppHeader() {
 
           },
 
+          {
+
+            id: 'biometrics',
+
+            label: 'Fingerprint login',
+
+            icon: 'finger-print-outline' as const,
+
+            onPress: handleEnableBiometrics,
+
+          },
+
         ],
 
       },
@@ -244,7 +281,7 @@ export function NativeAppHeader() {
 
             icon: 'information-circle-outline' as const,
 
-            onPress: () => navigation.navigate('About' as never),
+            onPress: () => jumpToTab('About'),
 
           },
 
@@ -254,7 +291,7 @@ export function NativeAppHeader() {
 
     ],
 
-    [navigate, navigation, sendChatCommand],
+    [handleEnableBiometrics, jumpToTab, navigate, sendChatCommand],
 
   );
 

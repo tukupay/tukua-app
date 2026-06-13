@@ -1,6 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 import { supabase } from './supabase';
-import { cachePasswordForBiometrics } from './biometricStorage';
+import { cachePasswordForBiometrics, refreshBiometricCredentialsIfEnabled } from './biometricStorage';
 import { log } from './logger';
 
 const SESSION_KEY = 'tukua_session';
@@ -50,6 +50,7 @@ export async function signInWithEmail(email: string, password: string) {
   if (data.session) {
     await saveSession(data.session.access_token, data.session.refresh_token);
     await cachePasswordForBiometrics(password);
+    await refreshBiometricCredentialsIfEnabled(email, password);
     log.info('Auth', 'signIn ok', { userId: data.user?.id });
   }
   return data;
@@ -103,6 +104,7 @@ export async function signOut() {
   await supabase.auth.signOut();
   await SecureStore.deleteItemAsync(SESSION_KEY);
   await SecureStore.deleteItemAsync(PROFILE_KEY);
+  // Keep biometric credentials so fingerprint login works after sign out.
 }
 
 export async function setBiometricEnabled(enabled: boolean) {

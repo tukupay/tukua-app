@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
 
@@ -29,6 +29,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useFocusEffect } from '@react-navigation/native';
 
 import { LogoPartners } from '../components/auth/LogoPartners';
 
@@ -116,11 +117,11 @@ export function LoginScreen({ navigation }: Props) {
 
 
 
-  useEffect(() => {
-
-    isBiometricLoginAvailable().then(setBioAvailable);
-
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      isBiometricLoginAvailable().then(setBioAvailable);
+    }, []),
+  );
 
 
 

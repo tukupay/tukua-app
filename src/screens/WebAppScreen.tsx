@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, BackHandler, Platform, StyleSheet, Text, View } from 'react-native';
-import { useIsFocused } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { WebView, WebViewNavigation } from 'react-native-webview';
 import { Colors } from '../theme/yana';
+import { TAB_BAR_BODY_HEIGHT } from '../constants/layout';
 import {
   buildClientNavigateScript,
   buildFastTabNavigateScript,
+  buildMobileChatTabBarStylesScript,
   buildPreloadSessionScript,
   buildSupabaseRefreshAndNavigateScript,
   getActiveSessionScript,
@@ -15,6 +17,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useWebViewControl } from '../context/WebViewControlContext';
 import { log } from '../lib/logger';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type Props = {
   path: string;
@@ -39,7 +42,7 @@ function matchesTabPath(pathname: string, tabPath: string) {
 export function WebAppScreen({ path, label }: Props) {
   const webRef = useRef<WebView>(null);
   const isFocused = useIsFocused();
-  const { register, consumePendingRoute } = useWebViewControl();
+  const { register, registerTabFocusHandler, consumePendingRoute } = useWebViewControl();
   const { session } = useAuth();
   const [booting, setBooting] = useState(true);
   const [pageLoading, setPageLoading] = useState(true);
@@ -47,35 +50,53 @@ export function WebAppScreen({ path, label }: Props) {
   const [currentPathname, setCurrentPathname] = useState(path);
   const bootstrapPendingRef = useRef(false);
   const bootstrappedRef = useRef(false);
+  const shellReadyRef = useRef(false);
+  const lastUserIdRef = useRef<string | null>(null);
   const recoverCountRef = useRef(0);
   const lastRecoverRef = useRef(0);
+  const insets = useSafeAreaInsets();
   const shellUrl = tukuaSpaShellUrl();
   const chatMode = isChatPath(path);
   const loadingLabel = (label ?? path.replace('/', '')) || 'page';
+  const tabBarInsetPx = TAB_BAR_BODY_HEIGHT + insets.bottom;
+
+  const injectChatComposerInsets = useCallback(() => {
+    if (!chatMode || !webRef.current) return;
+    webRef.current.injectJavaScript(`${buildMobileChatTabBarStylesScript(tabBarInsetPx)}\ntrue;`);
+  }, [chatMode, tabBarInsetPx]);
 
   const preInject = useMemo(() => {
     if (!session) return null;
-    return buildPreloadSessionScript(session);
-  }, [session]);
+    const sessionScript = buildPreloadSessionScript(session);
+    if (chatMode) return sessionScript;
+    return `${sessionScript}\n${buildClientNavigateScript(path, true)}`;
+  }, [session, path, chatMode]);
 
   useEffect(() => {
     return register(path, webRef);
   }, [path, register]);
 
   useEffect(() => {
-    recoverCountRef.current = 0;
-    bootstrapPendingRef.current = false;
-    bootstrappedRef.current = false;
+    const userId = session?.user?.id ?? null;
+    if (lastUserIdRef.current !== userId) {
+      lastUserIdRef.current = userId;
+      recoverCountRef.current = 0;
+      bootstrapPendingRef.current = false;
+      bootstrappedRef.current = false;
+      shellReadyRef.current = false;
+    }
+
     if (session) {
       setBooting(false);
       log.info('WebApp', `ready ${path}`, { email: session.user.email, shellUrl, chatMode });
       return;
     }
+
     getActiveSessionScript(path).then((script) => {
       setBooting(!script);
       if (!script) log.warn('WebApp', `no session script for ${path}`);
     });
-  }, [session, path, shellUrl, chatMode]);
+  }, [session?.user?.id, session, path, shellUrl, chatMode]);
 
   const injectBootstrap = useCallback(
     (reason: string) => {
@@ -94,18 +115,67 @@ export function WebAppScreen({ path, label }: Props) {
 
   const scheduleBootstrap = useCallback(
     (reason: string) => {
-      if (!session || bootstrappedRef.current) return;
-      bootstrappedRef.current = true;
+      if (!session || bootstrappedRef.current || bootstrapPendingRef.current) return;
       injectBootstrap(reason);
     },
     [injectBootstrap, session],
   );
 
+  const syncTabRoute = useCallback(
+    (reason: string) => {
+      if (!session) return;
+
+      const run = () => {
+        if (!webRef.current) return false;
+
+        if (!bootstrappedRef.current) {
+          if (shellReadyRef.current) {
+            scheduleBootstrap(reason);
+          }
+          return shellReadyRef.current;
+        }
+
+        if (!shellReadyRef.current) return false;
+
+        const pending = consumePendingRoute(path);
+        const target = pending ?? path;
+
+        log.info('WebApp', 'sync tab route', { path, target, currentPathname, reason });
+        webRef.current.injectJavaScript(`${buildFastTabNavigateScript(session, target)}\ntrue;`);
+        injectChatComposerInsets();
+        setCurrentPathname(target);
+        setPageLoading(false);
+        return true;
+      };
+
+      if (run()) return;
+
+      let attempts = 0;
+      const timer = setInterval(() => {
+        attempts += 1;
+        if (run() || attempts >= 20) clearInterval(timer);
+      }, 100);
+    },
+    [
+      consumePendingRoute,
+      currentPathname,
+      injectChatComposerInsets,
+      path,
+      scheduleBootstrap,
+      session,
+    ],
+  );
+
   useEffect(() => {
-    if (isFocused && session && !bootstrappedRef.current && webRef.current) {
-      scheduleBootstrap('bootstrap on focus');
-    }
-  }, [isFocused, session, scheduleBootstrap]);
+    return registerTabFocusHandler(path, () => syncTabRoute('bottom tab'));
+  }, [path, registerTabFocusHandler, syncTabRoute]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!session) return;
+      syncTabRoute('screen focus');
+    }, [session, syncTabRoute]),
+  );
 
   const goToTabRoot = useCallback(() => {
     if (!session || !webRef.current) return;
@@ -168,6 +238,9 @@ export function WebAppScreen({ path, label }: Props) {
     try {
       const pathname = new URL(nav.url).pathname;
       setCurrentPathname(pathname);
+      if (nav.url.includes('tukua.ai') && !nav.loading) {
+        shellReadyRef.current = true;
+      }
       if (pathname.includes('/sign-in') && path !== '/sign-in') {
         log.warn('WebApp', 'web sign-in bounce', { pathname, attempt: recoverCountRef.current + 1 });
         recoverFromSignIn();
@@ -191,7 +264,10 @@ export function WebAppScreen({ path, label }: Props) {
       const msg = JSON.parse(raw);
       if (msg.type === 'TUKUA_BOOTSTRAP_OK') {
         log.info('WebApp', 'bootstrap ok', { path: msg.path });
+        bootstrappedRef.current = true;
+        bootstrapPendingRef.current = false;
         setPageLoading(false);
+        injectChatComposerInsets();
         const pending = consumePendingRoute(path);
         if (pending && pending !== msg.path && session && webRef.current) {
           log.info('WebApp', 'pending route inject', { path, pending });
@@ -204,6 +280,7 @@ export function WebAppScreen({ path, label }: Props) {
         log.info('WebApp', 'chat shell reload for supabase hydrate');
         bootstrapPendingRef.current = false;
         bootstrappedRef.current = false;
+        shellReadyRef.current = false;
         setPageLoading(true);
       } else if (msg.type === 'TUKUA_SESSION_SYNCED') {
         log.info('WebApp', 'supabase session synced');
@@ -245,9 +322,13 @@ export function WebAppScreen({ path, label }: Props) {
         originWhitelist={['https://*', 'http://*']}
         onLoadEnd={() => {
           bootstrapPendingRef.current = false;
+          shellReadyRef.current = true;
           log.info('WebApp', 'shell loaded', { shellUrl, target: path, focused: isFocused });
-          if (isFocused && !bootstrappedRef.current) {
+          if (isFocused && !bootstrappedRef.current && session) {
             scheduleBootstrap('bootstrap shell');
+          } else if (isFocused && bootstrappedRef.current) {
+            injectChatComposerInsets();
+            setPageLoading(false);
           }
         }}
         onError={(e) => {

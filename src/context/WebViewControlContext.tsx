@@ -10,11 +10,16 @@ type WebViewHandle = {
 
 type TabJumper = (tab: keyof MainTabParamList) => void;
 
+type TabFocusHandler = () => void;
+
 type WebViewControlContextType = {
   activeTabPath: string;
   setActiveTabPath: (path: string) => void;
   register: (path: string, ref: React.RefObject<WebView | null>) => () => void;
+  registerTabFocusHandler: (tabPath: string, handler: TabFocusHandler) => () => void;
+  notifyTabFocused: (tabPath: string) => void;
   registerTabJumper: (jumper: TabJumper) => () => void;
+  jumpToTab: (tab: keyof MainTabParamList) => void;
   navigate: (webPath: string, preferTabPath?: string) => void;
   sendChatCommand: (action: string, payload?: Record<string, unknown>) => void;
   consumePendingRoute: (tabPath: string) => string | undefined;
@@ -47,7 +52,10 @@ const WebViewControlContext = createContext<WebViewControlContextType>({
   activeTabPath: '/chat',
   setActiveTabPath: () => {},
   register: () => () => {},
+  registerTabFocusHandler: () => () => {},
+  notifyTabFocused: () => {},
   registerTabJumper: () => () => {},
+  jumpToTab: () => {},
   navigate: () => {},
   sendChatCommand: () => {},
   consumePendingRoute: () => undefined,
@@ -56,6 +64,7 @@ const WebViewControlContext = createContext<WebViewControlContextType>({
 export function WebViewControlProvider({ children }: { children: React.ReactNode }) {
   const handlesRef = useRef<Map<string, WebViewHandle>>(new Map());
   const pendingRoutesRef = useRef<Map<string, string>>(new Map());
+  const tabFocusHandlersRef = useRef<Map<string, TabFocusHandler>>(new Map());
   const tabJumperRef = useRef<TabJumper>(() => {});
   const [activeTabPath, setActiveTabPath] = useState('/chat');
 
@@ -64,6 +73,17 @@ export function WebViewControlProvider({ children }: { children: React.ReactNode
     return () => {
       handlesRef.current.delete(path);
     };
+  }, []);
+
+  const registerTabFocusHandler = useCallback((tabPath: string, handler: TabFocusHandler) => {
+    tabFocusHandlersRef.current.set(tabPath, handler);
+    return () => {
+      tabFocusHandlersRef.current.delete(tabPath);
+    };
+  }, []);
+
+  const notifyTabFocused = useCallback((tabPath: string) => {
+    tabFocusHandlersRef.current.get(tabPath)?.();
   }, []);
 
   const registerTabJumper = useCallback((jumper: TabJumper) => {
@@ -90,11 +110,21 @@ export function WebViewControlProvider({ children }: { children: React.ReactNode
     [inject],
   );
 
-  const focusTab = useCallback((tabPath: string) => {
-    const tabName = tabNameForPath(tabPath);
-    setActiveTabPath(tabPath);
-    tabJumperRef.current(tabName);
+  const jumpToTab = useCallback((tab: keyof MainTabParamList) => {
+    const webPath = TAB_WEB_PATHS[tab];
+    if (webPath) setActiveTabPath(webPath);
+    tabJumperRef.current(tab);
   }, []);
+
+  const focusTab = useCallback(
+    (tabPath: string) => {
+      const tabName = tabNameForPath(tabPath);
+      setActiveTabPath(tabPath);
+      tabJumperRef.current(tabName);
+      notifyTabFocused(tabPath);
+    },
+    [notifyTabFocused],
+  );
 
   const consumePendingRoute = useCallback((tabPath: string) => {
     const pending = pendingRoutesRef.current.get(tabPath);
@@ -145,7 +175,10 @@ export function WebViewControlProvider({ children }: { children: React.ReactNode
         activeTabPath,
         setActiveTabPath,
         register,
+        registerTabFocusHandler,
+        notifyTabFocused,
         registerTabJumper,
+        jumpToTab,
         navigate,
         sendChatCommand,
         consumePendingRoute,

@@ -101,7 +101,13 @@ function notifyAppSourceEvent() {
         s.id = id;
         s.textContent =
           'html.tukua-mobile-app body{padding-bottom:0!important}' +
-          'html.tukua-mobile-app [data-input-area]{padding-bottom:2px!important}';
+          'html.tukua-mobile-app [data-input-area]{' +
+          'padding-bottom:calc(58px + env(safe-area-inset-bottom,0px) + 2px)!important;' +
+          'margin-bottom:0!important}' +
+          'html.tukua-mobile-app [data-input-area].absolute,' +
+          'html.tukua-mobile-app .absolute.bottom-0[data-input-area]{' +
+          'bottom:calc(58px + env(safe-area-inset-bottom,0px))!important;' +
+          'padding-bottom:2px!important}';
         (document.head || document.documentElement).appendChild(s);
       })();
     } catch (e) {}
@@ -213,6 +219,7 @@ export function buildFastTabNavigateScript(session: Session, targetPath: string)
   return `
     (function() {
       try {
+        if (!window.location.hostname || window.location.hostname.indexOf('tukua') === -1) return;
         localStorage.setItem('${SUPABASE_STORAGE_KEY}', ${JSON.stringify(supabasePayload)});
         localStorage.setItem('${TUKUA_SESSION_KEY}', ${JSON.stringify(webSession)});
         ${compatLine}
@@ -227,6 +234,32 @@ export function buildFastTabNavigateScript(session: Session, targetPath: string)
             JSON.stringify({ type: 'TUKUA_BOOTSTRAP_OK', path: target })
           );
         } catch (e) {}
+      } catch (e) {}
+      true;
+    })();
+  `;
+}
+
+export function buildMobileChatTabBarStylesScript(tabBarPx: number) {
+  const px = Math.max(48, Math.round(tabBarPx));
+  return `
+    (function() {
+      try {
+        var id = 'tukua-mobile-tab-bar-fix';
+        var pad = '${px}px';
+        var el = document.getElementById(id);
+        if (!el) {
+          el = document.createElement('style');
+          el.id = id;
+          (document.head || document.documentElement).appendChild(el);
+        }
+        el.textContent =
+          'html.tukua-mobile-app [data-input-area]{' +
+          'padding-bottom:calc(' + pad + ' + 2px)!important;' +
+          'margin-bottom:0!important}' +
+          'html.tukua-mobile-app [data-input-area].absolute,' +
+          'html.tukua-mobile-app .absolute.bottom-0[data-input-area]{' +
+          'bottom:' + pad + '!important;padding-bottom:2px!important}';
       } catch (e) {}
       true;
     })();
@@ -263,7 +296,23 @@ export function buildPublicPagePreloadScript(session: Session) {
 }
 
 export function buildPublicPageNavigateScript(path: string) {
-  return buildClientNavigateScript(path);
+  const target = path.startsWith('/') ? path : `/${path}`;
+  // Hard navigation so React Query / SPA state from prior pages cannot show stale data.
+  return `
+    (function() {
+      try {
+        var target = ${JSON.stringify(target)};
+        if (window.location.pathname === target && !window.__TUKUA_PUBLIC_HARD_NAV__) {
+          window.__TUKUA_PUBLIC_HARD_NAV__ = true;
+          window.location.reload();
+          return;
+        }
+        window.__TUKUA_PUBLIC_HARD_NAV__ = true;
+        window.location.replace(window.location.origin + target);
+      } catch (e) {}
+      true;
+    })();
+  `;
 }
 
 /** Sync write — must run before page scripts in beforeContentLoaded. */
@@ -306,13 +355,26 @@ export function buildSupabaseRefreshAndNavigateScript(session: Session, targetPa
         } catch (e) {}
       };
 
+      function navigateToTarget() {
+        if (window.location.pathname === target) return;
+        window.history.replaceState({}, '', target);
+        window.dispatchEvent(new PopStateEvent('popstate', { state: history.state }));
+        window.dispatchEvent(new CustomEvent('tukua-navigate', { detail: { path: target } }));
+      }
+
       try {
+        if (!window.location.hostname || window.location.hostname.indexOf('tukua') === -1) return;
         localStorage.setItem(storageKey, ${JSON.stringify(supabasePayload)});
         localStorage.setItem('${TUKUA_SESSION_KEY}', ${JSON.stringify(webSession)});
         ${compatLine}
         ${notifyAppSourceEvent()}
         ${dispatchStorageSync(SUPABASE_STORAGE_KEY)}
         ${notifyMobileSessionEvent()}
+
+        if (!isChat) {
+          navigateToTarget();
+          notify('TUKUA_BOOTSTRAP_OK', { path: target });
+        }
 
         var refreshAt = parseInt(sessionStorage.getItem('tukua_token_refresh_at') || '0', 10);
         var skipRefresh = refreshAt && (Date.now() - refreshAt) < 120000;
@@ -354,11 +416,6 @@ export function buildSupabaseRefreshAndNavigateScript(session: Session, targetPa
           notify('TUKUA_SESSION_SYNCED', { ok: true, cached: true });
         }
 
-        if (window.location.pathname === target) {
-          notify('TUKUA_BOOTSTRAP_OK', { path: target });
-          return;
-        }
-
         if (isChat && !sessionStorage.getItem(bootKey)) {
           sessionStorage.setItem(bootKey, '1');
           notify('TUKUA_CHAT_RELOAD', {});
@@ -366,16 +423,11 @@ export function buildSupabaseRefreshAndNavigateScript(session: Session, targetPa
           return;
         }
 
-        var waitMs = isChat ? 2400 : 80;
-        await new Promise(function(r) { setTimeout(r, waitMs); });
-
-        if (window.location.pathname !== target) {
-          window.history.replaceState({}, '', target);
-          window.dispatchEvent(new PopStateEvent('popstate', { state: history.state }));
-          window.dispatchEvent(new CustomEvent('tukua-navigate', { detail: { path: target } }));
+        if (isChat) {
+          await new Promise(function(r) { setTimeout(r, 2400); });
+          navigateToTarget();
+          notify('TUKUA_BOOTSTRAP_OK', { path: target });
         }
-
-        notify('TUKUA_BOOTSTRAP_OK', { path: target });
       } catch (e) {
         notify('TUKUA_BOOTSTRAP_ERR', { error: String(e && e.message ? e.message : e) });
         if (!isChat) {
