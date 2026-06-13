@@ -29,7 +29,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/icons/tukua-icon.png",
-        "backgroundColor": "#15411D"
+        "backgroundColor": "#000000"
       },
       "package": "com.app.tukua",
       "versionCode": 1,
