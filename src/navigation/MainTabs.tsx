@@ -7,7 +7,6 @@ import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-
 import { WebAppScreen } from '../screens/WebAppScreen';
 import { BiometricSetupModal } from '../components/auth/BiometricSetupModal';
 import { NativeAppHeader } from '../components/navigation/NativeAppHeader';
-import { WebViewTabBridge } from '../components/WebViewTabBridge';
 import { AboutStack } from './AboutStack';
 import { TAB_BAR_BODY_HEIGHT } from '../constants/layout';
 import { TAB_PATHS, WebViewControlProvider, useWebViewControl } from '../context/WebViewControlContext';
@@ -81,9 +80,7 @@ function MainTabNavigator() {
   }, []);
 
   return (
-    <>
-      <WebViewTabBridge />
-      <Tab.Navigator
+    <Tab.Navigator
         initialRouteName="Chat"
         screenListeners={{
           state: (e) => {
@@ -139,7 +136,6 @@ function MainTabNavigator() {
           {() => <WebAppScreen path="/profile" label="Profile" />}
         </Tab.Screen>
       </Tab.Navigator>
-    </>
   );
 }
 

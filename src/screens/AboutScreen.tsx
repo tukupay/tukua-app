@@ -11,12 +11,15 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { BrandSteps } from '../components/auth/BrandSteps';
 import { ABOUT_SECTIONS } from '../constants/aboutLinks';
+import { useRegisterTabJumper } from '../hooks/useRegisterTabJumper';
 import { AboutStackParamList } from '../navigation/types';
 import { Colors } from '../theme/yana';
 
 type Props = NativeStackScreenProps<AboutStackParamList, 'AboutHome'>;
 
 export function AboutScreen({ navigation }: Props) {
+  useRegisterTabJumper();
+
   return (
     <ScrollView
       style={styles.scroll}

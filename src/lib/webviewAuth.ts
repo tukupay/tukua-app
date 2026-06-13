@@ -101,6 +101,8 @@ function notifyAppSourceEvent() {
         s.id = id;
         s.textContent =
           'html.tukua-mobile-app body{padding-bottom:0!important}' +
+          'html.tukua-mobile-app [data-tukua-top-nav],html.tukua-mobile-app .glass-nav{display:none!important}' +
+          'html.tukua-mobile-app .tukua-mobile-scroll{-webkit-overflow-scrolling:touch!important;touch-action:pan-y!important;overscroll-behavior:contain!important}' +
           'html.tukua-mobile-app [data-input-area]{' +
           'padding-bottom:calc(58px + env(safe-area-inset-bottom,0px) + 2px)!important;' +
           'margin-bottom:0!important}' +
@@ -119,6 +121,59 @@ function notifyMobileSessionEvent() {
     try {
       window.dispatchEvent(new CustomEvent('TUKUA_MOBILE_SESSION'));
     } catch (e) {}
+  `;
+}
+
+/** Report SPA pathname changes back to React Native (pushState does not always fire onNavigationStateChange). */
+function notifyEmbedBackScript() {
+  return `
+    (function() {
+      if (window.__TUKUA_EMBED_BACK__) return;
+      window.__TUKUA_EMBED_BACK__ = true;
+      window.__TUKUA_TRY_EMBED_BACK__ = function() {
+        try {
+          if (window.history.length > 1) {
+            window.history.back();
+            return true;
+          }
+        } catch (e) {}
+        return false;
+      };
+    })();
+  `;
+}
+
+function notifySpaRouteSyncScript() {
+  return `
+    (function() {
+      if (window.__TUKUA_ROUTE_SYNC__) return;
+      window.__TUKUA_ROUTE_SYNC__ = true;
+      var post = function(kind) {
+        try {
+          window.ReactNativeWebView && window.ReactNativeWebView.postMessage(
+            JSON.stringify({
+              type: 'TUKUA_ROUTE',
+              path: window.location.pathname,
+              kind: kind || 'nav',
+              href: window.location.href
+            })
+          );
+        } catch (e) {}
+      };
+      var wrap = function(original, kind) {
+        return function() {
+          var result = original.apply(this, arguments);
+          post(kind);
+          return result;
+        };
+      };
+      history.pushState = wrap(history.pushState.bind(history), 'push');
+      history.replaceState = wrap(history.replaceState.bind(history), 'replace');
+      window.addEventListener('popstate', function() { post('pop'); });
+      window.addEventListener('tukua-navigate', function() { post('spa'); });
+      window.addEventListener('hashchange', function() { post('hash'); });
+      post('init');
+    })();
   `;
 }
 
@@ -180,6 +235,8 @@ export function buildSessionStorageScript(session: Session) {
         localStorage.setItem('${TUKUA_SESSION_KEY}', ${JSON.stringify(webSession)});
         ${compatLine}
         ${notifyAppSourceEvent()}
+        ${notifySpaRouteSyncScript()}
+        ${notifyEmbedBackScript()}
         ${dispatchStorageSync(SUPABASE_STORAGE_KEY)}
         ${notifyMobileSessionEvent()}
         ${buildSetSessionViaFetchScript()}
@@ -190,15 +247,26 @@ export function buildSessionStorageScript(session: Session) {
 }
 
 /** Client-side navigate (avoids S3 404 on trailing-slash routes). */
-export function buildClientNavigateScript(path: string, force = false) {
+export function buildClientNavigateScript(path: string, force = false, push = false) {
+  return buildSpaNavigateScript(path, { force, push });
+}
+
+/** SPA navigate with optional history.pushState (records back stack in WebView). */
+export function buildSpaNavigateScript(
+  path: string,
+  opts: { force?: boolean; push?: boolean } = {},
+) {
   const target = path.startsWith('/') ? path : `/${path}`;
+  const force = opts.force ?? false;
+  const push = opts.push ?? false;
+  const historyFn = push ? 'pushState' : 'replaceState';
   return `
     (function() {
       try {
         var target = ${JSON.stringify(target)};
         var force = ${force ? 'true' : 'false'};
         if (!force && window.location.pathname === target) return;
-        window.history.replaceState({}, '', target);
+        window.history.${historyFn}({}, '', target);
         window.dispatchEvent(new PopStateEvent('popstate', { state: history.state }));
         window.dispatchEvent(new CustomEvent('tukua-navigate', { detail: { path: target } }));
       } catch (e) {}
@@ -235,6 +303,24 @@ export function buildFastTabNavigateScript(session: Session, targetPath: string)
           );
         } catch (e) {}
       } catch (e) {}
+      true;
+    })();
+  `;
+}
+
+/** New chat from native menu — close mobile sidebar overlay, then create chat. */
+export function buildMobileNewChatScript() {
+  return `
+    (function() {
+      try {
+        var overlays = document.querySelectorAll('div.fixed.inset-0');
+        for (var i = 0; i < overlays.length; i++) {
+          var el = overlays[i];
+          if (el.className && el.className.indexOf('bg-black') !== -1) el.click();
+        }
+        window.dispatchEvent(new CustomEvent('TUKUA_MOBILE_CLOSE_SIDEBAR'));
+      } catch (e) {}
+      window.dispatchEvent(new CustomEvent('TUKUA_MOBILE_NEW_CHAT'));
       true;
     })();
   `;
@@ -289,6 +375,7 @@ export function buildPublicPagePreloadScript(session: Session) {
         localStorage.setItem('${TUKUA_SESSION_KEY}', ${JSON.stringify(webSession)});
         ${compatLine}
         ${dispatchStorageSync(SUPABASE_STORAGE_KEY)}
+        window.dispatchEvent(new CustomEvent('TUKUA_APP_SOURCE'));
       } catch (e) {}
       true;
     })();
@@ -296,23 +383,8 @@ export function buildPublicPagePreloadScript(session: Session) {
 }
 
 export function buildPublicPageNavigateScript(path: string) {
-  const target = path.startsWith('/') ? path : `/${path}`;
-  // Hard navigation so React Query / SPA state from prior pages cannot show stale data.
-  return `
-    (function() {
-      try {
-        var target = ${JSON.stringify(target)};
-        if (window.location.pathname === target && !window.__TUKUA_PUBLIC_HARD_NAV__) {
-          window.__TUKUA_PUBLIC_HARD_NAV__ = true;
-          window.location.reload();
-          return;
-        }
-        window.__TUKUA_PUBLIC_HARD_NAV__ = true;
-        window.location.replace(window.location.origin + target);
-      } catch (e) {}
-      true;
-    })();
-  `;
+  // Must use client routing — server loads to SPA paths are blocked (404 on S3).
+  return buildClientNavigateScript(path, true);
 }
 
 /** Sync write — must run before page scripts in beforeContentLoaded. */
@@ -457,18 +529,50 @@ export async function getActiveSessionScript(targetPath?: string) {
   return buildWebViewSessionScript(data.session, targetPath ?? '/chat');
 }
 
+function isTukuaStaticAsset(pathname: string) {
+  return (
+    pathname.startsWith('/certificates/') ||
+    pathname.startsWith('/assets/') ||
+    pathname.startsWith('/fonts/') ||
+    /\.(html?|css|js|png|jpe?g|gif|svg|webp|woff2?|ico|pdf|mp4|webm|txt|xml|json)(\?|$)/i.test(
+      pathname,
+    )
+  );
+}
+
+export type WebViewLoadRequest = {
+  url: string;
+  isTopFrame?: boolean;
+  canGoBack?: boolean;
+};
+
 /** Block server loads that 404 on tukua.ai (SPA paths must use client routing). */
 export function shouldAllowWebViewRequest(url: string) {
   try {
     const u = new URL(url);
+    if (u.protocol === 'about:' || u.protocol === 'blob:' || u.protocol === 'data:') return true;
     if (!u.hostname.includes('tukua.ai')) return true;
     if (u.pathname === '/' || u.pathname === '/index.html') return true;
+    if (isTukuaStaticAsset(u.pathname)) return true;
     if (isSpaClientRoute(u.pathname)) return false;
     if (u.pathname.endsWith('/') && u.pathname.length > 1) return false;
     return true;
   } catch {
     return true;
   }
+}
+
+/** Apply SPA blocking only to the main frame — never to iframe/subframe loads. */
+export function shouldAllowWebViewNavigation(
+  url: string,
+  req: Pick<WebViewLoadRequest, 'isTopFrame'>,
+) {
+  if (req.isTopFrame === false) return true;
+  return shouldAllowWebViewRequest(url);
+}
+
+export function isMainFrameWebViewRequest(req: Pick<WebViewLoadRequest, 'isTopFrame'>) {
+  return req.isTopFrame !== false;
 }
 
 export function buildClearChatBootScript() {

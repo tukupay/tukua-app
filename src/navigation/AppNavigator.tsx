@@ -8,6 +8,7 @@ import { MainTabs } from './MainTabs';
 import { RootStackParamList } from './types';
 import { useAuth } from '../context/AuthContext';
 import { Colors } from '../theme/yana';
+import { MobileErrorBoundary } from '../components/MobileErrorBoundary';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -39,7 +40,9 @@ function RootNavigator() {
 export function AppNavigator() {
   return (
     <NavigationContainer>
-      <RootNavigator />
+      <MobileErrorBoundary>
+        <RootNavigator />
+      </MobileErrorBoundary>
     </NavigationContainer>
   );
 }

@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useRef, useState } from 'react';
 import { WebView } from 'react-native-webview';
-import { buildClientNavigateScript } from '../lib/webviewAuth';
+import { buildMobileNewChatScript, buildSpaNavigateScript } from '../lib/webviewAuth';
+import { log } from '../lib/logger';
 import { MainTabParamList } from '../navigation/types';
 
 type WebViewHandle = {
@@ -113,14 +114,22 @@ export function WebViewControlProvider({ children }: { children: React.ReactNode
   const jumpToTab = useCallback((tab: keyof MainTabParamList) => {
     const webPath = TAB_WEB_PATHS[tab];
     if (webPath) setActiveTabPath(webPath);
-    tabJumperRef.current(tab);
+    try {
+      tabJumperRef.current(tab);
+    } catch (error) {
+      log.warn('WebViewControl', 'jumpToTab failed', { tab, error: String(error) });
+    }
   }, []);
 
   const focusTab = useCallback(
     (tabPath: string) => {
       const tabName = tabNameForPath(tabPath);
       setActiveTabPath(tabPath);
-      tabJumperRef.current(tabName);
+      try {
+        tabJumperRef.current(tabName);
+      } catch (error) {
+        log.warn('WebViewControl', 'focusTab failed', { tab: tabName, error: String(error) });
+      }
       notifyTabFocused(tabPath);
     },
     [notifyTabFocused],
@@ -137,7 +146,7 @@ export function WebViewControlProvider({ children }: { children: React.ReactNode
       const tabPath = resolveTabPath(webPath, preferTabPath);
       pendingRoutesRef.current.set(tabPath, webPath);
       focusTab(tabPath);
-      const script = buildClientNavigateScript(webPath, true);
+      const script = buildSpaNavigateScript(webPath, { force: true, push: webPath !== tabPath });
       setTimeout(() => injectWithRetry(tabPath, script, 30, 150), 250);
     },
     [focusTab, injectWithRetry],
@@ -148,12 +157,7 @@ export function WebViewControlProvider({ children }: { children: React.ReactNode
       focusTab('/chat');
       const run = () => {
         if (action === 'new_chat') {
-          injectWithRetry(
-            '/chat',
-            `window.dispatchEvent(new CustomEvent('TUKUA_MOBILE_NEW_CHAT'));`,
-            24,
-            180,
-          );
+          injectWithRetry('/chat', buildMobileNewChatScript(), 24, 180);
           return;
         }
         const detail = JSON.stringify({ action, ...payload });

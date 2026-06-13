@@ -7,26 +7,34 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { WebView } from 'react-native-webview';
+import { WebView, WebViewNavigation } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useAuth } from '../context/AuthContext';
 import {
   buildPublicPageNavigateScript,
   buildPublicPagePreloadScript,
-  shouldAllowWebViewRequest,
+  isMainFrameWebViewRequest,
+  shouldAllowWebViewNavigation,
   tukuaSpaShellUrl,
 } from '../lib/webviewAuth';
+import { log } from '../lib/logger';
 import { AboutStackParamList } from '../navigation/types';
 import { Colors } from '../theme/yana';
 
 type Props = NativeStackScreenProps<AboutStackParamList, 'PublicWeb'>;
+
+function matchesPublicPath(pathname: string, path: string) {
+  return pathname === path || pathname.startsWith(`${path}/`);
+}
 
 export function PublicWebScreen({ navigation, route }: Props) {
   const { path, title } = route.params;
   const webRef = useRef<WebView>(null);
   const { session } = useAuth();
   const [loading, setLoading] = useState(true);
+  const shellReadyRef = useRef(false);
+  const navigatedRef = useRef(false);
   const shellUrl = tukuaSpaShellUrl();
 
   const preInject = useMemo(() => {
@@ -34,12 +42,19 @@ export function PublicWebScreen({ navigation, route }: Props) {
     return buildPublicPagePreloadScript(session);
   }, [session]);
 
-  const bootstrap = useCallback(() => {
-    if (!session || !webRef.current) return;
-    webRef.current.injectJavaScript(`${buildPublicPageNavigateScript(path)}\ntrue;`);
-  }, [path, session]);
+  const navigateToPage = useCallback(
+    (reason: string) => {
+      if (!session || !webRef.current || !shellReadyRef.current) return;
+      log.info('PublicWeb', reason, { path });
+      webRef.current.injectJavaScript(`${buildPublicPageNavigateScript(path)}\ntrue;`);
+      navigatedRef.current = true;
+    },
+    [path, session],
+  );
 
   useEffect(() => {
+    shellReadyRef.current = false;
+    navigatedRef.current = false;
     setLoading(true);
   }, [path]);
 
@@ -50,6 +65,25 @@ export function PublicWebScreen({ navigation, route }: Props) {
       </View>
     );
   }
+
+  const handleNav = (nav: WebViewNavigation) => {
+    if (!nav.url) return;
+    try {
+      const pathname = new URL(nav.url).pathname;
+      if (nav.url.includes('tukua.ai') && !nav.loading) {
+        shellReadyRef.current = true;
+      }
+      if (matchesPublicPath(pathname, path)) {
+        setLoading(false);
+        return;
+      }
+      if (shellReadyRef.current && !navigatedRef.current) {
+        navigateToPage('navigate after shell ready');
+      }
+    } catch {
+      // ignore
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -75,28 +109,32 @@ export function PublicWebScreen({ navigation, route }: Props) {
         source={{ uri: shellUrl }}
         style={styles.web}
         originWhitelist={['https://*', 'http://*']}
+        nestedScrollEnabled={Platform.OS === 'android'}
         cacheEnabled={false}
-        incognito={Platform.OS === 'android'}
         injectedJavaScriptBeforeContentLoaded={preInject}
-        onLoadEnd={() => bootstrap()}
-        onNavigationStateChange={(nav) => {
-          try {
-            const pathname = new URL(nav.url).pathname;
-            if (pathname === path || pathname.startsWith(`${path}/`)) {
-              setLoading(false);
-            }
-          } catch {
-            // ignore
+        onLoadEnd={() => {
+          shellReadyRef.current = true;
+          if (!navigatedRef.current) {
+            navigateToPage('bootstrap shell');
           }
         }}
+        onNavigationStateChange={handleNav}
         onShouldStartLoadWithRequest={(req) => {
-          const allowed = shouldAllowWebViewRequest(req.url);
-          if (!allowed) {
-            webRef.current?.stopLoading();
-            bootstrap();
+          const allowed = shouldAllowWebViewNavigation(req.url, req);
+          if (!allowed && isMainFrameWebViewRequest(req)) {
+            try {
+              const pathname = new URL(req.url).pathname;
+              if (matchesPublicPath(pathname, path)) {
+                navigateToPage('blocked server route');
+              }
+            } catch {
+              // ignore malformed urls
+            }
           }
           return allowed;
         }}
+        allowsFullscreenVideo
+        onError={() => setLoading(false)}
         javaScriptEnabled
         domStorageEnabled
         sharedCookiesEnabled

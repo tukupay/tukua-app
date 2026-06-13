@@ -9,11 +9,15 @@ import {
   buildFastTabNavigateScript,
   buildMobileChatTabBarStylesScript,
   buildPreloadSessionScript,
+  buildSpaNavigateScript,
   buildSupabaseRefreshAndNavigateScript,
   getActiveSessionScript,
-  shouldAllowWebViewRequest,
+  isMainFrameWebViewRequest,
+  shouldAllowWebViewNavigation,
   tukuaSpaShellUrl,
 } from '../lib/webviewAuth';
+import { useRegisterTabJumper } from '../hooks/useRegisterTabJumper';
+import { historyKeyFromUrl, TabHistoryStack } from '../lib/webviewHistory';
 import { useAuth } from '../context/AuthContext';
 import { useWebViewControl } from '../context/WebViewControlContext';
 import { log } from '../lib/logger';
@@ -42,18 +46,26 @@ function matchesTabPath(pathname: string, tabPath: string) {
 export function WebAppScreen({ path, label }: Props) {
   const webRef = useRef<WebView>(null);
   const isFocused = useIsFocused();
-  const { register, registerTabFocusHandler, consumePendingRoute } = useWebViewControl();
+  useRegisterTabJumper();
+  const { register, registerTabFocusHandler, consumePendingRoute, navigate: navigateWeb } = useWebViewControl();
   const { session } = useAuth();
   const [booting, setBooting] = useState(true);
   const [pageLoading, setPageLoading] = useState(true);
   const [canGoBack, setCanGoBack] = useState(false);
-  const [currentPathname, setCurrentPathname] = useState(path);
+  const [currentPathname, setCurrentPathnameState] = useState(path);
+  const currentPathnameRef = useRef(path);
+  const setCurrentPathname = useCallback((next: string) => {
+    currentPathnameRef.current = next;
+    setCurrentPathnameState(next);
+  }, []);
   const bootstrapPendingRef = useRef(false);
   const bootstrappedRef = useRef(false);
   const shellReadyRef = useRef(false);
   const lastUserIdRef = useRef<string | null>(null);
   const recoverCountRef = useRef(0);
   const lastRecoverRef = useRef(0);
+  const historyRef = useRef(new TabHistoryStack(path));
+  const pendingWebBackRef = useRef(false);
   const insets = useSafeAreaInsets();
   const shellUrl = tukuaSpaShellUrl();
   const chatMode = isChatPath(path);
@@ -65,16 +77,37 @@ export function WebAppScreen({ path, label }: Props) {
     webRef.current.injectJavaScript(`${buildMobileChatTabBarStylesScript(tabBarInsetPx)}\ntrue;`);
   }, [chatMode, tabBarInsetPx]);
 
+  const sessionInjectKey = session ? `${session.user.id}:${session.access_token}` : null;
   const preInject = useMemo(() => {
     if (!session) return null;
-    const sessionScript = buildPreloadSessionScript(session);
-    if (chatMode) return sessionScript;
-    return `${sessionScript}\n${buildClientNavigateScript(path, true)}`;
-  }, [session, path, chatMode]);
+    return buildPreloadSessionScript(session);
+  }, [sessionInjectKey, session]);
 
   useEffect(() => {
     return register(path, webRef);
   }, [path, register]);
+
+  useEffect(() => {
+    historyRef.current.reset(path);
+  }, [path]);
+
+  const recordHistory = useCallback((url: string, replace = false) => {
+    const entry = historyKeyFromUrl(url);
+    historyRef.current.push(entry.key, entry.spa, replace);
+  }, []);
+
+  const navigateToHistoryEntry = useCallback(
+    (key: string, spa: boolean) => {
+      if (!webRef.current) return;
+      if (spa) {
+        webRef.current.injectJavaScript(`${buildSpaNavigateScript(key, { force: true })}\ntrue;`);
+        setCurrentPathname(key);
+        return;
+      }
+      webRef.current.injectJavaScript(`window.location.href=${JSON.stringify(key)};true;`);
+    },
+    [setCurrentPathname],
+  );
 
   useEffect(() => {
     const userId = session?.user?.id ?? null;
@@ -137,10 +170,17 @@ export function WebAppScreen({ path, label }: Props) {
 
         if (!shellReadyRef.current) return false;
 
+        const spaPath = currentPathnameRef.current;
         const pending = consumePendingRoute(path);
+        if (!pending && matchesTabPath(spaPath, path)) {
+          setPageLoading(false);
+          injectChatComposerInsets();
+          return true;
+        }
+
         const target = pending ?? path;
 
-        log.info('WebApp', 'sync tab route', { path, target, currentPathname, reason });
+        log.info('WebApp', 'sync tab route', { path, target, currentPathname: spaPath, reason });
         webRef.current.injectJavaScript(`${buildFastTabNavigateScript(session, target)}\ntrue;`);
         injectChatComposerInsets();
         setCurrentPathname(target);
@@ -156,14 +196,7 @@ export function WebAppScreen({ path, label }: Props) {
         if (run() || attempts >= 20) clearInterval(timer);
       }, 100);
     },
-    [
-      consumePendingRoute,
-      currentPathname,
-      injectChatComposerInsets,
-      path,
-      scheduleBootstrap,
-      session,
-    ],
+    [consumePendingRoute, injectChatComposerInsets, path, scheduleBootstrap, session],
   );
 
   useEffect(() => {
@@ -179,16 +212,27 @@ export function WebAppScreen({ path, label }: Props) {
 
   const goToTabRoot = useCallback(() => {
     if (!session || !webRef.current) return;
-    webRef.current.injectJavaScript(`${buildClientNavigateScript(path)}\ntrue;`);
+    webRef.current.injectJavaScript(`${buildSpaNavigateScript(path, { force: true })}\ntrue;`);
     setCurrentPathname(path);
+    historyRef.current.reset(path);
   }, [path, session]);
 
   const handleHardwareBack = useCallback(() => {
     if (!isFocused) return false;
 
     if (canGoBack) {
+      pendingWebBackRef.current = true;
       webRef.current?.goBack();
       return true;
+    }
+
+    if (historyRef.current.canPop()) {
+      const prev = historyRef.current.pop();
+      if (prev) {
+        log.info('WebApp', 'history back', { path, to: prev.key });
+        navigateToHistoryEntry(prev.key, prev.spa);
+        return true;
+      }
     }
 
     if (!isAtTabRoot(currentPathname, path)) {
@@ -197,7 +241,7 @@ export function WebAppScreen({ path, label }: Props) {
     }
 
     return true;
-  }, [canGoBack, currentPathname, goToTabRoot, isFocused, path]);
+  }, [canGoBack, currentPathname, goToTabRoot, isFocused, navigateToHistoryEntry, path]);
 
   useEffect(() => {
     if (Platform.OS !== 'android') return;
@@ -236,7 +280,43 @@ export function WebAppScreen({ path, label }: Props) {
     if (!session) return;
 
     try {
+      const entry = historyKeyFromUrl(nav.url);
+
+      if (pendingWebBackRef.current && !nav.loading) {
+        pendingWebBackRef.current = false;
+        historyRef.current.syncToKey(entry.key);
+      } else if (!nav.loading) {
+        recordHistory(nav.url, false);
+      }
+
       const pathname = new URL(nav.url).pathname;
+
+      if (matchesTabPath(pathname, path)) {
+        setCurrentPathname(pathname);
+        if (!isAtTabRoot(pathname, path) || !nav.loading) {
+          setPageLoading(false);
+        }
+        if (!nav.loading) {
+          shellReadyRef.current = true;
+        }
+        return;
+      }
+
+      if (
+        pathname === '/' &&
+        path !== '/chat' &&
+        matchesTabPath(currentPathnameRef.current, path) &&
+        !isAtTabRoot(currentPathnameRef.current, path)
+      ) {
+        // Blocked SPA server loads bounce the shell to `/` — keep the in-app route.
+        if (!nav.loading && webRef.current && session) {
+          webRef.current.injectJavaScript(
+            `${buildFastTabNavigateScript(session, currentPathnameRef.current)}\ntrue;`,
+          );
+        }
+        return;
+      }
+
       setCurrentPathname(pathname);
       if (nav.url.includes('tukua.ai') && !nav.loading) {
         shellReadyRef.current = true;
@@ -244,20 +324,51 @@ export function WebAppScreen({ path, label }: Props) {
       if (pathname.includes('/sign-in') && path !== '/sign-in') {
         log.warn('WebApp', 'web sign-in bounce', { pathname, attempt: recoverCountRef.current + 1 });
         recoverFromSignIn();
-      } else if (matchesTabPath(pathname, path)) {
-        setPageLoading(false);
       }
     } catch {
       // ignore malformed urls
     }
   };
 
-  const handleBlockedRequest = (url: string) => {
-    log.info('WebApp', 'blocked server route', { url, path });
-    webRef.current?.stopLoading();
-    bootstrappedRef.current = false;
-    injectBootstrap('blocked server route');
-  };
+  const handleBlockedRequest = useCallback(
+    (url: string) => {
+      log.info('WebApp', 'blocked server route', { url, path });
+
+      if (!session || !webRef.current) return;
+
+      try {
+        const pathname = new URL(url).pathname;
+        if (!matchesTabPath(pathname, path)) return;
+
+        log.info('WebApp', 'client navigate blocked route', { pathname, path });
+        const script = bootstrappedRef.current
+          ? buildSpaNavigateScript(pathname, { force: true, push: true })
+          : buildFastTabNavigateScript(session, pathname);
+        webRef.current.injectJavaScript(`${script}\ntrue;`);
+        setCurrentPathname(pathname);
+        recordHistory(url, false);
+        setPageLoading(false);
+
+        setTimeout(() => {
+          webRef.current?.injectJavaScript(`
+            (function() {
+              var root = document.getElementById('root');
+              if (root && root.childElementCount > 0) return;
+              try {
+                window.ReactNativeWebView && window.ReactNativeWebView.postMessage(
+                  JSON.stringify({ type: 'TUKUA_SHELL_BLANK', path: ${JSON.stringify(pathname)} })
+                );
+              } catch (e) {}
+              true;
+            })();
+          `);
+        }, 500);
+      } catch {
+        // ignore malformed urls
+      }
+    },
+    [path, recordHistory, session],
+  );
 
   const handleWebMessage = (raw: string) => {
     try {
@@ -282,6 +393,55 @@ export function WebAppScreen({ path, label }: Props) {
         bootstrappedRef.current = false;
         shellReadyRef.current = false;
         setPageLoading(true);
+      } else if (msg.type === 'TUKUA_SHELL_BLANK') {
+        const target = typeof msg.path === 'string' ? msg.path : path;
+        log.warn('WebApp', 'shell blank after blocked nav — recovering', { path, target });
+        bootstrappedRef.current = false;
+        webRef.current?.injectJavaScript(buildPreloadSessionScript(session!));
+        setTimeout(() => {
+          webRef.current?.reload();
+          setTimeout(() => {
+            if (session && webRef.current) {
+              webRef.current.injectJavaScript(
+                `${buildSupabaseRefreshAndNavigateScript(session, target)}\ntrue;`,
+              );
+              setCurrentPathname(target);
+            }
+          }, 600);
+        }, 150);
+      } else if (msg.type === 'TUKUA_NAVIGATE') {
+        const target = typeof msg.path === 'string' ? msg.path : '';
+        if (target) {
+          log.info('WebApp', 'cross-tab navigate', { from: path, target });
+          try {
+            const targetPath = new URL(target, 'https://tukua.ai').pathname;
+            if (matchesTabPath(targetPath, path) && webRef.current) {
+              webRef.current.injectJavaScript(
+                `${buildSpaNavigateScript(targetPath, { force: true, push: true })}\ntrue;`,
+              );
+              setCurrentPathname(targetPath);
+              recordHistory(`https://tukua.ai${targetPath}`, false);
+              setPageLoading(false);
+            } else {
+              navigateWeb(targetPath);
+            }
+          } catch {
+            navigateWeb(target);
+          }
+        }
+      } else if (msg.type === 'TUKUA_ROUTE') {
+        const routePath = typeof msg.path === 'string' ? msg.path : '';
+        const replace = msg.kind === 'replace' || msg.kind === 'init';
+        const href = typeof msg.href === 'string' ? msg.href : `https://tukua.ai${routePath}`;
+        if (routePath && matchesTabPath(routePath, path)) {
+          setCurrentPathname(routePath);
+          if (!replace) {
+            recordHistory(href, false);
+          } else {
+            recordHistory(href, true);
+          }
+          setPageLoading(false);
+        }
       } else if (msg.type === 'TUKUA_SESSION_SYNCED') {
         log.info('WebApp', 'supabase session synced');
       } else if (msg.type === 'TUKUA_SESSION_SYNC_WARN') {
@@ -304,7 +464,8 @@ export function WebAppScreen({ path, label }: Props) {
     );
   }
 
-  const showOverlay = pageLoading && isFocused;
+  const showOverlay =
+    pageLoading && isFocused && isAtTabRoot(currentPathname, path);
 
   return (
     <View style={styles.container}>
@@ -346,12 +507,21 @@ export function WebAppScreen({ path, label }: Props) {
         }}
         onNavigationStateChange={handleNav}
         onShouldStartLoadWithRequest={(req) => {
-          const allowed = shouldAllowWebViewRequest(req.url);
+          const allowed = shouldAllowWebViewNavigation(req.url, req);
           if (!allowed) {
-            handleBlockedRequest(req.url);
+            try {
+              const pathname = new URL(req.url).pathname;
+              if (matchesTabPath(pathname, path) && isMainFrameWebViewRequest(req)) {
+                handleBlockedRequest(req.url);
+              }
+            } catch {
+              // ignore malformed urls
+            }
           }
           return allowed;
         }}
+        nestedScrollEnabled={Platform.OS === 'android'}
+        allowsFullscreenVideo
         onMessage={(e) => handleWebMessage(e.nativeEvent.data)}
         injectedJavaScriptBeforeContentLoaded={preInject}
         javaScriptEnabled
