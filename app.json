@@ -1,0 +1,91 @@
+{
+  "expo": {
+    "name": "Tukua",
+    "slug": "tukua",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icons/tukua-icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#15411D"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.app.tukua",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Tukua needs camera access for document capture and KYC.",
+        "NSPhotoLibraryUsageDescription": "Tukua needs photo library access to upload documents.",
+        "NSMicrophoneUsageDescription": "Tukua needs microphone access for voice features.",
+        "NSLocationWhenInUseUsageDescription": "Tukua uses your location for security on first login.",
+        "NSFaceIDUsageDescription": "Tukua uses Face ID for quick secure login.",
+        "NSUserNotificationsUsageDescription": "Tukua sends alerts for opportunities, courses, and account updates."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/icons/tukua-icon.png",
+        "backgroundColor": "#15411D"
+      },
+      "package": "com.app.tukua",
+      "versionCode": 1,
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "RECORD_AUDIO",
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT",
+        "POST_NOTIFICATIONS"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/images/icons/tukua-icon.png"
+    },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#15411D"
+        }
+      ],
+      "expo-asset",
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Tukua uses your location for security on first login."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Tukua needs camera access for document capture and KYC."
+        }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Tukua needs microphone access for voice features."
+        }
+      ],
+      "expo-document-picker",
+      "expo-file-system",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icons/tukua-icon.png",
+          "color": "#1F8B4C"
+        }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Tukua uses Face ID for quick secure login."
+        }
+      ]
+    ]
+  }
+}

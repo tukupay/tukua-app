@@ -1,2 +1,0 @@
-/home/codeninja/Documents/dart/tuku/android/app/.cxx/Debug/3r392u42/x86/CMakeFiles/edit_cache.dir
-/home/codeninja/Documents/dart/tuku/android/app/.cxx/Debug/3r392u42/x86/CMakeFiles/rebuild_cache.dir
