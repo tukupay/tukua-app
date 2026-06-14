@@ -479,6 +479,10 @@ export function buildSupabaseRefreshAndNavigateScript(session: Session, targetPa
             ${dispatchStorageSync(SUPABASE_STORAGE_KEY)}
             ${notifyMobileSessionEvent()}
             notify('TUKUA_SESSION_SYNCED', { ok: true });
+            notify('TUKUA_SESSION_UPDATED', {
+              access_token: data.access_token,
+              refresh_token: data.refresh_token,
+            });
           }
         } else {
           notify('TUKUA_SESSION_SYNC_WARN', { status: refreshRes.status });
@@ -518,6 +522,23 @@ export function buildSupabaseRefreshAndNavigateScript(session: Session, targetPa
 
 export function buildWebViewSessionScript(session: Session, targetPath = '/chat') {
   return buildWebViewBootstrapScript(session, targetPath);
+}
+
+/** Push the latest native session into an already-loaded WebView (no navigation). */
+export function buildSessionResyncScript(session: Session) {
+  return `${buildPreloadSessionScript(session)}\ntrue;`;
+}
+
+export async function applyWebSessionTokens(accessToken: string, refreshToken: string) {
+  const { data, error } = await supabase.auth.setSession({
+    access_token: accessToken,
+    refresh_token: refreshToken,
+  });
+  if (error) {
+    log.warn('WebSession', 'apply web tokens failed', error.message);
+    return null;
+  }
+  return data.session;
 }
 
 export async function getActiveSessionScript(targetPath?: string) {

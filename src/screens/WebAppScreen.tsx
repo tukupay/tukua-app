@@ -9,8 +9,10 @@ import {
   buildFastTabNavigateScript,
   buildMobileChatTabBarStylesScript,
   buildPreloadSessionScript,
+  buildSessionResyncScript,
   buildSpaNavigateScript,
   buildSupabaseRefreshAndNavigateScript,
+  applyWebSessionTokens,
   getActiveSessionScript,
   isMainFrameWebViewRequest,
   shouldAllowWebViewNavigation,
@@ -48,7 +50,7 @@ export function WebAppScreen({ path, label }: Props) {
   const isFocused = useIsFocused();
   useRegisterTabJumper();
   const { register, registerTabFocusHandler, consumePendingRoute, navigate: navigateWeb } = useWebViewControl();
-  const { session } = useAuth();
+  const { session, ensureFreshSession, logout } = useAuth();
   const [booting, setBooting] = useState(true);
   const [pageLoading, setPageLoading] = useState(true);
   const [canGoBack, setCanGoBack] = useState(false);
@@ -206,9 +208,32 @@ export function WebAppScreen({ path, label }: Props) {
   useFocusEffect(
     useCallback(() => {
       if (!session) return;
-      syncTabRoute('screen focus');
-    }, [session, syncTabRoute]),
+      void (async () => {
+        const fresh = await ensureFreshSession();
+        if (fresh && webRef.current && bootstrappedRef.current) {
+          webRef.current.injectJavaScript(buildSessionResyncScript(fresh));
+        }
+        syncTabRoute('screen focus');
+      })();
+    }, [ensureFreshSession, session, syncTabRoute]),
   );
+
+  useEffect(() => {
+    if (!session || !isFocused || !bootstrappedRef.current || !webRef.current) return;
+    webRef.current.injectJavaScript(buildSessionResyncScript(session));
+  }, [session?.access_token, isFocused, session]);
+
+  useEffect(() => {
+    if (!pageLoading || !isFocused) return;
+    const timer = setTimeout(() => {
+      log.warn('WebApp', 'loading timeout — recovering', { path });
+      setPageLoading(false);
+      if (!bootstrappedRef.current && session && shellReadyRef.current) {
+        scheduleBootstrap('loading timeout recovery');
+      }
+    }, 15000);
+    return () => clearTimeout(timer);
+  }, [pageLoading, isFocused, path, scheduleBootstrap, session]);
 
   const goToTabRoot = useCallback(() => {
     if (!session || !webRef.current) return;
@@ -259,18 +284,29 @@ export function WebAppScreen({ path, label }: Props) {
     lastRecoverRef.current = now;
     recoverCountRef.current += 1;
 
-    if (chatMode) {
-      log.warn('WebApp', 'chat sign-in bounce — reloading webview', {
-        attempt: recoverCountRef.current,
-      });
-      webRef.current?.injectJavaScript(buildPreloadSessionScript(session!));
-      setTimeout(() => webRef.current?.reload(), 200);
-      return;
-    }
+    void (async () => {
+      const fresh = await ensureFreshSession();
+      if (!fresh) {
+        log.warn('WebApp', 'session expired on web bounce — logging out');
+        await logout();
+        return;
+      }
 
-    bootstrappedRef.current = false;
-    injectBootstrap('recover from sign-in bounce');
-  }, [injectBootstrap, chatMode, session]);
+      if (chatMode) {
+        log.warn('WebApp', 'chat sign-in bounce — reloading webview', {
+          attempt: recoverCountRef.current,
+        });
+        webRef.current?.injectJavaScript(buildPreloadSessionScript(fresh));
+        setTimeout(() => webRef.current?.reload(), 200);
+        return;
+      }
+
+      bootstrappedRef.current = false;
+      webRef.current?.injectJavaScript(
+        `${buildSupabaseRefreshAndNavigateScript(fresh, path)}\ntrue;`,
+      );
+    })();
+  }, [chatMode, ensureFreshSession, logout, path]);
 
   const handleNav = (nav: WebViewNavigation) => {
     if (!nav.url) return;
@@ -444,6 +480,10 @@ export function WebAppScreen({ path, label }: Props) {
         }
       } else if (msg.type === 'TUKUA_SESSION_SYNCED') {
         log.info('WebApp', 'supabase session synced');
+      } else if (msg.type === 'TUKUA_SESSION_UPDATED') {
+        if (typeof msg.access_token === 'string' && typeof msg.refresh_token === 'string') {
+          void applyWebSessionTokens(msg.access_token, msg.refresh_token);
+        }
       } else if (msg.type === 'TUKUA_SESSION_SYNC_WARN') {
         log.warn('WebApp', 'supabase refresh warn', { status: msg.status });
       } else if (msg.type === 'TUKUA_BOOTSTRAP_ERR') {

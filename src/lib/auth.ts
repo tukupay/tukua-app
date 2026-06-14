@@ -1,4 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
+import type { Session } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 import { cachePasswordForBiometrics, refreshBiometricCredentialsIfEnabled } from './biometricStorage';
 import { log } from './logger';
@@ -23,6 +24,52 @@ export async function saveSession(accessToken: string, refreshToken: string) {
   );
 }
 
+export async function persistSession(session: Session | null) {
+  if (!session?.access_token || !session.refresh_token) return;
+  await saveSession(session.access_token, session.refresh_token);
+}
+
+function isSessionExpired(session: Session, skewSeconds = 90): boolean {
+  const expiresAt = session.expires_at;
+  if (!expiresAt) return false;
+  return expiresAt <= Math.floor(Date.now() / 1000) + skewSeconds;
+}
+
+/** Restore or refresh the Supabase session from secure storage. */
+export async function refreshSessionIfNeeded(): Promise<Session | null> {
+  let session: Session | null = null;
+
+  const { data: live } = await supabase.auth.getSession();
+  session = live.session;
+
+  if (!session) {
+    const stored = await getStoredSession();
+    if (stored) {
+      const { data, error } = await supabase.auth.setSession({
+        access_token: stored.access_token,
+        refresh_token: stored.refresh_token,
+      });
+      if (!error) session = data.session;
+      else log.warn('Auth', 'setSession from stored tokens failed', error.message);
+    }
+  }
+
+  if (!session) return null;
+
+  if (isSessionExpired(session)) {
+    log.info('Auth', 'access token expired — refreshing');
+    const { data, error } = await supabase.auth.refreshSession();
+    if (error) {
+      log.warn('Auth', 'refreshSession failed', error.message);
+      return null;
+    }
+    session = data.session;
+  }
+
+  if (session) await persistSession(session);
+  return session;
+}
+
 export async function getStoredSession() {
   const raw = await SecureStore.getItemAsync(SESSION_KEY);
   if (!raw) return null;
@@ -30,14 +77,7 @@ export async function getStoredSession() {
 }
 
 export async function restoreSession() {
-  const stored = await getStoredSession();
-  if (!stored) return null;
-  const { data, error } = await supabase.auth.setSession({
-    access_token: stored.access_token,
-    refresh_token: stored.refresh_token,
-  });
-  if (error) return null;
-  return data.session;
+  return refreshSessionIfNeeded();
 }
 
 export async function signInWithEmail(email: string, password: string) {
