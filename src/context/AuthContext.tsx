@@ -50,6 +50,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data, error } = await supabase.auth.getUser();
       if (error) {
         log.warn('Auth', 'getUser failed during profile refresh', error.message);
+        if (/jwt|expired|invalid|session/i.test(error.message)) {
+          await signOut();
+          setSession(null);
+          setProfile(null);
+        }
         return;
       }
       if (data.user) {
@@ -64,6 +69,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const ensureFreshSession = useCallback(async () => {
     const fresh = await refreshSessionIfNeeded();
     setSession(fresh);
+    if (!fresh) {
+      setProfile(null);
+    }
     return fresh;
   }, []);
 
@@ -98,7 +106,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           await persistSession(nextSession);
         }
         void refreshProfile();
-      } else {
+      } else if (event === 'SIGNED_OUT') {
         setProfile(null);
       }
     });
@@ -113,6 +121,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         log.info('Auth', 'app foreground — refreshing session');
         const fresh = await refreshSessionIfNeeded();
         setSession(fresh);
+        if (!fresh) {
+          setProfile(null);
+        }
       })();
     };
 

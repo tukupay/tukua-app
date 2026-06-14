@@ -50,7 +50,11 @@ export async function refreshSessionIfNeeded(): Promise<Session | null> {
         refresh_token: stored.refresh_token,
       });
       if (!error) session = data.session;
-      else log.warn('Auth', 'setSession from stored tokens failed', error.message);
+      else {
+        log.warn('Auth', 'setSession from stored tokens failed', error.message);
+        await signOut();
+        return null;
+      }
     }
   }
 
@@ -59,8 +63,9 @@ export async function refreshSessionIfNeeded(): Promise<Session | null> {
   if (isSessionExpired(session)) {
     log.info('Auth', 'access token expired — refreshing');
     const { data, error } = await supabase.auth.refreshSession();
-    if (error) {
-      log.warn('Auth', 'refreshSession failed', error.message);
+    if (error || !data.session) {
+      log.warn('Auth', 'refreshSession failed — signing out', error?.message);
+      await signOut();
       return null;
     }
     session = data.session;

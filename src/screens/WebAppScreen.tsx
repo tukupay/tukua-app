@@ -137,13 +137,14 @@ export function WebAppScreen({ path, label }: Props) {
     (reason: string) => {
       if (!session || !webRef.current || bootstrapPendingRef.current) return;
       bootstrapPendingRef.current = true;
-      log.info('WebApp', reason, { path });
-      webRef.current.injectJavaScript(
-        `${buildSupabaseRefreshAndNavigateScript(session, path)}\ntrue;`,
-      );
+      log.info('WebApp', reason, { path, chatMode });
+      const script = chatMode
+        ? buildSupabaseRefreshAndNavigateScript(session, path)
+        : buildFastTabNavigateScript(session, path);
+      webRef.current.injectJavaScript(`${script}\ntrue;`);
       setTimeout(() => {
         bootstrapPendingRef.current = false;
-      }, chatMode ? 4000 : 900);
+      }, chatMode ? 4000 : 400);
     },
     [session, path, chatMode],
   );
@@ -208,14 +209,19 @@ export function WebAppScreen({ path, label }: Props) {
   useFocusEffect(
     useCallback(() => {
       if (!session) return;
+      syncTabRoute('screen focus');
       void (async () => {
         const fresh = await ensureFreshSession();
-        if (fresh && webRef.current && bootstrappedRef.current) {
+        if (!fresh) {
+          log.warn('WebApp', 'session expired on focus — logging out', { path });
+          await logout();
+          return;
+        }
+        if (webRef.current && bootstrappedRef.current) {
           webRef.current.injectJavaScript(buildSessionResyncScript(fresh));
         }
-        syncTabRoute('screen focus');
       })();
-    }, [ensureFreshSession, session, syncTabRoute]),
+    }, [ensureFreshSession, logout, session, syncTabRoute]),
   );
 
   useEffect(() => {

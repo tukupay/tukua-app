@@ -3,6 +3,8 @@ node_modules/
 dist/
 npm-debug.*
 *.jks
+@tukupay__tukua.jks
+*.keystore
 *.p8
 *.p12
 *.key
@@ -11,6 +13,7 @@ npm-debug.*
 web-build/
 .DS_Store
 .env.local
+credentials/
 
 # Expo
 .expo-shared/
