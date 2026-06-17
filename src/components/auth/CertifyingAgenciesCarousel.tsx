@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Image,
   NativeScrollEvent,
   NativeSyntheticEvent,
   ScrollView,
@@ -8,6 +7,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { AgencyLogo } from './AgencyLogo';
 import { CertifyingAgency, fetchCertifyingAgencies } from '../../lib/certifyingAgencies';
 import { Colors } from '../../theme/yana';
 
@@ -81,15 +81,13 @@ export function CertifyingAgenciesCarousel({ compact }: Props) {
         contentContainerStyle={styles.scrollContent}>
         {loopItems.map((a, i) => (
           <View key={`${a.id}-${i}`} style={styles.item}>
-            {a.logo_url ? (
-              <Image source={{ uri: a.logo_url }} style={styles.logo} resizeMode="contain" />
-            ) : (
-              <View style={styles.logoFallback}>
-                <Text style={styles.logoFallbackText}>
-                  {(a.short_name || a.name).slice(0, 3).toUpperCase()}
-                </Text>
-              </View>
-            )}
+            <AgencyLogo
+              logoUrl={a.logo_url}
+              slug={a.slug ?? a.id}
+              name={a.name}
+              shortName={a.short_name}
+              size={32}
+            />
             <Text style={styles.label} numberOfLines={1}>
               {a.short_name || a.name.split(' ')[0]}
             </Text>
@@ -115,31 +113,6 @@ const styles = StyleSheet.create({
     width: 52,
     alignItems: 'center',
     gap: 3,
-  },
-  logo: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.white,
-    padding: 3,
-  },
-  logoFallback: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(31,139,76,0.2)',
-    backgroundColor: Colors.primaryLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logoFallbackText: {
-    fontSize: 7,
-    fontWeight: '700',
-    color: Colors.primary,
-    fontFamily: 'Poppins_600SemiBold',
   },
   label: {
     fontSize: 7,

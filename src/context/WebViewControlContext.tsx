@@ -147,7 +147,7 @@ export function WebViewControlProvider({ children }: { children: React.ReactNode
       pendingRoutesRef.current.set(tabPath, webPath);
       focusTab(tabPath);
       const script = buildSpaNavigateScript(webPath, { force: true, push: webPath !== tabPath });
-      setTimeout(() => injectWithRetry(tabPath, script, 30, 150), 250);
+      setTimeout(() => injectWithRetry(tabPath, script, 15, 120), 100);
     },
     [focusTab, injectWithRetry],
   );

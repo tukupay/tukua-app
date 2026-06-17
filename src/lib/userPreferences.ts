@@ -49,6 +49,10 @@ export async function getSavageModeEnabled(): Promise<boolean> {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return false;
-  const prefs = await getCurrentPreferences(user.id);
+  return getSavageModeForUser(user.id);
+}
+
+export async function getSavageModeForUser(userId: string): Promise<boolean> {
+  const prefs = await getCurrentPreferences(userId);
   return !!prefs.sarcasm_mode;
 }

@@ -1,8 +1,7 @@
 import React from 'react';
 import { Image, StyleSheet, Text, View, ViewProps } from 'react-native';
+import { Images } from '../../constants/images';
 import { Colors } from '../../theme/yana';
-
-const logo = require('../../../assets/images/icons/tukua-icon.png');
 
 type Props = ViewProps & {
   title?: string;
@@ -15,7 +14,7 @@ export function GlassAuthCard({ title, subtitle, showLogo = true, children, styl
     <View style={[styles.card, style]} {...rest}>
       {showLogo && (
         <View style={styles.header}>
-          <Image source={logo} style={styles.logo} resizeMode="contain" />
+          <Image source={Images.logoSplash} style={styles.logo} resizeMode="contain" />
           {title ? <Text style={styles.title}>{title}</Text> : null}
           {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
         </View>
@@ -46,8 +45,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   logo: {
-    width: 64,
-    height: 64,
+    width: 72,
+    height: 72,
   },
   title: {
     fontSize: 22,

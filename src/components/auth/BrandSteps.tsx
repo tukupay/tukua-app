@@ -15,9 +15,7 @@ export function BrandSteps({ compact }: { compact?: boolean }) {
       {STEPS.map((step, i) => (
         <React.Fragment key={step.label}>
           <View style={styles.step}>
-            <View style={[styles.iconWrap, compact && styles.iconWrapCompact]}>
-              <Ionicons name={step.icon} size={compact ? 11 : 12} color={Colors.primary} />
-            </View>
+            <Ionicons name={step.icon} size={compact ? 13 : 14} color={Colors.primary} />
             <Text style={[styles.label, compact && styles.labelCompact]}>{step.label}</Text>
             {!compact && <Text style={styles.hint}>{step.hint}</Text>}
           </View>
@@ -39,31 +37,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'center',
-    marginTop: 8,
+    marginTop: 6,
     paddingHorizontal: 4,
   },
-  rowCompact: { marginTop: 6 },
+  rowCompact: { marginTop: 4 },
   step: {
     alignItems: 'center',
     width: 72,
   },
-  iconWrap: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: Colors.primaryLight,
-    borderWidth: 1,
-    borderColor: 'rgba(31,139,76,0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  iconWrapCompact: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-  },
   label: {
-    marginTop: 4,
+    marginTop: 3,
     fontSize: 10,
     fontWeight: '700',
     color: Colors.foreground,
@@ -72,7 +55,7 @@ const styles = StyleSheet.create({
   },
   labelCompact: {
     fontSize: 9,
-    marginTop: 3,
+    marginTop: 2,
   },
   hint: {
     fontSize: 8,
@@ -84,7 +67,7 @@ const styles = StyleSheet.create({
   connector: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 12,
+    marginTop: 6,
     width: 20,
   },
   line: {

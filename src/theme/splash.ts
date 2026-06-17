@@ -1,7 +1,4 @@
-export const SPLASH_BACKGROUND = '#000000';
+export const SPLASH_BACKGROUND = '#FFFFFF';
 
-/** Attached splash logo (1024×1024) */
-export const SPLASH_LOGO_ASPECT = 1;
-
-/** Logo width as a fraction of the shorter screen edge */
-export const SPLASH_LOGO_WIDTH_RATIO = 0.52;
+/** Logo width as a fraction of the shorter screen edge (in-app loading splash) */
+export const SPLASH_LOGO_WIDTH_RATIO = 0.38;

@@ -81,61 +81,61 @@ function MainTabNavigator() {
 
   return (
     <Tab.Navigator
-        initialRouteName="Chat"
-        screenListeners={{
-          state: (e) => {
-            const state = e.data.state;
-            if (!state) return;
-            const route = state.routes[state.index]?.name as keyof MainTabParamList;
-            const webPath = TAB_PATHS[route];
-            if (webPath) {
-              setActiveTabPath(webPath);
-              notifyTabFocused(webPath);
-            }
-          },
-        }}
-        screenOptions={({ route }) => ({
-          lazy: true,
-          unmountOnBlur: false,
-          headerShown: false,
-          sceneStyle: styles.scene,
-          tabBarActiveTintColor: Colors.primary,
-          tabBarInactiveTintColor: Colors.mutedForeground,
-          tabBarStyle: {
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            bottom: 0,
-            height: tabBarHeight,
-            paddingTop: 6,
-            paddingBottom: insets.bottom,
-            borderTopWidth: StyleSheet.hairlineWidth,
-            borderTopColor: Colors.border,
-            backgroundColor: Colors.white,
-            elevation: 12,
-          },
-          tabBarLabelStyle: styles.tabLabel,
-          tabBarIcon: ({ color, size }) => {
-            const icons: Record<string, keyof typeof Ionicons.glyphMap> = {
-              Chat: 'chatbubble-ellipses-outline',
-              Courses: 'book-outline',
-              About: 'information-circle-outline',
-              Profile: 'person-outline',
-            };
-            return <Ionicons name={icons[route.name] ?? 'ellipse'} size={size} color={color} />;
-          },
-        })}>
-        <Tab.Screen name="Chat" options={{ title: 'Chat' }}>
-          {() => <WebAppScreen path="/chat" label="Chat" />}
-        </Tab.Screen>
-        <Tab.Screen name="Courses" options={{ title: 'Courses' }}>
-          {() => <WebAppScreen path="/courses" label="Courses" />}
-        </Tab.Screen>
-        <Tab.Screen name="About" options={{ title: 'About' }} component={AboutStack} />
-        <Tab.Screen name="Profile" options={{ title: 'Profile' }}>
-          {() => <WebAppScreen path="/profile" label="Profile" />}
-        </Tab.Screen>
-      </Tab.Navigator>
+      initialRouteName="Chat"
+      screenListeners={{
+        state: (e) => {
+          const state = e.data.state;
+          if (!state) return;
+          const route = state.routes[state.index]?.name as keyof MainTabParamList;
+          const webPath = TAB_PATHS[route];
+          if (webPath) {
+            setActiveTabPath(webPath);
+            notifyTabFocused(webPath);
+          }
+        },
+      }}
+      screenOptions={({ route }) => ({
+        lazy: route.name !== 'Chat',
+        unmountOnBlur: false,
+        headerShown: false,
+        sceneStyle: styles.scene,
+        tabBarActiveTintColor: Colors.primary,
+        tabBarInactiveTintColor: Colors.mutedForeground,
+        tabBarStyle: {
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: tabBarHeight,
+          paddingTop: 6,
+          paddingBottom: insets.bottom,
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: Colors.border,
+          backgroundColor: Colors.white,
+          elevation: 12,
+        },
+        tabBarLabelStyle: styles.tabLabel,
+        tabBarIcon: ({ color, size }) => {
+          const icons: Record<string, keyof typeof Ionicons.glyphMap> = {
+            Chat: 'chatbubble-ellipses-outline',
+            Courses: 'book-outline',
+            About: 'information-circle-outline',
+            Profile: 'person-outline',
+          };
+          return <Ionicons name={icons[route.name] ?? 'ellipse'} size={size} color={color} />;
+        },
+      })}>
+      <Tab.Screen name="Chat" options={{ title: 'Chat' }}>
+        {() => <WebAppScreen path="/chat" label="Chat" />}
+      </Tab.Screen>
+      <Tab.Screen name="Courses" options={{ title: 'Courses' }}>
+        {() => <WebAppScreen path="/courses" label="Courses" />}
+      </Tab.Screen>
+      <Tab.Screen name="About" options={{ title: 'About' }} component={AboutStack} />
+      <Tab.Screen name="Profile" options={{ title: 'Profile' }}>
+        {() => <WebAppScreen path="/profile" label="Profile" />}
+      </Tab.Screen>
+    </Tab.Navigator>
   );
 }
 

@@ -19,6 +19,7 @@ import { ModernBackground } from '../components/landing/ModernBackground';
 import { GlassAuthCard } from '../components/landing/GlassAuthCard';
 import { AuthTextField } from '../components/auth/AuthTextField';
 import { CountyPicker } from '../components/auth/CountyPicker';
+import { PeaRegistrationCard } from '../components/auth/PeaRegistrationCard';
 import { Colors } from '../theme/yana';
 import { RootStackParamList } from '../navigation/types';
 import { signUpWithEmail, fetchProfile } from '../lib/auth';
@@ -331,16 +332,10 @@ export function RegisterScreen({ navigation }: Props) {
                   <AuthTextField hint="Confirm password" isPassword obscure={obscure} onToggleObscure={() => setObscure((v) => !v)} value={confirmPassword} onChangeText={setConfirmPassword} />
                   <View style={styles.gap} />
 
-                  <View style={styles.peaBox}>
-                    <Ionicons name="phone-portrait-outline" size={22} color={Colors.primary} />
-                    <View style={styles.peaMeta}>
-                      <Text style={styles.peaTitle}>PEA — Phone Activation</Text>
-                      <Text style={styles.peaBody}>
-                        On tukua.ai web, phone activation uses a one-time M-Pesa KES 50 charge. On mobile we create
-                        your account directly — you can complete phone activation later in Profile.
-                      </Text>
-                    </View>
-                  </View>
+                  <PeaRegistrationCard
+                    phone={phone}
+                    mobileNote="On mobile we create your account directly — you can complete phone activation later in Profile."
+                  />
 
                   <TouchableOpacity style={styles.termsRow} onPress={() => setAgreedToTerms((v) => !v)}>
                     <Ionicons
@@ -495,19 +490,6 @@ const styles = StyleSheet.create({
   pickerValue: { fontSize: 14, color: Colors.foreground },
   pickerPlaceholder: { fontSize: 14, color: Colors.mutedForeground },
   hint: { fontSize: 11, color: Colors.mutedForeground, marginTop: 4 },
-  peaBox: {
-    flexDirection: 'row',
-    gap: 10,
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(31,139,76,0.3)',
-    backgroundColor: 'rgba(31,139,76,0.06)',
-    marginBottom: 12,
-  },
-  peaMeta: { flex: 1 },
-  peaTitle: { fontSize: 14, fontWeight: '700', color: Colors.foreground },
-  peaBody: { fontSize: 12, color: Colors.mutedForeground, marginTop: 4, lineHeight: 18 },
   termsRow: { flexDirection: 'row', gap: 10, marginBottom: 12, alignItems: 'flex-start' },
   termsText: { flex: 1, fontSize: 11, color: Colors.foreground, lineHeight: 16 },
   termsLink: { color: Colors.primary, fontWeight: '700' },

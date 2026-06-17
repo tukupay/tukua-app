@@ -345,7 +345,9 @@ export function buildMobileChatTabBarStylesScript(tabBarPx: number) {
           'margin-bottom:0!important}' +
           'html.tukua-mobile-app [data-input-area].absolute,' +
           'html.tukua-mobile-app .absolute.bottom-0[data-input-area]{' +
-          'bottom:' + pad + '!important;padding-bottom:2px!important}';
+          'bottom:' + pad + '!important;padding-bottom:2px!important}' +
+          'html.tukua-mobile-app [data-mobile-chat-shell]{' +
+          'padding-bottom:' + pad + '!important}';
       } catch (e) {}
       true;
     })();
@@ -500,7 +502,7 @@ export function buildSupabaseRefreshAndNavigateScript(session: Session, targetPa
         }
 
         if (isChat) {
-          await new Promise(function(r) { setTimeout(r, 2400); });
+          await new Promise(function(r) { setTimeout(r, 900); });
           navigateToTarget();
           notify('TUKUA_BOOTSTRAP_OK', { path: target });
         }

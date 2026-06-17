@@ -1,60 +1,16 @@
 import React, { useEffect, useRef } from 'react';
-import { Animated, Platform, StyleSheet, Text, View } from 'react-native';
+import { Animated, StyleSheet, Text, View } from 'react-native';
 import MaskedView from '@react-native-masked-view/masked-view';
 import { LinearGradient } from 'expo-linear-gradient';
 
-type Props = { text: string; compact?: boolean };
+import { RuggedGlowStar } from './RuggedGlowStar';
+
+type Props = { text: string; compact?: boolean; showStar?: boolean; login?: boolean };
 
 /** Two-tone brand gradient with slow drift and rugged translucent glow star. */
 const GRADIENT = ['#1F8B4C', '#7C3AED'] as const;
 
-function RuggedGlowStar({ compact }: { compact?: boolean }) {
-  const size = compact ? 16 : 20;
-  const core = compact ? 8 : 10;
-
-  return (
-    <View style={[styles.starStack, { width: size, height: size }]}>
-      <Text
-        style={[
-          styles.starLayer,
-          {
-            fontSize: size,
-            opacity: 0.18,
-            color: '#FBBF24',
-            transform: [{ rotate: '12deg' }, { translateX: -1 }, { translateY: 1 }],
-          },
-        ]}>
-        ✦
-      </Text>
-      <Text
-        style={[
-          styles.starLayer,
-          {
-            fontSize: size * 0.85,
-            opacity: 0.28,
-            color: '#F59E0B',
-            transform: [{ rotate: '-8deg' }, { translateX: 1 }],
-          },
-        ]}>
-        ✦
-      </Text>
-      <Text
-        style={[
-          styles.starLayer,
-          {
-            fontSize: core,
-            opacity: 0.55,
-            color: 'rgba(251, 191, 36, 0.75)',
-          },
-        ]}>
-        ✦
-      </Text>
-      <View style={styles.starHalo} />
-    </View>
-  );
-}
-
-export function ColorChangingText({ text, compact }: Props) {
+export function ColorChangingText({ text, compact, showStar = false, login = false }: Props) {
   const slideProgress = useRef(new Animated.Value(0)).current;
   const glowProgress = useRef(new Animated.Value(0.35)).current;
 
@@ -85,7 +41,12 @@ export function ColorChangingText({ text, compact }: Props) {
     outputRange: [-3, 3],
   });
 
-  const textStyle = [styles.text, compact && styles.textCompact];
+  const textStyle = [
+    styles.text,
+    compact && styles.textCompact,
+    login && styles.textLogin,
+    login && compact && styles.textLoginCompact,
+  ];
 
   return (
     <Animated.View style={[styles.outer, { transform: [{ translateX }] }]}>
@@ -101,24 +62,26 @@ export function ColorChangingText({ text, compact }: Props) {
           </LinearGradient>
         </MaskedView>
 
-        <Animated.View
-          style={[
-            styles.starBadge,
-            compact && styles.starBadgeCompact,
-            {
-              opacity: glowProgress,
-              transform: [
-                {
-                  scale: glowProgress.interpolate({
-                    inputRange: [0.35, 0.85],
-                    outputRange: [0.94, 1.06],
-                  }),
-                },
-              ],
-            },
-          ]}>
-          <RuggedGlowStar compact={compact} />
-        </Animated.View>
+        {showStar ? (
+          <Animated.View
+            style={[
+              styles.starBadge,
+              compact && styles.starBadgeCompact,
+              {
+                opacity: glowProgress,
+                transform: [
+                  {
+                    scale: glowProgress.interpolate({
+                      inputRange: [0.35, 0.85],
+                      outputRange: [0.94, 1.06],
+                    }),
+                  },
+                ],
+              },
+            ]}>
+            <RuggedGlowStar compact={compact} />
+          </Animated.View>
+        ) : null}
       </View>
     </Animated.View>
   );
@@ -147,6 +110,14 @@ const styles = StyleSheet.create({
     fontSize: 46,
     lineHeight: 50,
   },
+  textLogin: {
+    fontSize: 40,
+    lineHeight: 44,
+  },
+  textLoginCompact: {
+    fontSize: 36,
+    lineHeight: 40,
+  },
   gradientPlaceholder: {
     opacity: 0,
   },
@@ -160,37 +131,5 @@ const styles = StyleSheet.create({
   starBadgeCompact: {
     top: 0,
     right: -16,
-  },
-  starStack: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  starLayer: {
-    position: 'absolute',
-    fontWeight: '700',
-    textAlign: 'center',
-    backgroundColor: 'transparent',
-    ...Platform.select({
-      ios: {
-        textShadowColor: 'rgba(251, 191, 36, 0.9)',
-        textShadowOffset: { width: 0, height: 0 },
-        textShadowRadius: 10,
-      },
-      android: {},
-    }),
-  },
-  starHalo: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 12,
-    backgroundColor: 'rgba(251, 191, 36, 0.08)',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#FBBF24',
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.75,
-        shadowRadius: 8,
-      },
-      android: { elevation: 2 },
-    }),
   },
 });
