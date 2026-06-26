@@ -2,7 +2,7 @@
   "expo": {
     "name": "Tukua",
     "slug": "tukua",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/images/icons/app-icon-1024.png",
     "userInterfaceStyle": "light",
@@ -32,7 +32,7 @@
         "backgroundColor": "#FFFFFF"
       },
       "package": "com.app.tukua",
-      "versionCode": 2,
+      "versionCode": 3,
       "softwareKeyboardLayoutMode": "pan",
       "permissions": [
         "CAMERA",
