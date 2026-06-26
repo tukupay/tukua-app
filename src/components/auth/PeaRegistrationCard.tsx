@@ -2,32 +2,41 @@ import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { DEFAULT_PEA_CONFIG, fetchPeaConfig, formatPeaMessage, PeaConfig } from '../../lib/peaConfig';
+import { PeaStatus } from '../../lib/peaRegistrationFlow';
 import { formatTokenCount } from '../../lib/tokenCounter';
 import { Colors } from '../../theme/yana';
 
 type Props = {
   phone: string;
-  /** Shown below yana copy when mobile registration flow differs (e.g. no inline M-Pesa). */
-  mobileNote?: string;
+  peaStatus?: PeaStatus;
+  peaMessage?: string;
+  peaAmount?: number;
+  loaded?: boolean;
 };
 
-export function PeaRegistrationCard({ phone, mobileNote }: Props) {
+export function PeaRegistrationCard({ phone, peaStatus = 'idle', peaMessage = '', peaAmount, loaded }: Props) {
   const [peaConfig, setPeaConfig] = useState<PeaConfig>(DEFAULT_PEA_CONFIG);
-  const [loaded, setLoaded] = useState(false);
+  const [configLoaded, setConfigLoaded] = useState(loaded ?? false);
 
   useEffect(() => {
+    if (loaded) {
+      setConfigLoaded(true);
+      return;
+    }
     let cancelled = false;
     fetchPeaConfig().then((cfg) => {
       if (!cancelled) setPeaConfig(cfg);
-      if (!cancelled) setLoaded(true);
+      if (!cancelled) setConfigLoaded(true);
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loaded]);
 
-  const explanation = formatPeaMessage(peaConfig.message, peaConfig.amount, peaConfig.free_tokens);
+  const amount = peaAmount ?? peaConfig.amount;
+  const explanation = formatPeaMessage(peaConfig.message, amount, peaConfig.free_tokens);
   const phoneLabel = phone.trim() || 'your phone';
+  const isLoaded = loaded ?? configLoaded;
 
   return (
     <View style={styles.box}>
@@ -36,8 +45,8 @@ export function PeaRegistrationCard({ phone, mobileNote }: Props) {
           <Ionicons name="phone-portrait-outline" size={20} color={Colors.primary} />
         </View>
         <View style={styles.meta}>
-          <Text style={styles.title}>One-time registration fee — KES {peaConfig.amount}</Text>
-          {!loaded ? (
+          <Text style={styles.title}>One-time registration fee — KES {amount}</Text>
+          {!isLoaded ? (
             <View style={styles.loadingRow}>
               <ActivityIndicator size="small" color={Colors.primary} />
               <Text style={styles.loadingText}>Loading registration details…</Text>
@@ -54,11 +63,31 @@ export function PeaRegistrationCard({ phone, mobileNote }: Props) {
                 <Text style={styles.bonusStrong}>{formatTokenCount(peaConfig.free_tokens)} bonus tokens</Text>{' '}
                 once registration is complete.
               </Text>
-              {mobileNote ? <Text style={styles.mobileNote}>{mobileNote}</Text> : null}
             </>
           )}
         </View>
       </View>
+
+      {peaStatus !== 'idle' && peaMessage ? (
+        <View
+          style={[
+            styles.statusBox,
+            peaStatus === 'completed' && styles.statusOk,
+            peaStatus === 'failed' && styles.statusErr,
+          ]}>
+          {(peaStatus === 'sending' || peaStatus === 'pending') && (
+            <ActivityIndicator size="small" color={Colors.primary} style={{ marginRight: 6 }} />
+          )}
+          <Text
+            style={[
+              styles.statusText,
+              peaStatus === 'completed' && styles.statusTextOk,
+              peaStatus === 'failed' && styles.statusTextErr,
+            ]}>
+            {peaMessage}
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -73,45 +102,26 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     gap: 10,
   },
-  row: {
-    flexDirection: 'row',
-    gap: 10,
-    alignItems: 'flex-start',
-  },
-  iconWrap: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: 'rgba(31,139,76,0.12)',
-  },
+  row: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
+  iconWrap: { padding: 8, borderRadius: 8, backgroundColor: 'rgba(31,139,76,0.12)' },
   meta: { flex: 1, minWidth: 0 },
   title: { fontSize: 14, fontWeight: '700', color: Colors.foreground },
-  loadingRow: {
+  loadingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
+  loadingText: { fontSize: 12, color: Colors.mutedForeground },
+  body: { fontSize: 12, color: Colors.mutedForeground, marginTop: 6, lineHeight: 18 },
+  phone: { fontWeight: '700', color: Colors.foreground },
+  bonus: { fontSize: 12, color: Colors.primary, fontWeight: '500', marginTop: 8, lineHeight: 18 },
+  bonusStrong: { fontWeight: '700' },
+  statusBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginTop: 8,
+    padding: 10,
+    borderRadius: 8,
+    backgroundColor: Colors.muted,
   },
-  loadingText: { fontSize: 12, color: Colors.mutedForeground },
-  body: {
-    fontSize: 12,
-    color: Colors.mutedForeground,
-    marginTop: 6,
-    lineHeight: 18,
-  },
-  phone: { fontWeight: '700', color: Colors.foreground },
-  bonus: {
-    fontSize: 12,
-    color: Colors.primary,
-    fontWeight: '500',
-    marginTop: 8,
-    lineHeight: 18,
-  },
-  bonusStrong: { fontWeight: '700' },
-  mobileNote: {
-    fontSize: 11,
-    color: Colors.mutedForeground,
-    marginTop: 8,
-    lineHeight: 16,
-    fontStyle: 'italic',
-  },
+  statusOk: { backgroundColor: 'rgba(31,139,76,0.12)' },
+  statusErr: { backgroundColor: 'rgba(239,68,68,0.1)' },
+  statusText: { flex: 1, fontSize: 12, fontWeight: '600', color: Colors.foreground },
+  statusTextOk: { color: Colors.primary },
+  statusTextErr: { color: Colors.destructive },
 });

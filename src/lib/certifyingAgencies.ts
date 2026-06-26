@@ -33,8 +33,7 @@ export async function fetchCertifyingAgencies(): Promise<CertifyingAgency[]> {
       .select('id, name, slug, short_name, logo_url')
       .eq('is_active', true)
       .order('sort_order', { ascending: true })
-      .order('name', { ascending: true })
-      .limit(12);
+      .order('name', { ascending: true });
 
     if (error || !data?.length) return FALLBACK;
     return (data as CertifyingAgency[]).map(withResolvedLogo);

@@ -6,11 +6,13 @@ import { useAboutWeb } from '../../context/AboutWebContext';
 import {
   buildPublicPageNavigateScript,
   buildPublicPagePreloadScript,
+  buildSessionResyncScript,
   isMainFrameWebViewRequest,
   shouldAllowWebViewNavigation,
   tukuaSpaShellUrl,
 } from '../../lib/webviewAuth';
 import { log } from '../../lib/logger';
+import { getWebViewMediaProps, WEBVIEW_MEDIA_INJECT_JS } from '../../lib/webViewMedia';
 import { Colors } from '../../theme/yana';
 
 const TOP_BAR_HEIGHT = 56;
@@ -68,8 +70,12 @@ export function SharedPublicWebLayer() {
     return () => clearTimeout(timer);
   }, [loading, publicPath]);
 
+  useEffect(() => {
+    if (!session || !shellReadyRef.current || !webRef.current) return;
+    webRef.current.injectJavaScript(buildSessionResyncScript(session));
+  }, [session?.access_token, session]);
+
   if (!session || !preInject) return null;
-  if (!publicPath && !warmedRef.current) return null;
 
   const visible = !!publicPath;
 
@@ -112,6 +118,8 @@ export function SharedPublicWebLayer() {
           warmedRef.current = true;
           if (publicPath) {
             navigateToPage(publicPath, 'bootstrap shell');
+          } else {
+            setLoading(false);
           }
         }}
         onNavigationStateChange={handleNav}
@@ -129,7 +137,8 @@ export function SharedPublicWebLayer() {
           }
           return allowed;
         }}
-        allowsFullscreenVideo
+        {...getWebViewMediaProps()}
+        injectedJavaScript={WEBVIEW_MEDIA_INJECT_JS}
         onError={() => setLoading(false)}
         javaScriptEnabled
         domStorageEnabled

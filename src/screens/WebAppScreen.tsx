@@ -7,6 +7,7 @@ import { TAB_BAR_BODY_HEIGHT } from '../constants/layout';
 import {
   buildFastTabNavigateScript,
   buildMobileChatTabBarStylesScript,
+  buildMobileInPageBackScript,
   buildPreloadSessionScript,
   buildSessionResyncScript,
   buildSpaNavigateScript,
@@ -22,6 +23,7 @@ import { historyKeyFromUrl, TabHistoryStack } from '../lib/webviewHistory';
 import { useAuth } from '../context/AuthContext';
 import { useWebViewControl } from '../context/WebViewControlContext';
 import { log } from '../lib/logger';
+import { getWebViewMediaProps, WEBVIEW_MEDIA_INJECT_JS } from '../lib/webViewMedia';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const TAB_FOCUS_AUTH_CHECK_MS = 60_000;
@@ -256,11 +258,8 @@ export function WebAppScreen({ path, label }: Props) {
   const handleHardwareBack = useCallback(() => {
     if (!isFocused) return false;
 
-    if (canGoBack) {
-      pendingWebBackRef.current = true;
-      webRef.current?.goBack();
-      return true;
-    }
+    // Close artifact / live-stream overlays — not iframe history inside embeds.
+    webRef.current?.injectJavaScript(`${buildMobileInPageBackScript()}\ntrue;`);
 
     if (historyRef.current.canPop()) {
       const prev = historyRef.current.pop();
@@ -273,6 +272,14 @@ export function WebAppScreen({ path, label }: Props) {
 
     if (!isAtTabRoot(currentPathname, path)) {
       goToTabRoot();
+      return true;
+    }
+
+    // Native WebView back only for external full-page history (e.g. Jitsi), not iframe embeds on /chat.
+    const top = historyRef.current.peek();
+    if (canGoBack && !top.spa && isAtTabRoot(currentPathname, path)) {
+      pendingWebBackRef.current = true;
+      webRef.current?.goBack();
       return true;
     }
 
@@ -578,7 +585,6 @@ export function WebAppScreen({ path, label }: Props) {
           return allowed;
         }}
         nestedScrollEnabled={Platform.OS === 'android'}
-        allowsFullscreenVideo
         onMessage={(e) => handleWebMessage(e.nativeEvent.data)}
         injectedJavaScriptBeforeContentLoaded={preInject}
         cacheEnabled
@@ -587,8 +593,8 @@ export function WebAppScreen({ path, label }: Props) {
         domStorageEnabled
         sharedCookiesEnabled
         thirdPartyCookiesEnabled={Platform.OS === 'android'}
-        mediaPlaybackRequiresUserAction={false}
-        allowsInlineMediaPlayback
+        {...getWebViewMediaProps()}
+        injectedJavaScript={WEBVIEW_MEDIA_INJECT_JS}
         geolocationEnabled
         setSupportMultipleWindows={false}
       />

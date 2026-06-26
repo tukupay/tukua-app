@@ -15,6 +15,9 @@ export type UserProfile = {
   county?: string;
   phone?: string;
   avatarUrl?: string;
+  activationStatus?: string | null;
+  approvalStatus?: string | null;
+  accountType?: string | null;
 };
 
 export async function saveSession(accessToken: string, refreshToken: string) {
@@ -123,6 +126,19 @@ export async function signUpWithEmail(
   return data;
 }
 
+export async function fetchProfileGate(userId: string) {
+  const { data } = await supabase
+    .from('profiles')
+    .select('activation_status, approval_status, account_type')
+    .eq('id', userId)
+    .maybeSingle();
+  return data as {
+    activation_status?: string | null;
+    approval_status?: string | null;
+    account_type?: string | null;
+  } | null;
+}
+
 export async function fetchProfile(userId: string): Promise<UserProfile | null> {
   const { data } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
   const user = (await supabase.auth.getUser()).data.user;
@@ -135,6 +151,9 @@ export async function fetchProfile(userId: string): Promise<UserProfile | null> 
     county: data?.county ?? user.user_metadata?.county,
     phone: data?.phone ?? user.user_metadata?.phone,
     avatarUrl: data?.avatar_url,
+    activationStatus: data?.activation_status ?? null,
+    approvalStatus: data?.approval_status ?? null,
+    accountType: data?.account_type ?? null,
   };
   await SecureStore.setItemAsync(PROFILE_KEY, JSON.stringify(profile));
   return profile;

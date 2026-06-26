@@ -34,6 +34,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { LogoPartners } from '../components/auth/LogoPartners';
 
 import { CertifyingAgenciesCarousel } from '../components/auth/CertifyingAgenciesCarousel';
+import { NewsHighlight } from '../components/auth/NewsHighlight';
 
 import { AuthTextField } from '../components/auth/AuthTextField';
 
@@ -41,7 +42,7 @@ import { AuthButton } from '../components/auth/AuthButton';
 
 import { RootStackParamList } from '../navigation/types';
 
-import { signInWithEmail, fetchProfile, sendPasswordReset } from '../lib/auth';
+import { signInWithEmail, fetchProfile, fetchProfileGate, sendPasswordReset, signOut } from '../lib/auth';
 
 import { useAuth } from '../context/AuthContext';
 
@@ -132,21 +133,37 @@ export function LoginScreen({ navigation }: Props) {
 
 
   const finishLogin = async (loginEmail: string, loginPass: string) => {
-
     const { user } = await signInWithEmail(loginEmail.trim(), loginPass);
+    if (!user) return;
 
-    if (user) {
-
-      await fetchProfile(user.id);
-
-      await refreshProfile();
-
-      captureUserLocation().catch(() => {});
-
-      registerForPushNotifications().catch(() => {});
-
+    const gate = await fetchProfileGate(user.id);
+    if (gate?.account_type === 'organization' && gate?.approval_status === 'pending') {
+      await signOut();
+      showDialog({
+        title: 'Pending approval',
+        message: "Your organisation account is pending approval. We'll contact you within 48 hours.",
+        variant: 'warning',
+        icon: 'business-outline',
+      });
+      return;
     }
 
+    if (gate?.activation_status === 'pending_payment') {
+      await fetchProfile(user.id);
+      await refreshProfile();
+      showDialog({
+        title: 'Complete registration',
+        message: 'Complete your one-time registration fee to activate your account. Open Profile to pay.',
+        variant: 'info',
+        icon: 'card-outline',
+      });
+      return;
+    }
+
+    await fetchProfile(user.id);
+    await refreshProfile();
+    captureUserLocation().catch(() => {});
+    registerForPushNotifications().catch(() => {});
   };
 
 
@@ -500,6 +517,8 @@ export function LoginScreen({ navigation }: Props) {
 
 
             <View style={styles.institutionFooter}>
+
+              <NewsHighlight />
 
               <Text style={styles.partnerLabel}>Partner Institutions</Text>
 

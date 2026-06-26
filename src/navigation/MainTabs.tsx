@@ -72,6 +72,8 @@ function BiometricGate({ children }: { children: React.ReactNode }) {
 function MainTabNavigator() {
   const insets = useSafeAreaInsets();
   const { setActiveTabPath, notifyTabFocused } = useWebViewControl();
+  const { profile } = useAuth();
+  const profileWebPath = profile?.activationStatus === 'pending_payment' ? '/activate' : '/profile';
   const tabBarHeight = TAB_BAR_BODY_HEIGHT + insets.bottom;
 
   useEffect(() => {
@@ -133,7 +135,7 @@ function MainTabNavigator() {
       </Tab.Screen>
       <Tab.Screen name="About" options={{ title: 'About' }} component={AboutStack} />
       <Tab.Screen name="Profile" options={{ title: 'Profile' }}>
-        {() => <WebAppScreen path="/profile" label="Profile" />}
+        {() => <WebAppScreen path={profileWebPath} label="Profile" key={profileWebPath} />}
       </Tab.Screen>
     </Tab.Navigator>
   );

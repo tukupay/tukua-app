@@ -113,10 +113,14 @@
       ]
     ],
     "extra": {
+      "expo-navigation-bar": {
+        "backgroundColor": "#FFFFFF",
+        "barStyle": "dark"
+      },
       "eas": {
-        "projectId": "b66a093d-df11-4fe9-95bd-a471769c2504"
+        "projectId": "5352967a-7a63-49ed-98ba-4c5321bc24e0"
       }
     },
-    "owner": "tukupay"
+    "owner": "kanyoroh"
   }
 }

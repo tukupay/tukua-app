@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -20,13 +20,23 @@ import { GlassAuthCard } from '../components/landing/GlassAuthCard';
 import { AuthTextField } from '../components/auth/AuthTextField';
 import { CountyPicker } from '../components/auth/CountyPicker';
 import { PeaRegistrationCard } from '../components/auth/PeaRegistrationCard';
+import { DEFAULT_PEA_CONFIG, fetchPeaConfig, PeaConfig } from '../lib/peaConfig';
+import {
+  checkBlockedPhone,
+  finalizePeaAccount,
+  initiatePeaPayment,
+  logRegistrationAttempt,
+  pollPeaPayment,
+  PeaStatus,
+  RegistrationForm,
+} from '../lib/peaRegistrationFlow';
+import { cachePasswordForBiometrics } from '../lib/biometricStorage';
 import { Colors } from '../theme/yana';
 import { RootStackParamList } from '../navigation/types';
-import { signUpWithEmail, fetchProfile } from '../lib/auth';
+import { fetchProfile } from '../lib/auth';
 import { useAuth } from '../context/AuthContext';
 import { useDialog } from '../context/DialogContext';
 import { captureUserLocation } from '../lib/location';
-import { cachePasswordForBiometrics } from '../lib/biometricStorage';
 import { supabase } from '../lib/supabase';
 import { log } from '../lib/logger';
 
@@ -92,9 +102,24 @@ export function RegisterScreen({ navigation }: Props) {
   const [error, setError] = useState('');
   const [orgTypes, setOrgTypes] = useState<OrgType[]>([]);
   const [orgPickerOpen, setOrgPickerOpen] = useState(false);
+  const [peaConfig, setPeaConfig] = useState<PeaConfig>(DEFAULT_PEA_CONFIG);
+  const [peaConfigLoaded, setPeaConfigLoaded] = useState(false);
+  const [peaStatus, setPeaStatus] = useState<PeaStatus>('idle');
+  const [peaMessage, setPeaMessage] = useState('');
+  const [peaCheckoutId, setPeaCheckoutId] = useState<string | null>(null);
+  const attemptIdRef = useRef<string | null>(null);
+  const formRef = useRef<RegistrationForm | null>(null);
 
   const isOrg = accountType === 'organization';
   const selectedType = ACCOUNT_TYPES.find((t) => t.id === accountType);
+  const peaAmount = peaConfig.amount;
+
+  useEffect(() => {
+    fetchPeaConfig().then((cfg) => {
+      setPeaConfig(cfg);
+      setPeaConfigLoaded(true);
+    });
+  }, []);
 
   useEffect(() => {
     supabase
@@ -119,73 +144,230 @@ export function RegisterScreen({ navigation }: Props) {
     return base && orgSubtype.length > 0 && orgName.trim().length >= 2;
   }, [fullName, email, phone, password, confirmPassword, agreedToTerms, isOrg, orgSubtype, orgName]);
 
-  const handleRegister = async () => {
-    if (!canRegister) {
-      setError('Please fill all required fields and accept the terms.');
+  const buildForm = (): RegistrationForm => ({
+    fullName,
+    email: email.trim(),
+    password,
+    phone,
+    idNumber,
+    county,
+    accountType,
+    isOrg,
+    orgSubtype,
+    orgName,
+    businessLocation,
+  });
+
+  const validateForm = (): string | null => {
+    if (!fullName.trim() || !email.trim() || !password || !phone.trim()) {
+      return 'Please fill in all required fields';
+    }
+    if (phone.replace(/\D/g, '').length < 9) return 'Please enter a valid phone number';
+    if (password.length < 6) return 'Password must be at least 6 characters';
+    if (password !== confirmPassword) return 'Passwords do not match';
+    if (isOrg && (!orgSubtype || !orgName.trim())) {
+      return 'Organization name and type are required';
+    }
+    if (!agreedToTerms) return 'You must agree to the Terms & Conditions';
+    return null;
+  };
+
+  const finalizeAfterPayment = async (checkoutId: string | null) => {
+    const form = formRef.current;
+    if (!form) return;
+    setPeaMessage('✓ Phone verified! Finishing setup…');
+    setPeaStatus('completed');
+    const result = await finalizePeaAccount(form, checkoutId, attemptIdRef.current);
+    if (!result.ok || !result.userId) {
+      setError(result.error ?? 'Could not create account');
+      setPeaStatus('failed');
+      setLoading(false);
+      return;
+    }
+    await cachePasswordForBiometrics(form.password);
+    await fetchProfile(result.userId);
+    await refreshProfile();
+    captureUserLocation().catch(() => {});
+    if (form.isOrg) {
+      showDialog({
+        title: 'Registration submitted',
+        message: 'Your organisation account is pending approval. We will contact you within 48 hours.',
+        variant: 'success',
+        icon: 'business-outline',
+        buttons: [{ text: 'OK', onPress: () => navigation.navigate('Login') }],
+      });
+    } else {
+      log.info('Register', 'PEA success — session active');
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    if (!peaCheckoutId || peaStatus !== 'pending') return;
+    let cancelled = false;
+    void (async () => {
+      const poll = await pollPeaPayment(peaCheckoutId);
+      if (cancelled) return;
+      if (poll.status === 'completed') {
+        await logRegistrationAttempt(buildForm(), { status: 'paid' }, attemptIdRef.current);
+        await finalizeAfterPayment(peaCheckoutId);
+        return;
+      }
+      if (poll.status === 'failed') {
+        setPeaStatus('failed');
+        setPeaMessage(poll.message ?? 'Payment failed or cancelled. Try again.');
+        await logRegistrationAttempt(
+          buildForm(),
+          { status: 'failed', failure_reason: poll.message ?? 'Payment failed' },
+          attemptIdRef.current,
+        );
+        setLoading(false);
+        return;
+      }
+      setPeaStatus('failed');
+      setPeaMessage(poll.message ?? 'Payment timed out. Try again.');
+      setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [peaCheckoutId, peaStatus]);
+
+  const beginRegistrationPayment = async () => {
+    const validationError = validateForm();
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+    const form = buildForm();
+    formRef.current = form;
+    setLoading(true);
+    setError('');
+
+    const blocked = await checkBlockedPhone(form.phone);
+    if (blocked) {
+      setLoading(false);
+      setError('This phone number is not allowed to register. Contact support if this is a mistake.');
+      attemptIdRef.current = await logRegistrationAttempt(form, {
+        status: 'blocked',
+        failure_reason: blocked,
+      });
+      return;
+    }
+
+    attemptIdRef.current = await logRegistrationAttempt(form, { status: 'initiated' });
+
+    try {
+      setPeaStatus('sending');
+      setPeaMessage('Sending payment prompt to your phone…');
+      const stk = await initiatePeaPayment(form, peaAmount);
+      if (!stk.ok) {
+        if (stk.code === 'account_exists' || stk.code === 'phone_already_activated') {
+          setPeaStatus('idle');
+          setError(stk.error ?? 'This account or phone is already registered.');
+          await logRegistrationAttempt(form, { status: 'duplicate_blocked', failure_reason: stk.code }, attemptIdRef.current);
+        } else {
+          setPeaStatus('failed');
+          setPeaMessage(stk.error ?? 'Payment failed');
+          setError(stk.error ?? 'Payment failed');
+          await logRegistrationAttempt(form, { status: 'failed', failure_reason: stk.error }, attemptIdRef.current);
+        }
+        setLoading(false);
+        return;
+      }
+
+      setPeaCheckoutId(stk.checkoutId ?? null);
+      setPeaStatus('pending');
+      setPeaMessage(
+        stk.alreadyPaid
+          ? 'Payment already received — finishing your account…'
+          : stk.reused
+            ? 'STK push already on your phone — enter your M-Pesa PIN.'
+            : `Check your phone and enter your M-Pesa PIN to confirm KES ${peaAmount}. Your account will be created once payment is confirmed.`,
+      );
+      await logRegistrationAttempt(
+        form,
+        {
+          status: stk.reused ? 'pea_reused' : 'stk_sent',
+          checkout_request_id: stk.checkoutId,
+        },
+        attemptIdRef.current,
+      );
+
+      if (stk.alreadyPaid && stk.checkoutId) {
+        await logRegistrationAttempt(form, { status: 'paid' }, attemptIdRef.current);
+        await finalizeAfterPayment(stk.checkoutId);
+        return;
+      }
+    } catch (err: any) {
+      setPeaStatus('failed');
+      setError(err.message ?? 'Registration failed');
+      setLoading(false);
+    }
+  };
+
+  const handleRemindMe = async () => {
+    const validationError = validateForm();
+    if (validationError) {
+      setError(validationError);
       return;
     }
     setLoading(true);
     setError('');
+    const form = buildForm();
+    const parts = form.fullName.trim().split(' ');
+    const role = form.isOrg ? form.orgSubtype : 'individual';
     try {
-      const parts = fullName.trim().split(' ');
-      const role = isOrg ? orgSubtype : 'individual';
-      const metadata: Record<string, string> = {
-        full_name: fullName.trim(),
-        first_name: parts[0] ?? '',
-        last_name: parts.slice(1).join(' ') ?? '',
+      const { data, error: signUpErr } = await supabase.auth.signUp({
+        email: form.email,
+        password: form.password,
+        options: {
+          data: {
+            full_name: form.fullName.trim(),
+            first_name: parts[0] ?? '',
+            last_name: parts.slice(1).join(' ') ?? '',
+            role,
+            account_type: form.accountType,
+            phone: form.phone,
+            phone_number: form.phone,
+            county: form.county || null,
+          },
+        },
+      });
+      if (signUpErr) throw signUpErr;
+      const userId = data.user?.id;
+      if (!userId) throw new Error('Account could not be created');
+
+      await (supabase as any).from('profiles').update({
         role,
-        account_type: accountType,
-        phone,
-        phone_number: phone,
-        county: county.trim() || 'Nairobi',
-        id_number: idNumber.trim(),
-      };
-      if (isOrg) {
-        metadata.org_subtype = orgSubtype;
-        metadata.organization_name = orgName.trim();
-        metadata.business_location = businessLocation.trim();
-      }
+        full_name: form.fullName.trim(),
+        phone: form.phone,
+        phone_number: form.phone,
+        account_type: form.accountType,
+        county: form.county || null,
+        approval_status: form.isOrg ? 'pending' : 'approved',
+        activation_status: 'pending_payment',
+        registration_payment_status: 'unpaid',
+      }).eq('id', userId);
 
-      log.info('Register', 'submitting', { email, accountType });
-      const data = await signUpWithEmail(email.trim(), password, metadata);
-      await cachePasswordForBiometrics(password);
+      supabase.functions.invoke('send-registration-welcome', { body: { user_id: userId, mode: 'deferred' } }).catch(() => {});
 
-      if (data.session && data.user) {
-        await fetchProfile(data.user.id);
-        await refreshProfile();
-        captureUserLocation().catch(() => {});
-        if (isOrg) {
-          showDialog({
-            title: 'Registration submitted',
-            message: 'Your organisation account is pending approval. We will contact you within 48 hours.',
-            variant: 'success',
-            icon: 'business-outline',
-            buttons: [{ text: 'OK', onPress: () => navigation.navigate('Login') }],
-          });
-        } else {
-          log.info('Register', 'success — session active, opening app');
-        }
-        return;
-      }
-
-      if (data.user && !data.session) {
-        showDialog({
-          title: 'Check your email',
-          message: 'We sent a confirmation link. Open it, then sign in to continue.',
-          variant: 'info',
-          icon: 'mail-outline',
-          buttons: [{ text: 'Sign in', onPress: () => navigation.navigate('Login') }],
-        });
-        return;
-      }
-
-      setError('Could not create account. Please try again.');
+      showDialog({
+        title: 'Account saved',
+        message: 'We created your account. Sign in anytime to complete the one-time registration fee and activate.',
+        variant: 'info',
+        icon: 'mail-outline',
+        buttons: [{ text: 'Sign in', onPress: () => navigation.navigate('Login') }],
+      });
     } catch (err: any) {
-      log.error('Register', 'failed', err?.message);
-      setError(err.message ?? 'Could not create account');
+      setError(err.message ?? 'Could not save account');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRegister = async () => {
+    await beginRegistrationPayment();
   };
 
   const openTerms = () => Linking.openURL(`https://tukua.ai/terms?type=${accountType}`);
@@ -334,7 +516,10 @@ export function RegisterScreen({ navigation }: Props) {
 
                   <PeaRegistrationCard
                     phone={phone}
-                    mobileNote="On mobile we create your account directly — you can complete phone activation later in Profile."
+                    peaStatus={peaStatus}
+                    peaMessage={peaMessage}
+                    peaAmount={peaAmount}
+                    loaded={peaConfigLoaded}
                   />
 
                   <TouchableOpacity style={styles.termsRow} onPress={() => setAgreedToTerms((v) => !v)}>
@@ -370,12 +555,26 @@ export function RegisterScreen({ navigation }: Props) {
                   {loading ? (
                     <ActivityIndicator color={Colors.primary} style={{ marginTop: 12 }} />
                   ) : (
-                    <TouchableOpacity
-                      style={[styles.primaryBtn, !canRegister && styles.btnDisabled]}
-                      onPress={handleRegister}
-                      disabled={!canRegister}>
-                      <Text style={styles.primaryBtnText}>Create Account</Text>
-                    </TouchableOpacity>
+                    <>
+                      <TouchableOpacity
+                        style={[styles.primaryBtn, (!canRegister || !peaConfigLoaded || peaStatus === 'pending' || peaStatus === 'sending') && styles.btnDisabled]}
+                        onPress={handleRegister}
+                        disabled={!canRegister || !peaConfigLoaded || peaStatus === 'pending' || peaStatus === 'sending' || peaStatus === 'completed'}>
+                        <Text style={styles.primaryBtnText}>
+                          {peaStatus === 'sending'
+                            ? 'Sending M-Pesa prompt…'
+                            : peaStatus === 'pending'
+                              ? 'Waiting for your PIN…'
+                              : `Complete registration — KES ${peaAmount}`}
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.remindBtn, (loading || peaStatus === 'pending' || peaStatus === 'sending') && styles.btnDisabled]}
+                        onPress={handleRemindMe}
+                        disabled={loading || peaStatus === 'pending' || peaStatus === 'sending'}>
+                        <Text style={styles.remindBtnText}>Remind me later — save without paying now</Text>
+                      </TouchableOpacity>
+                    </>
                   )}
                 </>
               )}
@@ -515,6 +714,17 @@ const styles = StyleSheet.create({
   },
   btnDisabled: { opacity: 0.5 },
   primaryBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  remindBtn: {
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+  },
+  remindBtnText: { fontSize: 12, fontWeight: '600', color: Colors.mutedForeground, textAlign: 'center', paddingHorizontal: 8 },
   loginLink: { marginTop: 20, color: Colors.primary, fontWeight: '700', fontSize: 14 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   modalSheet: {

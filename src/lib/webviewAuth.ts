@@ -124,20 +124,41 @@ function notifyMobileSessionEvent() {
   `;
 }
 
-/** Report SPA pathname changes back to React Native (pushState does not always fire onNavigationStateChange). */
-function notifyEmbedBackScript() {
+/** Close in-page overlays (artifact panel, sidebar) — never iframe / browser history. */
+export function buildMobileInPageBackScript() {
+  return `
+(function() {
+  try {
+    window.dispatchEvent(new CustomEvent('TUKUA_MOBILE_BACK'));
+    window.dispatchEvent(new CustomEvent('TUKUA_MOBILE_CLOSE_SIDEBAR'));
+    var backs = document.querySelectorAll('[aria-label="Back"]');
+    for (var i = backs.length - 1; i >= 0; i--) {
+      var btn = backs[i];
+      if (btn.offsetParent === null) continue;
+      var panel = btn.closest('[class*="max-md:fixed"]');
+      if (panel) { btn.click(); return true; }
+    }
+    var overlays = document.querySelectorAll('div.fixed.inset-0');
+    for (var j = 0; j < overlays.length; j++) {
+      var el = overlays[j];
+      if (el.className && el.className.indexOf('bg-black') !== -1 && el.offsetParent !== null) {
+        el.click();
+        return true;
+      }
+    }
+  } catch (e) {}
+  return false;
+})();
+`;
+}
+
+function notifyMobileBackBridgeScript() {
   return `
     (function() {
-      if (window.__TUKUA_EMBED_BACK__) return;
-      window.__TUKUA_EMBED_BACK__ = true;
-      window.__TUKUA_TRY_EMBED_BACK__ = function() {
-        try {
-          if (window.history.length > 1) {
-            window.history.back();
-            return true;
-          }
-        } catch (e) {}
-        return false;
+      if (window.__TUKUA_MOBILE_BACK_BRIDGE__) return;
+      window.__TUKUA_MOBILE_BACK_BRIDGE__ = true;
+      window.__TUKUA_CLOSE_IN_PAGE_OVERLAYS__ = function() {
+        ${buildMobileInPageBackScript().trim()}
       };
     })();
   `;
@@ -236,7 +257,7 @@ export function buildSessionStorageScript(session: Session) {
         ${compatLine}
         ${notifyAppSourceEvent()}
         ${notifySpaRouteSyncScript()}
-        ${notifyEmbedBackScript()}
+        ${notifyMobileBackBridgeScript()}
         ${dispatchStorageSync(SUPABASE_STORAGE_KEY)}
         ${notifyMobileSessionEvent()}
         ${buildSetSessionViaFetchScript()}

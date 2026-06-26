@@ -23,6 +23,7 @@ import { AppNavigator } from './src/navigation/AppNavigator';
 import { AuthProvider } from './src/context/AuthContext';
 import { DialogProvider } from './src/context/DialogContext';
 import { SplashLoadingScreen } from './src/components/SplashLoadingScreen';
+import { configureWebViewAudioSession } from './src/lib/webViewMedia';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -52,6 +53,7 @@ export default function App() {
 
   useEffect(() => {
     onLayoutRootView();
+    void configureWebViewAudioSession();
   }, [onLayoutRootView]);
 
   if (!appReady) {
