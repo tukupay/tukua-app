@@ -627,3 +627,129 @@ export function buildClearChatBootScript() {
     })();
   `;
 }
+
+/**
+ * Cosmetics for the registration WebView: hide the web top nav + footer (the
+ * native screen already has its own header), pull the card up, elevate it and
+ * make it look like a native mobile sheet, and enlarge tap targets so every
+ * button is comfortably tappable. Injected once — the <style> lives in <head>
+ * and survives SPA route changes.
+ */
+export function buildRegisterCosmeticsScript() {
+  return `
+    (function() {
+      try {
+        var id = 'tukua-reg-cosmetics';
+        if (document.getElementById(id)) return;
+        var s = document.createElement('style');
+        s.id = id;
+        s.textContent = [
+          // Hide web chrome — native header/back button replaces it.
+          '[data-tukua-top-nav],.glass-nav{display:none!important}',
+          'footer{display:none!important}',
+          // Hide the floating mobile bottom nav pill if it ever renders here.
+          'nav[class~="bottom-2"],[data-mobile-bottom-nav]{display:none!important}',
+          '.events-ticker,[data-events-ticker]{display:none!important}',
+          // Remove the big top gap that cleared the (now hidden) fixed nav.
+          '[class~="pt-20"]{padding-top:14px!important}',
+          '[class~="py-6"]{padding-top:14px!important;padding-bottom:20px!important}',
+          // Elevated, rounded, mobile-sheet card.
+          '.glass-panel{background:#fff!important;border-radius:22px!important;',
+          'box-shadow:0 14px 38px rgba(16,24,40,0.16),0 2px 8px rgba(16,24,40,0.08)!important;',
+          'border:1px solid rgba(16,24,40,0.06)!important;padding-left:16px!important;padding-right:16px!important}',
+          // Comfortable, full-width primary actions + tap targets on phones.
+          'button{min-height:46px}',
+          '@media (max-width:640px){',
+          '  .glass-panel{max-width:100%!important;width:100%!important}',
+          '  input,select,textarea{font-size:16px!important;min-height:46px!important}',
+          '  .glass-panel button[type="submit"],',
+          '  .glass-panel button.w-full{width:100%!important;min-height:50px!important;',
+          '  font-size:16px!important;border-radius:14px!important}',
+          '}'
+        ].join('');
+        (document.head || document.documentElement).appendChild(s);
+      } catch (e) {}
+      true;
+    })();
+  `;
+}
+
+/**
+ * Runs before content loads on the registration WebView. Clears any stale
+ * web session ONCE (so the register form shows instead of bouncing a
+ * previously cached user to /chat) and forces WEB source so the web
+ * MobileAppRouteGuard does NOT redirect /register -> /chat (that redirect was
+ * the cause of the register screen "flickering" into chat). The native app
+ * only tags itself as the mobile app once it owns real tabs after sign-up.
+ * The one-time clear guard protects the fresh session created after sign-up
+ * from being wiped on any post-signup full reload.
+ */
+export function buildRegisterPreloadScript() {
+  const compatClear = COMPAT_SESSION_KEY
+    ? `localStorage.removeItem('${COMPAT_SESSION_KEY}');`
+    : '';
+  return `
+    (function() {
+      try {
+        if (!sessionStorage.getItem('tukua_reg_init')) {
+          localStorage.removeItem('${SUPABASE_STORAGE_KEY}');
+          localStorage.removeItem('${TUKUA_SESSION_KEY}');
+          ${compatClear}
+          sessionStorage.setItem('tukua_reg_init', '1');
+        }
+        localStorage.setItem('${TUKUA_APP_SOURCE_KEY}', '${TUKUA_APP_SOURCE_WEB}');
+        window.__TUKUA_APP_SOURCE__ = '${TUKUA_APP_SOURCE_WEB}';
+        document.documentElement.dataset.tukuaSource = '${TUKUA_APP_SOURCE_WEB}';
+        document.documentElement.classList.remove('tukua-mobile-app');
+      } catch (e) {}
+      true;
+    })();
+  `;
+}
+
+/**
+ * Client-navigate the shell to a target auth route (default /register) and
+ * install a one-shot watcher that reports the Supabase session back to native
+ * the moment web registration/sign-in establishes one. This makes the whole
+ * registration flow the canonical web flow while the native app simply adopts
+ * the resulting session.
+ */
+export function buildRegisterWatchScript(targetPath = '/register') {
+  const target = targetPath.startsWith('/') ? targetPath : `/${targetPath}`;
+  return `
+    (function() {
+      try {
+        var target = ${JSON.stringify(target)};
+        if (window.location.pathname !== target) {
+          window.history.replaceState({}, '', target);
+          window.dispatchEvent(new PopStateEvent('popstate', { state: history.state }));
+          window.dispatchEvent(new CustomEvent('tukua-navigate', { detail: { path: target } }));
+        }
+        if (window.__TUKUA_REG_WATCH__) return;
+        window.__TUKUA_REG_WATCH__ = true;
+        var key = '${SUPABASE_STORAGE_KEY}';
+        var seen = null;
+        setInterval(function() {
+          try {
+            var raw = localStorage.getItem(key);
+            if (!raw) return;
+            var parsed = JSON.parse(raw);
+            if (!parsed || !parsed.access_token || !parsed.refresh_token) return;
+            var uid = parsed.user && parsed.user.id;
+            if (!uid) return;
+            if (seen === parsed.access_token) return;
+            seen = parsed.access_token;
+            window.ReactNativeWebView && window.ReactNativeWebView.postMessage(
+              JSON.stringify({
+                type: 'TUKUA_SESSION_UPDATED',
+                access_token: parsed.access_token,
+                refresh_token: parsed.refresh_token
+              })
+            );
+          } catch (e) {}
+        }, 1000);
+      } catch (e) {}
+      true;
+    })();
+  `;
+}
