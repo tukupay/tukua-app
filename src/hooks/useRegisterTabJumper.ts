@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useIsFocused, useNavigation } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { useWebViewControl } from '../context/WebViewControlContext';
 import { MainTabParamList } from '../navigation/types';
@@ -21,15 +21,17 @@ function resolveTabNavigation(navigation: NavLike): BottomTabNavigationProp<Main
   return undefined;
 }
 
-/** Registers bottom-tab navigation for the native header menu (must run inside Tab.Navigator). */
+/**
+ * Registers bottom-tab navigation for header / dashboard jumps.
+ * Must stay registered even when Dashboard (non-WebView) is focused —
+ * previously we only registered on focused web tabs, so Tokens → Profile
+ * from Dashboard was a no-op.
+ */
 export function useRegisterTabJumper() {
   const navigation = useNavigation();
-  const isFocused = useIsFocused();
   const { registerTabJumper } = useWebViewControl();
 
   useEffect(() => {
-    if (!isFocused) return;
-
     const tabNav = resolveTabNavigation(navigation as unknown as NavLike);
     if (!tabNav) {
       log.warn('TabJumper', 'tab navigator not found');
@@ -43,5 +45,5 @@ export function useRegisterTabJumper() {
         log.warn('TabJumper', 'navigate failed', { tab, error: String(error) });
       }
     });
-  }, [isFocused, navigation, registerTabJumper]);
+  }, [navigation, registerTabJumper]);
 }

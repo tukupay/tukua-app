@@ -10,19 +10,26 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { useDialog } from '../../context/DialogContext';
 import { useWebViewControl } from '../../context/WebViewControlContext';
 import { toggleSavageMode } from '../../lib/userPreferences';
 import { biometricEnableMessage, enableBiometrics } from '../../lib/biometrics';
-import { TukuaBrandMark } from './TukuaBrandMark';
+import { hideSystemStatusBar } from '../ImmersiveSystemBars';
 import { ProfileAvatar } from './ProfileAvatar';
+import { TokenBalancePill } from './TokenBalancePill';
 import { Colors } from '../../theme/yana';
+import { FLOATING_HEADER_BODY as NATIVE_HEADER_BODY_HEIGHT } from '../../constants/layout';
 
 const SAVAGE_ON_OPACITY = 1;
 const SAVAGE_OFF_OPACITY = 0.22;
 
+export { NATIVE_HEADER_BODY_HEIGHT };
+
 export function NativeAppHeader() {
+  const insets = useSafeAreaInsets();
   const { profile, logout, session, savageMode, setSavageMode } = useAuth();
   const { showDialog } = useDialog();
   const { navigate, sendChatCommand, jumpToTab } = useWebViewControl();
@@ -30,11 +37,18 @@ export function NativeAppHeader() {
   const savageOpacity = useRef(new Animated.Value(SAVAGE_OFF_OPACITY)).current;
 
   const displayName = profile?.fullName?.trim() || profile?.email?.split('@')[0] || 'Account';
-  const avatarUrl =
-    profile?.avatarUrl ||
-    (session?.user?.user_metadata?.avatar_url as string | undefined) ||
-    (session?.user?.user_metadata?.profile_image_url as string | undefined) ||
-    null;
+  const avatarUrl = useMemo(() => {
+    const candidates = [
+      profile?.avatarUrl,
+      session?.user?.user_metadata?.avatar_url as string | undefined,
+      session?.user?.user_metadata?.profile_image_url as string | undefined,
+      session?.user?.user_metadata?.picture as string | undefined,
+    ];
+    for (const c of candidates) {
+      if (typeof c === 'string' && c.trim()) return c.trim();
+    }
+    return null;
+  }, [profile?.avatarUrl, session?.user?.user_metadata]);
 
   useEffect(() => {
     if (!session?.user) {
@@ -91,6 +105,7 @@ export function NativeAppHeader() {
     setOpen(false);
     void (async () => {
       const result = await enableBiometrics(email);
+      hideSystemStatusBar();
       if (result.ok) {
         showDialog({
           title: 'Biometrics enabled',
@@ -126,12 +141,12 @@ export function NativeAppHeader() {
   const menuSections = useMemo(
     () => [
       {
-        title: 'Chat',
+        title: 'AI',
         items: [
           {
             id: 'new-chat',
             label: 'New chat',
-            icon: 'add-circle-outline' as const,
+            icon: 'sparkles-outline' as const,
             onPress: (): void => {
               sendChatCommand('new_chat');
             },
@@ -190,10 +205,10 @@ export function NativeAppHeader() {
             onPress: () => navigate('/courses', '/courses'),
           },
           {
-            id: 'about',
-            label: 'About & support',
-            icon: 'information-circle-outline' as const,
-            onPress: () => jumpToTab('About'),
+            id: 'dashboard',
+            label: 'Dashboard',
+            icon: 'grid-outline' as const,
+            onPress: () => jumpToTab('Dashboard'),
           },
         ],
       },
@@ -203,40 +218,54 @@ export function NativeAppHeader() {
 
   return (
     <>
-      <View style={styles.bar}>
-        <TukuaBrandMark />
+      <View pointerEvents="box-none" style={styles.floatWrap}>
+        {/* Soft top fade — content scrolls underneath (compact chrome) */}
+        <LinearGradient
+          pointerEvents="none"
+          colors={[
+            'rgba(4,31,24,0.92)',
+            'rgba(4,31,24,0.72)',
+            'rgba(4,31,24,0.35)',
+            'transparent',
+          ]}
+          locations={[0, 0.35, 0.72, 1]}
+          style={[styles.fade, { height: insets.top + NATIVE_HEADER_BODY_HEIGHT + 28 }]}
+        />
+        <View style={[styles.bar, { paddingTop: insets.top + 4 }]}>
+          <TokenBalancePill />
 
-        <View style={styles.actions}>
-          <TouchableOpacity
-            style={[styles.savageBtn, savageMode && styles.savageBtnActive]}
-            onPress={() => void handleSavageToggle()}
-            accessibilityLabel={savageMode ? 'Savage mode on' : 'Savage mode off'}
-            accessibilityRole="button">
-            <Animated.Text style={[styles.savageEmoji, { opacity: savageOpacity }]}>😏</Animated.Text>
-          </TouchableOpacity>
+          <View style={styles.actions}>
+            <TouchableOpacity
+              style={[styles.savageBtn, savageMode && styles.savageBtnActive]}
+              onPress={() => void handleSavageToggle()}
+              accessibilityLabel={savageMode ? 'Savage mode on' : 'Savage mode off'}
+              accessibilityRole="button">
+              <Animated.Text style={[styles.savageEmoji, { opacity: savageOpacity }]}>😏</Animated.Text>
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.menuTrigger}
-            onPress={() => setOpen(true)}
-            accessibilityLabel="Open menu">
-            <ProfileAvatar name={displayName} uri={avatarUrl} size={24} />
-            <Text style={styles.userName} numberOfLines={1}>
-              {displayName}
-            </Text>
-            <Ionicons name="chevron-down" size={16} color={Colors.mutedForeground} />
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.menuTrigger}
+              onPress={() => setOpen(true)}
+              accessibilityLabel="Open menu">
+              <ProfileAvatar name={displayName} uri={avatarUrl} size={24} />
+              <Text style={styles.userName} numberOfLines={1}>
+                {displayName}
+              </Text>
+              <Ionicons name="chevron-down" size={16} color={Colors.white} />
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.signOutBtn}
-            onPress={handleLogout}
-            accessibilityLabel="Sign out">
-            <Ionicons name="log-out-outline" size={18} color={Colors.destructive} />
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.signOutBtn}
+              onPress={handleLogout}
+              accessibilityLabel="Sign out">
+              <Ionicons name="log-out-outline" size={18} color={Colors.white} />
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
-        <Pressable style={styles.overlay} onPress={() => setOpen(false)}>
+        <Pressable style={[styles.overlay, { paddingTop: insets.top + 48 }]} onPress={() => setOpen(false)}>
           <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
             <View style={styles.sheetHeader}>
               <View style={styles.sheetHeaderRow}>
@@ -282,22 +311,37 @@ export function NativeAppHeader() {
 }
 
 const styles = StyleSheet.create({
+  floatWrap: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 50,
+    elevation: 50,
+  },
+  fade: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+  },
   bar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: Colors.white,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    paddingBottom: 8,
+    minHeight: NATIVE_HEADER_BODY_HEIGHT,
+    backgroundColor: 'transparent',
+    gap: 10,
   },
   actions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    maxWidth: '78%',
-    flexShrink: 1,
+    flex: 1,
+    justifyContent: 'flex-end',
+    minWidth: 0,
   },
   savageBtn: {
     width: 30,
@@ -306,28 +350,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.white,
+    borderColor: 'rgba(255,255,255,0.35)',
+    backgroundColor: 'rgba(4,31,24,0.35)',
   },
   savageBtnActive: {
-    borderColor: 'rgba(234,88,12,0.35)',
-    backgroundColor: 'rgba(255,237,213,0.85)',
+    borderColor: 'rgba(244,140,6,0.7)',
+    backgroundColor: 'rgba(232,93,4,0.4)',
   },
   savageEmoji: {
     fontSize: 15,
     lineHeight: 17,
   },
   menuTrigger: {
-    flex: 1,
+    flexShrink: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingVertical: 5,
     borderRadius: 999,
-    backgroundColor: Colors.primaryLight,
+    backgroundColor: 'rgba(4,31,24,0.4)',
     borderWidth: 1,
-    borderColor: 'rgba(31,139,76,0.15)',
+    borderColor: 'rgba(255,255,255,0.28)',
+    maxWidth: 160,
     minWidth: 0,
   },
   signOutBtn: {
@@ -337,15 +382,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(220,38,38,0.2)',
-    backgroundColor: 'rgba(254,226,226,0.5)',
+    borderColor: 'rgba(255,255,255,0.28)',
+    backgroundColor: 'rgba(4,31,24,0.35)',
     flexShrink: 0,
   },
   userName: {
     flexShrink: 1,
     fontSize: 12,
     fontWeight: '600',
-    color: Colors.primaryDark,
+    color: Colors.white,
     fontFamily: 'Inter_600SemiBold',
   },
   overlay: {
@@ -353,7 +398,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.35)',
     justifyContent: 'flex-start',
     alignItems: 'flex-end',
-    paddingTop: 56,
     paddingRight: 12,
   },
   sheet: {

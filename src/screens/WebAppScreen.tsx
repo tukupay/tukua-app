@@ -2,8 +2,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, BackHandler, Platform, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { WebView, WebViewNavigation } from 'react-native-webview';
-import { Colors } from '../theme/yana';
-import { TAB_BAR_BODY_HEIGHT } from '../constants/layout';
+import { hideSystemStatusBar } from '../components/ImmersiveSystemBars';
+import { Colors, TukuaWeb } from '../theme/yana';
+import { TAB_BAR_BODY_HEIGHT, floatingHeaderInset } from '../constants/layout';
 import {
   buildFastTabNavigateScript,
   buildMobileChatTabBarStylesScript,
@@ -20,10 +21,12 @@ import {
 } from '../lib/webviewAuth';
 import { useRegisterTabJumper } from '../hooks/useRegisterTabJumper';
 import { historyKeyFromUrl, TabHistoryStack } from '../lib/webviewHistory';
+import { isAppWebHost } from '../lib/localHost';
 import { useAuth } from '../context/AuthContext';
 import { useWebViewControl } from '../context/WebViewControlContext';
 import { log } from '../lib/logger';
 import { getWebViewMediaProps, WEBVIEW_MEDIA_INJECT_JS } from '../lib/webViewMedia';
+import { ensureWebViewUploadPermissions, getWebViewUploadProps } from '../lib/webViewUploads';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const TAB_FOCUS_AUTH_CHECK_MS = 60_000;
@@ -39,12 +42,20 @@ const isChatPath = (path: string) => path === '/chat';
 function isAtTabRoot(pathname: string, tabPath: string) {
   if (pathname === tabPath) return true;
   if (tabPath === '/chat' && (pathname === '/' || pathname === '/chat')) return true;
+  if (tabPath === '/courses' && pathname === '/courses') return true;
+  if (tabPath === '/profile' && pathname === '/profile') return true;
   return false;
 }
 
 function matchesTabPath(pathname: string, tabPath: string) {
   if (tabPath === '/chat') {
     return pathname === '/' || pathname === '/chat' || pathname.startsWith('/chat/');
+  }
+  if (tabPath === '/courses') {
+    return pathname === '/courses' || pathname.startsWith('/courses/');
+  }
+  if (tabPath === '/profile') {
+    return pathname === '/profile' || pathname.startsWith('/profile/');
   }
   return pathname === tabPath || pathname.startsWith(`${tabPath}/`);
 }
@@ -79,11 +90,16 @@ export function WebAppScreen({ path, label }: Props) {
   const webOnlyTab = path === '/courses' || path === '/profile';
   const loadingLabel = (label ?? path.replace('/', '')) || 'page';
   const tabBarInsetPx = TAB_BAR_BODY_HEIGHT + insets.bottom;
+  /** Native top pad clears floating header; keep it light so the fade stays transparent. */
+  const webTopClearance = floatingHeaderInset(insets.top);
 
   const injectChatComposerInsets = useCallback(() => {
-    if (!chatMode || !webRef.current) return;
-    webRef.current.injectJavaScript(`${buildMobileChatTabBarStylesScript(tabBarInsetPx)}\ntrue;`);
-  }, [chatMode, tabBarInsetPx]);
+    if (!webRef.current) return;
+    // top=0: WebView is already padded below the floating nav
+    webRef.current.injectJavaScript(
+      `${buildMobileChatTabBarStylesScript(tabBarInsetPx, 0)}\ntrue;`,
+    );
+  }, [tabBarInsetPx]);
 
   const sessionInjectKey = session ? `${session.user.id}:${session.access_token}` : null;
   const preInject = useMemo(() => {
@@ -214,8 +230,13 @@ export function WebAppScreen({ path, label }: Props) {
 
   useFocusEffect(
     useCallback(() => {
+      hideSystemStatusBar();
       if (!session) return;
       syncTabRoute('screen focus');
+
+      if (path === '/profile' || path === '/activate') {
+        void ensureWebViewUploadPermissions();
+      }
 
       const now = Date.now();
       if (now - lastTabFocusAuthCheckAt < TAB_FOCUS_AUTH_CHECK_MS) return;
@@ -244,7 +265,7 @@ export function WebAppScreen({ path, label }: Props) {
       if (!bootstrappedRef.current && session && shellReadyRef.current) {
         scheduleBootstrap('loading timeout recovery');
       }
-    }, 8000);
+    }, 2800);
     return () => clearTimeout(timer);
   }, [pageLoading, isFocused, path, scheduleBootstrap, session]);
 
@@ -311,11 +332,17 @@ export function WebAppScreen({ path, label }: Props) {
       }
 
       if (chatMode) {
-        log.warn('WebApp', 'chat sign-in bounce — reloading webview', {
+        log.warn('WebApp', 'chat sign-in bounce — re-inject session (no full reload)', {
           attempt: recoverCountRef.current,
         });
         webRef.current?.injectJavaScript(buildPreloadSessionScript(fresh));
-        setTimeout(() => webRef.current?.reload(), 200);
+        webRef.current?.injectJavaScript(
+          `${buildSpaNavigateScript(path, { force: true })}\ntrue;`,
+        );
+        setCurrentPathname(path);
+        bootstrappedRef.current = true;
+        bootstrapPendingRef.current = false;
+        setPageLoading(false);
         return;
       }
 
@@ -350,6 +377,11 @@ export function WebAppScreen({ path, label }: Props) {
         setCurrentPathname(pathname);
         if (!nav.loading) {
           setPageLoading(false);
+          // Content is live — don't keep the opaque chat overlay waiting for a late bootstrap ping
+          if (chatMode) {
+            bootstrappedRef.current = true;
+            bootstrapPendingRef.current = false;
+          }
         }
         if (!nav.loading) {
           shellReadyRef.current = true;
@@ -373,8 +405,12 @@ export function WebAppScreen({ path, label }: Props) {
       }
 
       setCurrentPathname(pathname);
-      if (nav.url.includes('tukua.ai') && !nav.loading) {
-        shellReadyRef.current = true;
+      try {
+        if (isAppWebHost(new URL(nav.url).hostname) && !nav.loading) {
+          shellReadyRef.current = true;
+        }
+      } catch {
+        // ignore
       }
       if (pathname.includes('/sign-in') && path !== '/sign-in') {
         log.warn('WebApp', 'web sign-in bounce', { pathname, attempt: recoverCountRef.current + 1 });
@@ -444,10 +480,11 @@ export function WebAppScreen({ path, label }: Props) {
         }
       } else if (msg.type === 'TUKUA_CHAT_RELOAD') {
         log.info('WebApp', 'chat shell reload for supabase hydrate');
+        // Soft re-hydrate — keep chat visible; avoid a long opaque loader
         bootstrapPendingRef.current = false;
-        bootstrappedRef.current = false;
-        shellReadyRef.current = false;
-        setPageLoading(true);
+        if (session && webRef.current) {
+          webRef.current.injectJavaScript(buildPreloadSessionScript(session));
+        }
       } else if (msg.type === 'TUKUA_SHELL_BLANK') {
         const target = typeof msg.path === 'string' ? msg.path : path;
         log.warn('WebApp', 'shell blank after blocked nav — recovering', { path, target });
@@ -469,13 +506,13 @@ export function WebAppScreen({ path, label }: Props) {
         if (target) {
           log.info('WebApp', 'cross-tab navigate', { from: path, target });
           try {
-            const targetPath = new URL(target, 'https://tukua.ai').pathname;
+            const targetPath = new URL(target, TukuaWeb.base).pathname;
             if (matchesTabPath(targetPath, path) && webRef.current) {
               webRef.current.injectJavaScript(
                 `${buildSpaNavigateScript(targetPath, { force: true, push: true })}\ntrue;`,
               );
               setCurrentPathname(targetPath);
-              recordHistory(`https://tukua.ai${targetPath}`, false);
+              recordHistory(`${TukuaWeb.base.replace(/\/$/, '')}${targetPath}`, false);
               setPageLoading(false);
             } else {
               navigateWeb(targetPath);
@@ -487,7 +524,10 @@ export function WebAppScreen({ path, label }: Props) {
       } else if (msg.type === 'TUKUA_ROUTE') {
         const routePath = typeof msg.path === 'string' ? msg.path : '';
         const replace = msg.kind === 'replace' || msg.kind === 'init';
-        const href = typeof msg.href === 'string' ? msg.href : `https://tukua.ai${routePath}`;
+        const href =
+          typeof msg.href === 'string'
+            ? msg.href
+            : `${TukuaWeb.base.replace(/\/$/, '')}${routePath}`;
         if (routePath && matchesTabPath(routePath, path)) {
           setCurrentPathname(routePath);
           if (!replace) {
@@ -499,6 +539,11 @@ export function WebAppScreen({ path, label }: Props) {
         }
       } else if (msg.type === 'TUKUA_SESSION_SYNCED') {
         log.info('WebApp', 'supabase session synced');
+        if (chatMode) {
+          bootstrappedRef.current = true;
+          bootstrapPendingRef.current = false;
+          setPageLoading(false);
+        }
       } else if (msg.type === 'TUKUA_SESSION_UPDATED') {
         if (typeof msg.access_token === 'string' && typeof msg.refresh_token === 'string') {
           void applyWebSessionTokens(msg.access_token, msg.refresh_token);
@@ -530,12 +575,25 @@ export function WebAppScreen({ path, label }: Props) {
     !bootstrappedRef.current &&
     !webOnlyTab;
 
+  // Keep chat loader short — hide as soon as shell has painted / bootstrapped
+  const showChatLoader =
+    chatMode &&
+    isFocused &&
+    (booting || (!bootstrappedRef.current && pageLoading && !shellReadyRef.current));
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: webTopClearance }]}>
       {showOverlay && (
         <View style={styles.loaderOverlay} pointerEvents="none">
           <ActivityIndicator size="large" color={Colors.primary} />
           <Text style={styles.loaderText}>Loading {loadingLabel}…</Text>
+        </View>
+      )}
+
+      {showChatLoader && (
+        <View style={styles.chatLoaderOverlay} pointerEvents="none">
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={styles.loaderText}>Loading chat…</Text>
         </View>
       )}
 
@@ -545,6 +603,7 @@ export function WebAppScreen({ path, label }: Props) {
         style={styles.web}
         originWhitelist={['https://*', 'http://*']}
         onLoadEnd={() => {
+          hideSystemStatusBar();
           bootstrapPendingRef.current = false;
           shellReadyRef.current = true;
           log.info('WebApp', 'shell loaded', { shellUrl, target: path, focused: isFocused });
@@ -555,6 +614,14 @@ export function WebAppScreen({ path, label }: Props) {
             setPageLoading(false);
             if (isFocused) syncTabRoute('shell reload');
           }
+          // Don't leave an opaque overlay over a painted shell
+          if (chatMode) {
+            setTimeout(() => {
+              if (shellReadyRef.current && !bootstrapPendingRef.current) {
+                setPageLoading(false);
+              }
+            }, 900);
+          }
         }}
         onError={(e) => {
           log.error('WebApp', 'webview error', e.nativeEvent);
@@ -563,7 +630,7 @@ export function WebAppScreen({ path, label }: Props) {
         onHttpError={(e) => {
           const { statusCode, url } = e.nativeEvent;
           log.error('WebApp', 'http error', { statusCode, url });
-          if (statusCode === 404 && url.includes('tukua.ai')) {
+          if (statusCode === 404 && (() => { try { return isAppWebHost(new URL(url).hostname); } catch { return false; } })()) {
             handleBlockedRequest(url);
           } else {
             setPageLoading(false);
@@ -594,9 +661,14 @@ export function WebAppScreen({ path, label }: Props) {
         sharedCookiesEnabled
         thirdPartyCookiesEnabled={Platform.OS === 'android'}
         {...getWebViewMediaProps()}
+        {...getWebViewUploadProps()}
         injectedJavaScript={WEBVIEW_MEDIA_INJECT_JS}
         geolocationEnabled
         setSupportMultipleWindows={false}
+        allowFileAccess
+        allowFileAccessFromFileURLs
+        allowUniversalAccessFromFileURLs
+        mixedContentMode={Platform.OS === 'android' ? 'always' : undefined}
       />
     </View>
   );
@@ -604,7 +676,7 @@ export function WebAppScreen({ path, label }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.white },
-  web: { flex: 1 },
+  web: { flex: 1, backgroundColor: Colors.white },
   loader: {
     flex: 1,
     alignItems: 'center',
@@ -626,5 +698,13 @@ const styles = StyleSheet.create({
     color: Colors.mutedForeground,
     fontFamily: 'Inter_500Medium',
     textTransform: 'capitalize',
+  },
+  chatLoaderOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.55)',
+    zIndex: 20,
+    gap: 12,
   },
 });

@@ -1,21 +1,26 @@
 import React, { useEffect, useState } from 'react';
-import { Platform, StyleSheet } from 'react-native';
+import { View, Platform, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import * as NavigationBar from 'expo-navigation-bar';
-import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebAppScreen } from '../screens/WebAppScreen';
 import { BiometricSetupModal } from '../components/auth/BiometricSetupModal';
 import { NativeAppHeader } from '../components/navigation/NativeAppHeader';
-import { AboutStack } from './AboutStack';
+import { AiTabIcon } from '../components/navigation/AiTabIcon';
+import { hideSystemStatusBar } from '../components/ImmersiveSystemBars';
+import { WebViewTabBridge } from '../components/WebViewTabBridge';
+import { DashboardStack } from './DashboardStack';
 import { TAB_BAR_BODY_HEIGHT } from '../constants/layout';
 import { TAB_PATHS, WebViewControlProvider, useWebViewControl } from '../context/WebViewControlContext';
 import { useDialog } from '../context/DialogContext';
 import { Colors } from '../theme/yana';
 import { MainTabParamList } from './types';
 import { useAuth } from '../context/AuthContext';
+import { useDeskAuth } from '../context/DeskAuthContext';
 import { biometricEnableMessage, enableBiometrics, setupBiometricsAfterLogin } from '../lib/biometrics';
 import { getBiometricCredentials } from '../lib/biometricStorage';
+import { SchoolPickerScreen, ContextPickLoader } from '../screens/SchoolPickerScreen';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
@@ -39,6 +44,7 @@ function BiometricGate({ children }: { children: React.ReactNode }) {
   const handleEnableBiometrics = async () => {
     if (!email) return;
     const result = await enableBiometrics(email);
+    hideSystemStatusBar();
     setShowBioModal(false);
     if (result.ok) {
       showDialog({
@@ -77,6 +83,7 @@ function MainTabNavigator() {
   const tabBarHeight = TAB_BAR_BODY_HEIGHT + insets.bottom;
 
   useEffect(() => {
+    hideSystemStatusBar();
     if (Platform.OS !== 'android') return;
     void NavigationBar.setButtonStyleAsync('dark').catch(() => {});
   }, []);
@@ -86,6 +93,7 @@ function MainTabNavigator() {
       initialRouteName="Chat"
       screenListeners={{
         state: (e) => {
+          hideSystemStatusBar();
           const state = e.data.state;
           if (!state) return;
           const route = state.routes[state.index]?.name as keyof MainTabParamList;
@@ -117,23 +125,30 @@ function MainTabNavigator() {
           elevation: 12,
         },
         tabBarLabelStyle: styles.tabLabel,
-        tabBarIcon: ({ color, size }) => {
+        tabBarIcon: ({ color, size, focused }) => {
+          if (route.name === 'Chat') {
+            return <AiTabIcon focused={focused} size={size} />;
+          }
           const icons: Record<string, keyof typeof Ionicons.glyphMap> = {
-            Chat: 'chatbubble-ellipses-outline',
             Courses: 'book-outline',
-            About: 'information-circle-outline',
+            Dashboard: 'grid-outline',
             Profile: 'person-outline',
           };
           return <Ionicons name={icons[route.name] ?? 'ellipse'} size={size} color={color} />;
         },
       })}>
-      <Tab.Screen name="Chat" options={{ title: 'Chat' }}>
-        {() => <WebAppScreen path="/chat" label="Chat" />}
+      <Tab.Screen name="Chat" options={{ title: 'AI' }}>
+        {() => (
+          <>
+            <WebViewTabBridge />
+            <WebAppScreen path="/chat" label="AI" />
+          </>
+        )}
       </Tab.Screen>
       <Tab.Screen name="Courses" options={{ title: 'Courses' }}>
         {() => <WebAppScreen path="/courses" label="Courses" />}
       </Tab.Screen>
-      <Tab.Screen name="About" options={{ title: 'About' }} component={AboutStack} />
+      <Tab.Screen name="Dashboard" options={{ title: 'Dashboard' }} component={DashboardStack} />
       <Tab.Screen name="Profile" options={{ title: 'Profile' }}>
         {() => <WebAppScreen path={profileWebPath} label="Profile" key={profileWebPath} />}
       </Tab.Screen>
@@ -142,14 +157,23 @@ function MainTabNavigator() {
 }
 
 export function MainTabs() {
+  const { session } = useAuth();
+  const { needsSchoolPick, schoolsReady, deskReady } = useDeskAuth();
+  const gating = Boolean(session) && (!deskReady || !schoolsReady);
+
   return (
     <SafeAreaProvider>
       <BiometricGate>
         <WebViewControlProvider>
-          <SafeAreaView style={styles.shell} edges={['top']}>
-            <NativeAppHeader />
+          <View style={styles.shell}>
             <MainTabNavigator />
-          </SafeAreaView>
+            <NativeAppHeader />
+            {gating ? (
+              <ContextPickLoader />
+            ) : needsSchoolPick ? (
+              <SchoolPickerScreen />
+            ) : null}
+          </View>
         </WebViewControlProvider>
       </BiometricGate>
     </SafeAreaProvider>
@@ -157,9 +181,9 @@ export function MainTabs() {
 }
 
 const styles = StyleSheet.create({
-  shell: { flex: 1, backgroundColor: Colors.white },
+  shell: { flex: 1, backgroundColor: Colors.background },
   scene: {
-    backgroundColor: Colors.white,
+    backgroundColor: Colors.background,
   },
   tabLabel: {
     fontSize: 11,

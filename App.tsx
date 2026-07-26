@@ -1,4 +1,21 @@
 import React, { useCallback, useEffect, useState } from 'react';
+
+// Polyfill for crypto.randomUUID (React Native doesn't have it natively)
+if (typeof crypto === 'undefined') {
+  // @ts-expect-error - React Native global
+  global.crypto = {};
+}
+if (typeof crypto.randomUUID !== 'function') {
+  // @ts-expect-error - React Native global
+  crypto.randomUUID = () => {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = (Math.random() * 16) | 0;
+      const v = c === 'x' ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
+  };
+}
+
 import {
   useFonts,
   Inter_400Regular,
@@ -18,9 +35,10 @@ import {
 import { Roboto_400Regular, Roboto_700Bold } from '@expo-google-fonts/roboto';
 import { PlusJakartaSans_700Bold } from '@expo-google-fonts/plus-jakarta-sans';
 import * as SplashScreen from 'expo-splash-screen';
-import { StatusBar } from 'expo-status-bar';
+import { ImmersiveSystemBars } from './src/components/ImmersiveSystemBars';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { AuthProvider } from './src/context/AuthContext';
+import { DeskAuthProvider } from './src/context/DeskAuthContext';
 import { DialogProvider } from './src/context/DialogContext';
 import { SplashLoadingScreen } from './src/components/SplashLoadingScreen';
 import { configureWebViewAudioSession } from './src/lib/webViewMedia';
@@ -57,14 +75,21 @@ export default function App() {
   }, [onLayoutRootView]);
 
   if (!appReady) {
-    return <SplashLoadingScreen />;
+    return (
+      <>
+        <ImmersiveSystemBars />
+        <SplashLoadingScreen />
+      </>
+    );
   }
 
   return (
     <DialogProvider>
       <AuthProvider>
-        <StatusBar style="dark" />
-        <AppNavigator />
+        <DeskAuthProvider>
+          <ImmersiveSystemBars />
+          <AppNavigator />
+        </DeskAuthProvider>
       </AuthProvider>
     </DialogProvider>
   );

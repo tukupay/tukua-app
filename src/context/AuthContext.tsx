@@ -19,6 +19,8 @@ import {
   UserProfile,
 } from '../lib/auth';
 import { getSavageModeForUser } from '../lib/userPreferences';
+import { clearDeskSession } from '../lib/deskApi';
+import { clearSelectedContext } from '../lib/selectedContext';
 import { log } from '../lib/logger';
 
 type AuthContextType = {
@@ -189,6 +191,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         ensureFreshSession,
         logout: async () => {
           log.info('Auth', 'sign out');
+          const userId = session?.user?.id;
+          if (userId) {
+            await clearSelectedContext(userId);
+          }
+          await clearDeskSession();
           await signOut();
           setSession(null);
           setProfile(null);

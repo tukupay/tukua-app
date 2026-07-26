@@ -16,6 +16,7 @@ import {
   shouldAllowWebViewNavigation,
   tukuaSpaShellUrl,
 } from '../lib/webviewAuth';
+import { isAppWebHost } from '../lib/localHost';
 import { getWebViewMediaProps, WEBVIEW_MEDIA_INJECT_JS } from '../lib/webViewMedia';
 import { log } from '../lib/logger';
 
@@ -104,8 +105,12 @@ export function WebRegisterScreen({ navigation }: Props) {
           onHttpError={(e) => {
             const { statusCode, url } = e.nativeEvent;
             log.error('WebRegister', 'http error', { statusCode, url });
-            if (statusCode === 404 && url.includes('tukua.ai')) {
-              handleBlocked(url);
+            if (statusCode === 404) {
+              try {
+                if (isAppWebHost(new URL(url).hostname)) handleBlocked(url);
+              } catch {
+                // ignore
+              }
             }
             setLoading(false);
           }}

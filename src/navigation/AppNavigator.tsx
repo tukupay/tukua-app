@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import React from 'react';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { LoginScreen } from '../screens/LoginScreen';
@@ -7,18 +7,23 @@ import { WebRegisterScreen } from '../screens/WebRegisterScreen';
 import { MainTabs } from './MainTabs';
 import { RootStackParamList } from './types';
 import { useAuth } from '../context/AuthContext';
-import { Colors } from '../theme/yana';
+import { useDeskAuth } from '../context/DeskAuthContext';
 import { MobileErrorBoundary } from '../components/MobileErrorBoundary';
+import { DashboardBackground } from '../components/dashboard/DashboardBackground';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 function RootNavigator() {
   const { isAuthenticated, loading } = useAuth();
+  // Desk (Nest) is optional — only Dashboard uses it. Chat login is Supabase.
+  // School picker overlays inside MainTabs so header + bottom nav stay mounted.
+  const { deskReady, schoolsReady } = useDeskAuth();
 
-  if (loading) {
+  if (loading || !deskReady || (isAuthenticated && !schoolsReady)) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator size="large" color={Colors.primary} />
+      <View style={styles.gate}>
+        <DashboardBackground patternOnly liquid />
+        <ActivityIndicator size="large" color="#15411D" />
       </View>
     );
   }
@@ -46,3 +51,7 @@ export function AppNavigator() {
     </NavigationContainer>
   );
 }
+
+const styles = StyleSheet.create({
+  gate: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+});

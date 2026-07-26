@@ -1,3 +1,5 @@
+import { isAppWebHost } from './localHost';
+
 export const MAX_WEBVIEW_HISTORY = 10;
 
 export type HistoryEntry = {
@@ -64,7 +66,7 @@ export class TabHistoryStack {
 export function historyKeyFromUrl(url: string): HistoryEntry {
   try {
     const u = new URL(url);
-    const spa = u.hostname.includes('tukua.ai');
+    const spa = isAppWebHost(u.hostname);
     return { key: spa ? u.pathname : u.href, spa };
   } catch {
     return { key: url, spa: false };

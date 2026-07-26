@@ -13,6 +13,7 @@ import {
 } from '../../lib/webviewAuth';
 import { log } from '../../lib/logger';
 import { getWebViewMediaProps, WEBVIEW_MEDIA_INJECT_JS } from '../../lib/webViewMedia';
+import { isAppWebHost } from '../../lib/localHost';
 import { Colors } from '../../theme/yana';
 
 const TOP_BAR_HEIGHT = 56;
@@ -83,7 +84,7 @@ export function SharedPublicWebLayer() {
     if (!nav.url || !publicPath) return;
     try {
       const pathname = new URL(nav.url).pathname;
-      if (nav.url.includes('tukua.ai') && !nav.loading) {
+      if (isAppWebHost(new URL(nav.url).hostname) && !nav.loading) {
         shellReadyRef.current = true;
       }
       if (matchesPublicPath(pathname, publicPath)) {

@@ -1,0 +1,809 @@
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Animated,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { Feather, Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useDeskAuth } from '../../context/DeskAuthContext';
+import { useAuth } from '../../context/AuthContext';
+import { useWebViewControl } from '../../context/WebViewControlContext';
+import { Colors } from '../../theme/yana';
+import { floatingHeaderInset } from '../../constants/layout';
+import { DashboardStackParamList } from '../../navigation/types';
+import { DashboardBackground, GreenPattern } from '../../components/dashboard/DashboardBackground';
+import { GlassPanel } from '../../components/dashboard/Glass';
+import { ProfileAvatar } from '../../components/navigation/ProfileAvatar';
+import { deskFetch } from '../../lib/deskApi';
+import {
+  fetchParentAccountsStatement,
+  fetchParentPocketMoney,
+} from '../../lib/parentPortalApi';
+import { formatTokensShort } from '../../components/navigation/TokenBalancePill';
+import { useRegisterTabJumper } from '../../hooks/useRegisterTabJumper';
+import {
+  DashboardAction,
+  FeatherIconName,
+  HeroStat,
+  INDIVIDUAL_DASHBOARD_ACTIONS,
+  PARENT_DASHBOARD_ACTIONS,
+  PARENT_HERO,
+  SCHOOL_ADMIN_DASHBOARD_ACTIONS,
+  STUDENT_DASHBOARD_ACTIONS,
+  STUDENT_HERO,
+  SUPER_ADMIN_DASHBOARD_ACTIONS,
+  TEACHER_DASHBOARD_ACTIONS,
+  TEACHER_HERO,
+} from './dashboardActions';
+import { DeskPersona } from '../../lib/deskRoles';
+
+type ActionSection = {
+  id: string;
+  title: string;
+  actions: DashboardAction[];
+};
+
+const HERO_GREEN = '#15411D';
+const TILE_SIZE = 56;
+const ICON_SIZE = 28;
+
+/** Map Feather action icons → bold Ionicons filled glyphs. */
+const BOLD_ICON: Partial<Record<FeatherIconName, keyof typeof Ionicons.glyphMap>> = {
+  info: 'information-circle',
+  'dollar-sign': 'logo-usd',
+  'credit-card': 'wallet',
+  'plus-circle': 'add-circle',
+  repeat: 'swap-horizontal',
+  'book-open': 'book',
+  monitor: 'laptop',
+  book: 'library',
+  shield: 'shield',
+  users: 'people',
+  calendar: 'calendar',
+  'file-text': 'document-text',
+  layers: 'layers',
+  award: 'ribbon',
+  'trending-up': 'trending-up',
+  'edit-3': 'create',
+  clipboard: 'clipboard',
+  'message-circle': 'chatbubble',
+  user: 'person',
+  settings: 'settings',
+  home: 'home',
+  mail: 'mail',
+  grid: 'grid',
+  pocket: 'cash',
+  clock: 'time',
+  navigation: 'navigate',
+};
+
+function BoldIcon({
+  name,
+  size,
+  color,
+}: {
+  name: FeatherIconName;
+  size: number;
+  color: string;
+}) {
+  const ion = BOLD_ICON[name];
+  if (ion) return <Ionicons name={ion} size={size} color={color} />;
+  return <Feather name={name} size={size} color={color} />;
+}
+const SECTION_TITLES = ['Essentials', 'Academic Life', 'Explore', 'More', 'Extras'];
+
+function actionsForPersona(persona: DeskPersona): DashboardAction[] {
+  switch (persona) {
+    case 'parent':
+      return PARENT_DASHBOARD_ACTIONS;
+    case 'student':
+      return STUDENT_DASHBOARD_ACTIONS;
+    case 'teacher':
+      return TEACHER_DASHBOARD_ACTIONS;
+    case 'school_admin':
+      return SCHOOL_ADMIN_DASHBOARD_ACTIONS;
+    case 'super_admin':
+      return SUPER_ADMIN_DASHBOARD_ACTIONS;
+    default:
+      return INDIVIDUAL_DASHBOARD_ACTIONS;
+  }
+}
+
+function heroForPersona(persona: DeskPersona): HeroStat[] {
+  switch (persona) {
+    case 'parent':
+      return PARENT_HERO;
+    case 'student':
+      return STUDENT_HERO;
+    case 'teacher':
+      return TEACHER_HERO;
+    default:
+      return PARENT_HERO.slice(0, 3);
+  }
+}
+
+/** Keep every action — chunk into rows of 4 (never drop Bulk Pay etc.). */
+function sectionsForActions(actions: DashboardAction[]): ActionSection[] {
+  const chunks: DashboardAction[][] = [];
+  for (let i = 0; i < actions.length; i += 4) chunks.push(actions.slice(i, i + 4));
+  return chunks.map((chunk, index) => ({
+    id: `section-${index}`,
+    title: SECTION_TITLES[index] ?? `More ${index + 1}`,
+    actions: chunk,
+  }));
+}
+
+function ModuleTile({
+  action,
+  onPress,
+  filled,
+}: {
+  action: DashboardAction;
+  onPress: () => void;
+  filled?: boolean;
+}) {
+  const accent = action.accent || HERO_GREEN;
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.tile, pressed && styles.tilePressed]}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${action.title}. ${action.description}`}
+      accessibilityHint={action.description}>
+      <View
+        style={[
+          styles.tileCircle,
+          filled
+            ? { backgroundColor: HERO_GREEN, borderColor: 'rgba(10,61,46,0.15)' }
+            : { backgroundColor: Colors.white, borderColor: 'rgba(10,61,46,0.1)' },
+        ]}>
+        <BoldIcon name={action.icon} size={ICON_SIZE} color={filled ? Colors.white : accent} />
+      </View>
+      <View style={styles.tileLabelBox}>
+        <Text style={styles.tileLabel} numberOfLines={2}>
+          {action.title}
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
+
+export function DashboardHomeScreen() {
+  const insets = useSafeAreaInsets();
+  const navigation = useNavigation<NativeStackNavigationProp<DashboardStackParamList>>();
+  const { profile, session } = useAuth();
+  const { navigate, jumpToTab } = useWebViewControl();
+  useRegisterTabJumper();
+  const {
+    persona,
+    personaLabel,
+    deskUser,
+    deskReady,
+    deskToken,
+    selectedSchool,
+    selectedStudent,
+    selectedStudentId,
+    linkedStudents,
+    schools,
+    requestSchoolChange,
+  } = useDeskAuth();
+
+  const actions = useMemo(() => actionsForPersona(persona), [persona]);
+  const sections = useMemo(() => sectionsForActions(actions), [actions]);
+  const baseHero = useMemo(() => heroForPersona(persona), [persona]);
+
+  const [tokens, setTokens] = useState<number | null>(null);
+  const [tokensLoading, setTokensLoading] = useState(false);
+  const [feeBalance, setFeeBalance] = useState<number | null>(null);
+  const [pocketBalance, setPocketBalance] = useState<number | null>(null);
+
+  const fade = useRef(new Animated.Value(0)).current;
+  const slide = useRef(new Animated.Value(16)).current;
+
+  const avatarUrl = useMemo(() => {
+    if (selectedStudent) {
+      return selectedStudent.avatarUrl || null;
+    }
+    return (
+      profile?.avatarUrl ||
+      (session?.user?.user_metadata?.avatar_url as string | undefined) ||
+      (session?.user?.user_metadata?.profile_image_url as string | undefined) ||
+      null
+    );
+  }, [profile, session, selectedStudent]);
+
+  const loadTokens = useCallback(async () => {
+    if (!deskToken) {
+      setTokens(null);
+      return;
+    }
+    setTokensLoading(true);
+    try {
+      const data = await deskFetch<{ balance?: number; tokens?: number }>('/comms/tokens/balance');
+      const value =
+        typeof data?.balance === 'number'
+          ? data.balance
+          : typeof data?.tokens === 'number'
+            ? data.tokens
+            : null;
+      setTokens(value);
+    } catch {
+      setTokens(null);
+    } finally {
+      setTokensLoading(false);
+    }
+  }, [deskToken]);
+
+  const loadStudentBalances = useCallback(async () => {
+    if (!deskToken || persona !== 'parent' || !selectedStudentId) {
+      setFeeBalance(null);
+      setPocketBalance(null);
+      return;
+    }
+    try {
+      const [accounts, pocket] = await Promise.allSettled([
+        fetchParentAccountsStatement(selectedStudentId),
+        fetchParentPocketMoney(selectedStudentId),
+      ]);
+      if (accounts.status === 'fulfilled') {
+        const rows = accounts.value?.balances ?? [];
+        const total = rows.reduce((sum, b) => sum + (Number(b.balance ?? 0) || 0), 0);
+        setFeeBalance(rows.length ? total : 0);
+      } else {
+        setFeeBalance(null);
+      }
+      if (pocket.status === 'fulfilled') {
+        const wallets = pocket.value?.wallets ?? [];
+        const total = wallets.reduce((sum, w) => sum + (Number(w.balance ?? 0) || 0), 0);
+        setPocketBalance(wallets.length ? total : 0);
+      } else {
+        setPocketBalance(null);
+      }
+    } catch {
+      setFeeBalance(null);
+      setPocketBalance(null);
+    }
+  }, [deskToken, persona, selectedStudentId]);
+
+  useEffect(() => {
+    void loadTokens();
+  }, [loadTokens]);
+
+  useEffect(() => {
+    void loadStudentBalances();
+  }, [loadStudentBalances]);
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fade, { toValue: 1, duration: 380, useNativeDriver: true }),
+      Animated.spring(slide, { toValue: 0, friction: 9, tension: 64, useNativeDriver: true }),
+    ]).start();
+  }, [fade, slide]);
+
+  const onPressAction = useCallback(
+    (action: DashboardAction) => {
+      if (action.nativeScreen) {
+        navigation.navigate(action.nativeScreen);
+        return;
+      }
+      if (action.tukuaPath) {
+        if (action.tukuaTab === 'Courses' || action.tukuaTab === 'Profile') {
+          jumpToTab(action.tukuaTab);
+          navigate(action.tukuaPath, action.tukuaTab === 'Courses' ? '/courses' : '/profile');
+          return;
+        }
+        navigate(action.tukuaPath);
+        return;
+      }
+      if (action.deskPath) {
+        navigation.navigate('DeskModule', {
+          title: action.title,
+          deskPath: action.deskPath,
+        });
+        return;
+      }
+      navigation.navigate('FeaturePlaceholder', {
+        title: action.title,
+        description: action.description,
+        apiHint: action.deskPath,
+      });
+    },
+    [jumpToTab, navigate, navigation],
+  );
+
+  const parentFirstName = useMemo(() => {
+    const full =
+      [deskUser?.first_name, deskUser?.last_name].filter(Boolean).join(' ') ||
+      profile?.fullName ||
+      deskUser?.email ||
+      profile?.email ||
+      'Welcome';
+    return full.split(/\s+/)[0] || 'there';
+  }, [deskUser, profile]);
+
+  const greeting = useMemo(() => {
+    const h = new Date().getHours();
+    if (h < 12) return 'Good morning';
+    if (h < 17) return 'Good afternoon';
+    return 'Good evening';
+  }, []);
+
+  const tokensLabel = formatTokensShort(tokens ?? 0);
+  const showSwitch = linkedStudents.length > 1 || (linkedStudents.length === 0 && schools.length > 1);
+
+  /** Parent dashboard: selected student is the hero identity. */
+  const headerName = selectedStudent?.name || selectedSchool?.name || parentFirstName;
+  const headerMeta = useMemo(() => {
+    if (selectedStudent) {
+      return [
+        selectedStudent.className,
+        selectedStudent.admissionNumber ? `#${selectedStudent.admissionNumber}` : null,
+        selectedStudent.schoolName,
+      ]
+        .filter(Boolean)
+        .join(' · ');
+    }
+    if (selectedSchool?.name) return personaLabel;
+    return personaLabel;
+  }, [personaLabel, selectedSchool?.name, selectedStudent]);
+
+  const avatarLabel = selectedStudent?.name || parentFirstName;
+  const onAvatarPress = useCallback(() => {
+    if (selectedStudent && showSwitch) {
+      void requestSchoolChange();
+      return;
+    }
+    jumpToTab('Profile');
+  }, [jumpToTab, requestSchoolChange, selectedStudent, showSwitch]);
+
+  const kesLabel = (n: number | null) =>
+    n == null ? 'KES —' : `KES ${n.toLocaleString()}`;
+
+  const heroStats = useMemo(() => {
+    const next = baseHero.map((s) => ({ ...s }));
+    if (persona === 'parent') {
+      const fees = next.find((s) => s.id === 'fees');
+      const pocket = next.find((s) => s.id === 'pocket');
+      const total = next.find((s) => s.id === 'total');
+      if (fees) {
+        fees.value = kesLabel(feeBalance);
+        fees.subtitleValue = selectedStudent?.name || 'Outstanding';
+      }
+      if (pocket) {
+        pocket.value = kesLabel(pocketBalance);
+        pocket.subtitleValue = selectedStudent?.name || 'Available';
+      }
+      if (total) {
+        const sum =
+          feeBalance != null || pocketBalance != null
+            ? (feeBalance ?? 0) + (pocketBalance ?? 0)
+            : null;
+        total.value = kesLabel(sum);
+        total.subtitleValue = selectedStudent?.name || 'Student balances';
+      }
+    }
+    return next;
+  }, [baseHero, persona, feeBalance, pocketBalance, selectedStudent?.name]);
+
+  const primaryHero = heroStats[0];
+  const secondaryHero = heroStats.slice(1, 3);
+
+  if (!deskReady) {
+    return (
+      <View style={styles.centered}>
+        <DashboardBackground patternOnly liquid />
+        <ActivityIndicator color={HERO_GREEN} size="large" />
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.root}>
+      <DashboardBackground patternOnly liquid />
+      <ScrollView
+        contentContainerStyle={[
+          styles.content,
+          { paddingTop: floatingHeaderInset(insets.top), paddingBottom: 120 },
+        ]}
+        showsVerticalScrollIndicator={false}>
+        <Animated.View style={{ opacity: fade, transform: [{ translateY: slide }] }}>
+          {/* Identity — selected student (parent) or school / profile */}
+          <View style={styles.topBar}>
+            <Pressable
+              style={styles.avatarHit}
+              onPress={onAvatarPress}
+              accessibilityLabel={
+                selectedStudent ? 'Change student' : 'Open profile'
+              }>
+              <ProfileAvatar name={avatarLabel} uri={avatarUrl} size={52} />
+            </Pressable>
+            <View style={styles.topTextCol}>
+              <Text style={styles.greeting} numberOfLines={1}>
+                {greeting}, {parentFirstName}
+              </Text>
+              <Text style={styles.contextTitle} numberOfLines={1}>
+                {headerName}
+              </Text>
+              {headerMeta ? (
+                <Text style={styles.contextMeta} numberOfLines={1}>
+                  {headerMeta}
+                </Text>
+              ) : null}
+            </View>
+            {showSwitch ? (
+              <View style={styles.headerActions}>
+                <Pressable
+                  style={styles.headerIconBtn}
+                  onPress={() => void requestSchoolChange()}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    linkedStudents.length > 0 ? 'Change student' : 'Change school'
+                  }>
+                  <Ionicons
+                    name={linkedStudents.length > 0 ? 'people-outline' : 'school-outline'}
+                    size={18}
+                    color={HERO_GREEN}
+                  />
+                </Pressable>
+                <Pressable
+                  style={styles.headerIconBtn}
+                  onPress={() => void requestSchoolChange()}
+                  accessibilityRole="button"
+                  accessibilityLabel="Switch context">
+                  <Ionicons name="swap-horizontal" size={18} color={HERO_GREEN} />
+                </Pressable>
+              </View>
+            ) : null}
+          </View>
+
+          {/* Role chip */}
+          <View style={styles.roleRow}>
+            <View style={styles.roleChip}>
+              <Text style={styles.roleChipText}>{personaLabel}</Text>
+            </View>
+            <Pressable
+              style={styles.tokenChip}
+              onPress={() => navigate('/profile/balances', '/profile')}
+              accessibilityRole="button"
+              accessibilityLabel={`Tokens ${tokensLabel}`}>
+              <Ionicons name="diamond" size={12} color={Colors.orangeAccent} />
+              {tokensLoading ? (
+                <ActivityIndicator size="small" color={HERO_GREEN} />
+              ) : (
+                <Text style={styles.tokenChipText}>{tokensLabel}</Text>
+              )}
+            </Pressable>
+          </View>
+
+          {/* Hero balances — elevated + green pattern */}
+          <View style={styles.heroElevate}>
+            <View style={styles.heroCard}>
+              <GreenPattern darker />
+              <LinearGradient
+                pointerEvents="none"
+                colors={['rgba(21,65,29,0.35)', 'rgba(0,109,105,0.55)']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={StyleSheet.absoluteFill}
+              />
+              <View style={styles.heroContent}>
+                <View style={styles.heroHead}>
+                  <View style={styles.heroIconBox}>
+                    <BoldIcon name={primaryHero.icon} size={24} color={HERO_GREEN} />
+                  </View>
+                  <View style={styles.heroHeadText}>
+                    <Text style={styles.heroKicker}>{primaryHero.title}</Text>
+                    <Text style={styles.heroValue}>{primaryHero.value}</Text>
+                    <Text style={styles.heroSub}>
+                      {primaryHero.subtitle} · {primaryHero.subtitleValue}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.heroSplit}>
+                  {secondaryHero.map((stat) => (
+                    <Pressable
+                      key={stat.id}
+                      style={styles.heroStat}
+                      onPress={() => {
+                        if (stat.id === 'fees' || stat.id === 'pocket') {
+                          navigation.navigate('Accounts');
+                        } else {
+                          navigate('/profile/balances', '/profile');
+                        }
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${stat.title} ${stat.value}`}>
+                      <Text style={styles.heroStatLabel}>{stat.title}</Text>
+                      <Text style={styles.heroStatValue} numberOfLines={1}>
+                        {stat.value}
+                      </Text>
+                      <Text style={styles.heroStatSub} numberOfLines={1}>
+                        {stat.subtitleValue}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            </View>
+          </View>
+
+          {/* Action grids — elevated single-border cards */}
+          {sections.map((section, sectionIndex) => (
+            <View key={section.id} style={styles.sectionBlock}>
+              <Text style={styles.sectionTitle}>{section.title}</Text>
+              <GlassPanel tone="frost" radius={16} shine={false}>
+                <View style={styles.sectionInner}>
+                  <View style={styles.tileRow}>
+                    {section.actions.map((action, i) => (
+                      <ModuleTile
+                        key={action.id}
+                        action={action}
+                        filled={sectionIndex === 0 && (i === 0 || i === section.actions.length - 1)}
+                        onPress={() => onPressAction(action)}
+                      />
+                    ))}
+                    {section.actions.length < 4
+                      ? Array.from({ length: 4 - section.actions.length }).map((_, i) => (
+                          <View key={`pad-${section.id}-${i}`} style={styles.tilePad} />
+                        ))
+                      : null}
+                  </View>
+                </View>
+              </GlassPanel>
+            </View>
+          ))}
+        </Animated.View>
+      </ScrollView>
+    </View>
+  );
+}
+
+const H_PAD = 16;
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: '#FFFFFF' },
+  content: { paddingHorizontal: H_PAD },
+  centered: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 10,
+  },
+  avatarHit: {
+    borderRadius: 26,
+    backgroundColor: Colors.white,
+    shadowColor: '#0A3D2E',
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
+  },
+  topTextCol: { flex: 1, minWidth: 0 },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerIconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.white,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(10,61,46,0.1)',
+    shadowColor: '#0A3D2E',
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  greeting: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.mutedForeground,
+  },
+  contextTitle: {
+    marginTop: 2,
+    fontSize: 18,
+    fontWeight: '800',
+    color: Colors.ink,
+  },
+  contextMeta: {
+    marginTop: 2,
+    fontSize: 12,
+    fontWeight: '500',
+    color: Colors.mutedForeground,
+  },
+  roleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 14,
+  },
+  roleChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(21,65,29,0.08)',
+  },
+  roleChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: HERO_GREEN,
+    textTransform: 'capitalize',
+  },
+  tokenChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: Colors.white,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(10,61,46,0.1)',
+    shadowColor: '#0A3D2E',
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  tokenChipText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: Colors.ink,
+    fontVariant: ['tabular-nums'],
+  },
+  heroElevate: {
+    borderRadius: 16,
+    marginBottom: 8,
+    shadowColor: '#0A3D2E',
+    shadowOpacity: 0.22,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 7,
+  },
+  heroCard: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    minHeight: 168,
+  },
+  heroContent: {
+    padding: 16,
+    zIndex: 1,
+  },
+  heroHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 14,
+  },
+  heroIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: Colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroHeadText: { flex: 1, minWidth: 0 },
+  heroKicker: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.72)',
+  },
+  heroValue: {
+    marginTop: 2,
+    fontSize: 26,
+    fontWeight: '800',
+    color: Colors.white,
+  },
+  heroSub: {
+    marginTop: 2,
+    fontSize: 12,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.7)',
+  },
+  heroSplit: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  heroStat: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+  },
+  heroStatLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+    color: 'rgba(255,255,255,0.7)',
+  },
+  heroStatValue: {
+    marginTop: 4,
+    fontSize: 14,
+    fontWeight: '800',
+    color: Colors.white,
+  },
+  heroStatSub: {
+    marginTop: 2,
+    fontSize: 10,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.55)',
+  },
+  sectionBlock: {
+    marginTop: 14,
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.7,
+    textTransform: 'uppercase',
+    color: Colors.ink,
+    marginBottom: 8,
+    paddingHorizontal: 2,
+  },
+  sectionInner: {
+    paddingHorizontal: 8,
+    paddingVertical: 14,
+  },
+  tileRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  tile: {
+    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: 2,
+  },
+  tilePad: { flex: 1 },
+  tilePressed: { opacity: 0.85, transform: [{ scale: 0.96 }] },
+  tileCircle: {
+    width: TILE_SIZE,
+    height: TILE_SIZE,
+    borderRadius: TILE_SIZE / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    shadowColor: '#0A3D2E',
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
+  },
+  tileLabelBox: {
+    marginTop: 8,
+    height: 28,
+    width: '100%',
+    justifyContent: 'flex-start',
+  },
+  tileLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.ink,
+    textAlign: 'center',
+    lineHeight: 13,
+  },
+});

@@ -1,17 +1,38 @@
-export type RootStackParamList = {
-  Login: undefined;
-  Register: undefined;
-  Main: undefined;
-};
-
-export type AboutStackParamList = {
-  AboutHome: undefined;
-  PublicWeb: { path: string; title: string };
-};
-
-export type MainTabParamList = {
-  Chat: undefined;
-  Courses: undefined;
-  About: undefined;
-  Profile: undefined;
-};
+export type RootStackParamList = {
+  Login: undefined;
+  Register: undefined;
+  Main: undefined;
+};
+
+export type AboutStackParamList = {
+  AboutHome: undefined;
+  PublicWeb: { path: string; title: string };
+};
+
+export type DashboardStackParamList = {
+  DashboardHome: undefined;
+  DeskModule: {
+    title: string;
+    deskPath: string;
+  };
+  SchoolInfo: undefined;
+  Discipline: undefined;
+  Events: undefined;
+  Assessments: undefined;
+  Teachers: undefined;
+  Library: undefined;
+  Accounts: undefined;
+  Transport: undefined;
+  FeaturePlaceholder: {
+    title: string;
+    description: string;
+    apiHint?: string;
+  };
+};
+
+export type MainTabParamList = {
+  Chat: undefined;
+  Courses: undefined;
+  Dashboard: undefined;
+  Profile: undefined;
+};

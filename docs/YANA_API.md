@@ -9,8 +9,10 @@ Mobile app uses Supabase Auth (email/password) + edge functions for wallets and 
 |----------|-------------|
 | `EXPO_PUBLIC_SUPABASE_URL` | `https://twnzlkcdhiotdgoclsib.supabase.co` |
 | `EXPO_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon JWT |
-| `EXPO_PUBLIC_TUKUA_WEB_URL` | Web app base (`https://tukua.ai`) for WebView pages |
-| `EXPO_PUBLIC_TUKUPAY_API` | TukuPay API base (`https://test.api.tuku.money`) |
+| `EXPO_PUBLIC_WEB_URL` | Yana web SPA (`http://localhost:8080` in dev; Chat/Register WebViews) |
+| `EXPO_PUBLIC_DESK_API_URL` | Nest desk API base (`…/api`). Host is env-only — not hardcoded to a cloud vendor. |
+| `EXPO_PUBLIC_TUKUA_WEB_URL` | Alias of `EXPO_PUBLIC_WEB_URL` (legacy) |
+| Supabase (cbe) | `https://jltzzevsnxxroylmwyna.supabase.co` (tukua-staging) — must match Nest |
 
 ## Authentication
 
@@ -184,18 +186,57 @@ LoginScreen / RegisterScreen (native, Yana-branded)
         ↓ Supabase signInWithPassword / signUp
 MainTabs (native bottom nav)
         ↓ WebView + session injection
-Yana routes: /chat | /courses | /opportunities | /profile
+Yana routes: /chat | /courses | /profile
+Dashboard tab: native role UI (parent / student / teacher / school_admin) via Nest desk API
 ```
+
+## Desk NestJS (school ERP)
+
+Source: `D:\GithubDesktop\yana\desktop`  
+Default base: `EXPO_PUBLIC_DESK_API_URL` = `http://localhost:3253/api`
+
+| Runtime | What to use |
+|---------|-------------|
+| Expo Go on phone | Auto-rewrites `localhost` → Metro LAN IP (same Wi‑Fi as Nest) |
+| Android emulator | Falls back to `10.0.2.2` if no Expo host |
+| iOS simulator | `localhost` OK |
+| Production | Set `EXPO_PUBLIC_DESK_API_URL` to the hosted HTTPS API |
+
+**Mobile login (dev):** `POST /auth/login` against Nest is primary. Nest may also return `supabase_access_token` / `supabase_refresh_token` for Chat WebView.
+
+Auth header: `Authorization: Bearer <desk_jwt>` · `GET /auth/me`  
+Roles: `parent`, `student`, `teacher`, `school_admin`, `super_admin`, …  
+Unknown roles → **student**; school-linked unknowns → school admin hub.
+
+**Parent portal Nest (`/parents/me/*`)** — shared Desk SPA + mobile. Doc: yana `desktop/docs/PARENT_MOBILE_PORTAL.md`.
+
+| Path | Purpose |
+|------|---------|
+| `GET /parents/me/children` | Children + co-parents (masked phones) |
+| `GET /parents/me/school` | School profile |
+| `GET /parents/me/children/:id/teachers` | Class teachers from workload |
+| `GET /parents/me/exams` | Exam list |
+| `GET /parents/me/assessment-reports` | Report cards |
+| `GET /parents/me/library-statement` | Loans / fines |
+| `GET /parents/me/accounts-statement` | Fees / receipts |
+| `GET /parents/me/pocket-money` | Wallet balances |
+| `POST /parents/me/seed-demo` | Safe demo seed |
+
+Local default: `http://localhost:3253/api`. Railway later via yana deploy skill.
+
+Bottom tabs: Chat · Courses · **Dashboard** · Profile (Dashboard replaced About/info).
+
+Mobile files: `src/lib/deskApi.ts`, `src/lib/parentPortalApi.ts`, `src/lib/deskRoles.ts`, `src/context/DeskAuthContext.tsx`, `src/screens/dashboard/*`
 
 **Key files:**
 
 | File | Purpose |
 |------|---------|
 | `src/screens/LoginScreen.tsx` | Email login, biometric button, Telegram link |
-| `src/screens/RegisterScreen.tsx` | 2-step register (account type → details) |
+| `src/screens/WebRegisterScreen.tsx` | WebView registration |
 | `src/screens/WebAppScreen.tsx` | WebView with Supabase session injection |
 | `src/components/navigation/NativeAppHeader.tsx` | Native sign-out + user chip |
-| `src/navigation/MainTabs.tsx` | Post-login tabs; biometric setup modal gate |
+| `src/navigation/MainTabs.tsx` | Post-login tabs; Dashboard stack |
 | `src/lib/webviewAuth.ts` | Injects tokens into WebView `localStorage` |
 | `src/lib/biometrics.ts` | Quick login + post-login enable sheet |
 | `src/components/landing/ModernBackground.tsx` | Green dot/hex SVG (from Yana) |

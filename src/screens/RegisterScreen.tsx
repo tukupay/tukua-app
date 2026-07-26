@@ -31,7 +31,7 @@ import {
   RegistrationForm,
 } from '../lib/peaRegistrationFlow';
 import { cachePasswordForBiometrics } from '../lib/biometricStorage';
-import { Colors } from '../theme/yana';
+import { Colors, TukuaWeb } from '../theme/yana';
 import { RootStackParamList } from '../navigation/types';
 import { fetchProfile } from '../lib/auth';
 import { useAuth } from '../context/AuthContext';
@@ -370,8 +370,8 @@ export function RegisterScreen({ navigation }: Props) {
     await beginRegistrationPayment();
   };
 
-  const openTerms = () => Linking.openURL(`https://tukua.ai/terms?type=${accountType}`);
-  const openPrivacy = () => Linking.openURL('https://tukua.ai/privacy-policy');
+  const openTerms = () => Linking.openURL(`${TukuaWeb.base}/terms?type=${accountType}`);
+  const openPrivacy = () => Linking.openURL(`${TukuaWeb.base}/privacy-policy`);
 
   return (
     <View style={styles.root}>

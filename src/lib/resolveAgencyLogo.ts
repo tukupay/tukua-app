@@ -1,4 +1,6 @@
-const WEB_BASE = process.env.EXPO_PUBLIC_TUKUA_WEB_URL ?? 'https://tukua.ai';
+import { getWebBaseUrl } from './localHost';
+
+const WEB_BASE = () => getWebBaseUrl();
 
 export const RASTER_IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp', 'gif'] as const;
 export type RasterImageExtension = (typeof RASTER_IMAGE_EXTENSIONS)[number];
@@ -13,27 +15,29 @@ export function getImageFormatFromUrl(url: string): AgencyImageFormat {
   return 'unknown';
 }
 
-/** Turn relative /certifying-agencies/... paths into absolute tukua.ai URLs. */
+/** Turn relative /certifying-agencies/... paths into absolute web SPA URLs. */
 export function resolveAgencyLogoUrl(
   logoUrl: string | null | undefined,
   slug?: string | null,
 ): string | null {
+  const base = WEB_BASE();
   const trimmed = logoUrl?.trim();
   if (trimmed) {
     if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return trimmed;
-    if (trimmed.startsWith('/')) return `${WEB_BASE}${trimmed}`;
-    return `${WEB_BASE}/${trimmed}`;
+    if (trimmed.startsWith('/')) return `${base}${trimmed}`;
+    return `${base}/${trimmed}`;
   }
-  if (slug?.trim()) return `${WEB_BASE}/certifying-agencies/${slug.trim()}.png`;
+  if (slug?.trim()) return `${base}/certifying-agencies/${slug.trim()}.png`;
   return null;
 }
 
-/** Ordered candidates: primary URL then common extensions on tukua.ai for the slug. */
+/** Ordered candidates: primary URL then common extensions for the slug. */
 export function getAgencyLogoCandidates(
   logoUrl: string | null | undefined,
   slug?: string | null,
 ): string[] {
   const primary = resolveAgencyLogoUrl(logoUrl, null);
+  const base = WEB_BASE();
   const seen = new Set<string>();
   const urls: string[] = [];
 
@@ -47,14 +51,14 @@ export function getAgencyLogoCandidates(
 
   const slugKey = slug?.trim();
   if (slugKey) {
-    const base = `${WEB_BASE}/certifying-agencies/${slugKey}`;
+    const agencyBase = `${base}/certifying-agencies/${slugKey}`;
     for (const ext of [...RASTER_IMAGE_EXTENSIONS, 'svg'] as const) {
-      add(`${base}.${ext}`);
+      add(`${agencyBase}.${ext}`);
     }
   }
 
   if (!urls.length && slugKey) {
-    add(`${WEB_BASE}/certifying-agencies/${slugKey}.png`);
+    add(`${base}/certifying-agencies/${slugKey}.png`);
   }
 
   return urls;

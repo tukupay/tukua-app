@@ -150,7 +150,7 @@ export async function fetchProfile(userId: string): Promise<UserProfile | null> 
     fullName: data?.full_name ?? user.user_metadata?.full_name ?? user.email ?? '',
     county: data?.county ?? user.user_metadata?.county,
     phone: data?.phone ?? user.user_metadata?.phone,
-    avatarUrl: data?.avatar_url,
+    avatarUrl: data?.avatar_url?.trim() || user.user_metadata?.avatar_url || undefined,
     activationStatus: data?.activation_status ?? null,
     approvalStatus: data?.approval_status ?? null,
     accountType: data?.account_type ?? null,

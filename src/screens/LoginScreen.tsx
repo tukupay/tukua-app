@@ -1,40 +1,31 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
-
   ActivityIndicator,
-
+  Image,
   ImageBackground,
-
   KeyboardAvoidingView,
-
   Platform,
-
   ScrollView,
-
   StyleSheet,
-
   Text,
-
   TouchableOpacity,
-
   useWindowDimensions,
-
   View,
-
 } from 'react-native';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Ionicons } from '@expo/vector-icons';
 
+import MaskedView from '@react-native-masked-view/masked-view';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 
 import { LogoPartners } from '../components/auth/LogoPartners';
-
 import { CertifyingAgenciesCarousel } from '../components/auth/CertifyingAgenciesCarousel';
 import { NewsHighlight } from '../components/auth/NewsHighlight';
+import { GreenPattern } from '../components/dashboard/DashboardBackground';
 
 import { AuthTextField } from '../components/auth/AuthTextField';
 
@@ -43,30 +34,28 @@ import { AuthButton } from '../components/auth/AuthButton';
 import { RootStackParamList } from '../navigation/types';
 
 import { signInWithEmail, fetchProfile, fetchProfileGate, sendPasswordReset, signOut } from '../lib/auth';
+import { useDeskAuth } from '../context/DeskAuthContext';
 
 import { useAuth } from '../context/AuthContext';
 
 import { useDialog } from '../context/DialogContext';
 
-import { biometricLogin, isBiometricLoginAvailable } from '../lib/biometrics';
-
+import { isBiometricLoginAvailable, unlockBiometricCredentials } from '../lib/biometrics';
+import { hideSystemStatusBar } from '../components/ImmersiveSystemBars';
 import { captureUserLocation } from '../lib/location';
 
 import { registerForPushNotifications } from '../lib/notifications';
+
+import { log } from '../lib/logger';
+import { getDeskApiDebugInfo } from '../lib/deskApi';
 
 import { Images } from '../constants/images';
 
 import { Colors } from '../theme/yana';
 
-
-
 type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 
-
-
 const FORM_WIDTH = '88%';
-
-
 
 export function LoginScreen({ navigation }: Props) {
 
@@ -100,9 +89,8 @@ export function LoginScreen({ navigation }: Props) {
 
   }, [height]);
 
-
-
   const { refreshProfile } = useAuth();
+  const { connectDesk } = useDeskAuth();
 
   const [email, setEmail] = useState('');
 
@@ -115,24 +103,52 @@ export function LoginScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(false);
 
   const [bioAvailable, setBioAvailable] = useState(false);
-
-
+  const bioPromptedRef = React.useRef(false);
+  const handleBiometricRef = React.useRef<() => Promise<void>>(async () => {});
 
   useFocusEffect(
     useCallback(() => {
-      isBiometricLoginAvailable().then(setBioAvailable);
+      hideSystemStatusBar();
+      let cancelled = false;
+      (async () => {
+        const ok = await isBiometricLoginAvailable();
+        if (cancelled) return;
+        setBioAvailable(ok);
+        if (ok && !bioPromptedRef.current) {
+          bioPromptedRef.current = true;
+          setTimeout(() => {
+            if (!cancelled) void handleBiometricRef.current();
+          }, 450);
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
     }, []),
   );
-
-
 
   const canLogin =
 
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && password.trim().length >= 6;
 
-
-
   const finishLogin = async (loginEmail: string, loginPass: string) => {
+    // Nest JWT first — Supabase JWT gets 401 on /parents/me/* (names/class).
+    // Must finish before SIGNED_IN soft-adopt, and nest token is overwrite-locked in deskApi.
+    log.info('DeskConnection', 'Nest desk login starting', {
+      email: loginEmail.trim(),
+      deskApi: getDeskApiDebugInfo().deskResolved,
+    });
+    try {
+      await connectDesk(loginEmail.trim(), loginPass);
+    } catch (e: unknown) {
+      log.warn(
+        'DeskConnection',
+        'Nest desk login failed — Select student will lack Desk names until Desk LAN proxy :3255 is up',
+        e instanceof Error ? e.message : String(e),
+      );
+    }
+
+    // Supabase = Chat / Courses / Profile WebViews
     const { user } = await signInWithEmail(loginEmail.trim(), loginPass);
     if (!user) return;
 
@@ -148,25 +164,12 @@ export function LoginScreen({ navigation }: Props) {
       return;
     }
 
-    if (gate?.activation_status === 'pending_payment') {
-      await fetchProfile(user.id);
-      await refreshProfile();
-      showDialog({
-        title: 'Complete registration',
-        message: 'Complete your one-time registration fee to activate your account. Open Profile to pay.',
-        variant: 'info',
-        icon: 'card-outline',
-      });
-      return;
-    }
-
     await fetchProfile(user.id);
     await refreshProfile();
+
     captureUserLocation().catch(() => {});
     registerForPushNotifications().catch(() => {});
   };
-
-
 
   const handleLogin = async () => {
 
@@ -200,7 +203,7 @@ export function LoginScreen({ navigation }: Props) {
 
         title: 'Login failed',
 
-        message: err.message ?? 'Could not sign in. Please try again.',
+        message: err.message ?? 'Could not sign in. Check email and password.',
 
         variant: 'danger',
 
@@ -216,55 +219,36 @@ export function LoginScreen({ navigation }: Props) {
 
   };
 
-
-
   const handleBiometric = async () => {
-
     try {
-
-      const ok = await biometricLogin();
-
-      if (ok) {
-
-        await refreshProfile();
-
-        captureUserLocation().catch(() => {});
-
-        registerForPushNotifications().catch(() => {});
-
-      } else {
-
+      setLoading(true);
+      const unlocked = await unlockBiometricCredentials();
+      hideSystemStatusBar();
+      if (!unlocked) {
         showDialog({
-
           title: 'Biometrics',
-
           message: 'Authentication was cancelled or failed.',
-
           variant: 'warning',
-
           icon: 'finger-print-outline',
-
         });
-
+        return;
       }
-
+      // Same Nest-then-Supabase path as password login
+      await finishLogin(unlocked.email, unlocked.password);
     } catch (err: any) {
-
+      hideSystemStatusBar();
       showDialog({
-
         title: 'Login failed',
-
         message: err.message ?? 'Could not sign in.',
-
         variant: 'danger',
-
+        icon: 'finger-print-outline',
       });
-
+    } finally {
+      setLoading(false);
+      hideSystemStatusBar();
     }
-
   };
-
-
+  handleBiometricRef.current = handleBiometric;
 
   const handleForgot = async () => {
 
@@ -318,69 +302,50 @@ export function LoginScreen({ navigation }: Props) {
 
   };
 
-
-
   return (
-
     <View style={styles.root}>
-
-      <ImageBackground
-
-        source={Images.curve1}
-
-        style={[styles.topCurve, { height: layout.topCurveH }]}
-
-        resizeMode="cover"
-
-        imageStyle={styles.topCurveImage}
-
-      />
-
-
+      <View style={[styles.topCurve, { height: layout.topCurveH }]} pointerEvents="none">
+        <ImageBackground
+          source={Images.curve1}
+          style={StyleSheet.absoluteFill}
+          resizeMode="cover"
+          imageStyle={styles.topCurveImage}
+        />
+        <MaskedView
+          style={StyleSheet.absoluteFill}
+          maskElement={
+            <View style={styles.curveMaskRoot}>
+              <Image source={Images.curve1} style={styles.curveMaskImage} resizeMode="cover" />
+            </View>
+          }>
+          <View style={styles.curvePattern}>
+            <GreenPattern darker />
+          </View>
+        </MaskedView>
+      </View>
 
       <SafeAreaView style={styles.safe}>
-
         <KeyboardAvoidingView
-
           style={styles.flex}
-
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-
           <ScrollView
-
             contentContainerStyle={[
-
               styles.scroll,
-
               {
-
                 minHeight: layout.scrollMinH,
-
                 paddingBottom: layout.bottomPad,
-
               },
-
             ]}
-
             keyboardShouldPersistTaps="handled"
-
             showsVerticalScrollIndicator={false}>
-
             <View style={styles.centerBlock}>
-
-              <LogoPartners compact={layout.compact} />
-
-
+              <LogoPartners compact={layout.compact} onGreen />
 
               <View style={{ height: layout.spacer }} />
 
               <Text style={[styles.loginTitle, layout.small && styles.loginTitleSmall]}>
-
                 Login to your account
-
               </Text>
-
-
 
               <View style={{ height: layout.formGap }} />
 
@@ -404,8 +369,6 @@ export function LoginScreen({ navigation }: Props) {
 
                 />
 
-
-
                 <View style={{ height: layout.formGap }} />
 
                 <AuthTextField
@@ -424,8 +387,6 @@ export function LoginScreen({ navigation }: Props) {
 
                 />
 
-
-
                 <View style={{ height: layout.formGap }} />
 
                 <View style={styles.rememberRow}>
@@ -442,7 +403,7 @@ export function LoginScreen({ navigation }: Props) {
 
                       size={20}
 
-                      color={rememberMe ? Colors.primary : Colors.mutedForeground}
+                      color={rememberMe ? Colors.brandGreenDark : Colors.mutedForeground}
 
                     />
 
@@ -457,8 +418,6 @@ export function LoginScreen({ navigation }: Props) {
                   </TouchableOpacity>
 
                 </View>
-
-
 
                 <View style={{ height: layout.formGap }} />
 
@@ -500,8 +459,6 @@ export function LoginScreen({ navigation }: Props) {
 
               </View>
 
-
-
               <TouchableOpacity
 
                 style={styles.registerLink}
@@ -513,8 +470,6 @@ export function LoginScreen({ navigation }: Props) {
               </TouchableOpacity>
 
             </View>
-
-
 
             <View style={styles.institutionFooter}>
 
@@ -538,8 +493,6 @@ export function LoginScreen({ navigation }: Props) {
 
 }
 
-
-
 const styles = StyleSheet.create({
 
   root: {
@@ -551,63 +504,50 @@ const styles = StyleSheet.create({
   },
 
   topCurve: {
-
     position: 'absolute',
-
     top: 0,
-
     left: 0,
-
     right: 0,
-
   },
-
   topCurveImage: {
-
     resizeMode: 'cover',
-
   },
-
+  curveMaskRoot: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
+  curveMaskImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: '100%',
+    height: '100%',
+  },
+  curvePattern: {
+    flex: 1,
+    opacity: 0.88,
+  },
   safe: { flex: 1, width: '100%' },
 
   flex: { flex: 1 },
 
   scroll: {
-
     flexGrow: 1,
-
     alignItems: 'center',
-
     justifyContent: 'space-between',
-
     paddingHorizontal: 20,
-
   },
-
   centerBlock: {
-
     flex: 1,
-
     width: '100%',
-
     alignItems: 'center',
-
     justifyContent: 'center',
-
     paddingVertical: 12,
-
   },
 
   institutionFooter: {
-
     width: '100%',
-
     alignItems: 'center',
-
     paddingTop: 8,
-
     gap: 6,
-
   },
 
   partnerLabel: {
@@ -632,7 +572,7 @@ const styles = StyleSheet.create({
 
     fontWeight: '700',
 
-    color: Colors.foreground,
+    color: Colors.brandGreenDark,
 
     fontFamily: 'Poppins_700Bold',
 
@@ -682,7 +622,7 @@ const styles = StyleSheet.create({
 
     fontWeight: '600',
 
-    color: Colors.foreground,
+    color: Colors.brandGreenDark,
 
     fontFamily: 'Poppins_600SemiBold',
 
@@ -694,7 +634,7 @@ const styles = StyleSheet.create({
 
     fontWeight: '600',
 
-    color: Colors.primary,
+    color: Colors.brandGreenDark,
 
     fontFamily: 'Poppins_600SemiBold',
 
@@ -754,7 +694,7 @@ const styles = StyleSheet.create({
 
   registerLinkText: {
 
-    color: Colors.primary,
+    color: Colors.brandGreenDark,
 
     fontWeight: '700',
 

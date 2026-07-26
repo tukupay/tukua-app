@@ -1,12 +1,21 @@
 import { Session } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 import { TukuaWeb } from '../theme/yana';
+import { isAppWebHost } from './localHost';
 import { log } from './logger';
 
-const PROJECT_ID = 'twnzlkcdhiotdgoclsib';
-const SUPABASE_STORAGE_KEY = `sb-${PROJECT_ID}-auth-token`;
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
+/** Must match EXPO_PUBLIC_SUPABASE_URL project (prod twnzlk… vs staging jltzze…). */
+function supabaseProjectRef(): string {
+  try {
+    const host = new URL(SUPABASE_URL).hostname; // {ref}.supabase.co
+    return host.split('.')[0] || 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+const SUPABASE_STORAGE_KEY = `sb-${supabaseProjectRef()}-auth-token`;
 const TUKUA_SESSION_KEY = 'tukua_session';
 const COMPAT_SESSION_KEY = process.env.EXPO_PUBLIC_COMPAT_WEB_SESSION_KEY;
 const TUKUA_APP_SOURCE_MOBILE = 'mobile_app';
@@ -69,7 +78,7 @@ function supabaseStoragePayload(session: Session) {
   });
 }
 
-/** tukua.ai S3 returns 404 for /chat/ — always boot the SPA from /. */
+/** SPA shell — production S3 used to 404 on /chat/; local Vite is fine either way. Always boot from /. */
 export function tukuaSpaShellUrl() {
   const base = TukuaWeb.base.replace(/\/$/, '');
   return `${base}/`;
@@ -308,7 +317,7 @@ export function buildFastTabNavigateScript(session: Session, targetPath: string)
   return `
     (function() {
       try {
-        if (!window.location.hostname || window.location.hostname.indexOf('tukua') === -1) return;
+        if (!window.location.hostname) return;
         localStorage.setItem('${SUPABASE_STORAGE_KEY}', ${JSON.stringify(supabasePayload)});
         localStorage.setItem('${TUKUA_SESSION_KEY}', ${JSON.stringify(webSession)});
         ${compatLine}
@@ -347,13 +356,15 @@ export function buildMobileNewChatScript() {
   `;
 }
 
-export function buildMobileChatTabBarStylesScript(tabBarPx: number) {
+export function buildMobileChatTabBarStylesScript(tabBarPx: number, topInsetPx = 0) {
   const px = Math.max(48, Math.round(tabBarPx));
+  const top = Math.max(0, Math.round(topInsetPx));
   return `
     (function() {
       try {
         var id = 'tukua-mobile-tab-bar-fix';
         var pad = '${px}px';
+        var topPad = '${top}px';
         var el = document.getElementById(id);
         if (!el) {
           el = document.createElement('style');
@@ -368,7 +379,23 @@ export function buildMobileChatTabBarStylesScript(tabBarPx: number) {
           'html.tukua-mobile-app .absolute.bottom-0[data-input-area]{' +
           'bottom:' + pad + '!important;padding-bottom:2px!important}' +
           'html.tukua-mobile-app [data-mobile-chat-shell]{' +
-          'padding-bottom:' + pad + '!important}';
+          'padding-bottom:' + pad + '!important}' +
+          (top > 0
+            ? /* Chat hamburger is fixed top-2 in mobileApp — push below native header */
+              'html.tukua-mobile-app button.fixed.left-2,' +
+              'html.tukua-mobile-app button.fixed.z-50,' +
+              'html.tukua-mobile-app .fixed.left-2.z-50{' +
+              'top:' + topPad + '!important;' +
+              'margin-top:0!important}' +
+              'html.tukua-mobile-app [data-sidebar="trigger"],' +
+              'html.tukua-mobile-app button[data-sidebar="trigger"]{' +
+              'top:' + topPad + '!important;' +
+              'margin-top:0!important}' +
+              'html.tukua-mobile-app header,' +
+              'html.tukua-mobile-app [data-chat-header],' +
+              'html.tukua-mobile-app [data-mobile-chat-header]{' +
+              'padding-top:' + topPad + '!important}'
+            : '');
       } catch (e) {}
       true;
     })();
@@ -458,7 +485,7 @@ export function buildSupabaseRefreshAndNavigateScript(session: Session, targetPa
       }
 
       try {
-        if (!window.location.hostname || window.location.hostname.indexOf('tukua') === -1) return;
+        if (!window.location.hostname) return;
         localStorage.setItem(storageKey, ${JSON.stringify(supabasePayload)});
         localStorage.setItem('${TUKUA_SESSION_KEY}', ${JSON.stringify(webSession)});
         ${compatLine}
@@ -515,15 +542,25 @@ export function buildSupabaseRefreshAndNavigateScript(session: Session, targetPa
           notify('TUKUA_SESSION_SYNCED', { ok: true, cached: true });
         }
 
+        // One-shot hydrate reload for production chat. Prefer soft navigate after
+        // tokens are in localStorage — full replace races native remounts.
+        var host = window.location.hostname || '';
+        var isLocalDev =
+          host === 'localhost' ||
+          host === '127.0.0.1' ||
+          host === '10.0.2.2' ||
+          /^192\.168\./.test(host) ||
+          /^10\.\d+\./.test(host);
+
         if (isChat && !sessionStorage.getItem(bootKey)) {
           sessionStorage.setItem(bootKey, '1');
-          notify('TUKUA_CHAT_RELOAD', {});
-          window.location.replace(window.location.origin + '/');
-          return;
+          if (!isLocalDev) {
+            notify('TUKUA_CHAT_RELOAD', {});
+          }
         }
 
         if (isChat) {
-          await new Promise(function(r) { setTimeout(r, 900); });
+          await new Promise(function(r) { setTimeout(r, isLocalDev ? 400 : 700); });
           navigateToTarget();
           notify('TUKUA_BOOTSTRAP_OK', { path: target });
         }
@@ -553,6 +590,26 @@ export function buildSessionResyncScript(session: Session) {
 }
 
 export async function applyWebSessionTokens(accessToken: string, refreshToken: string) {
+  const { data: existing } = await supabase.auth.getSession();
+  if (
+    existing.session?.access_token === accessToken &&
+    existing.session?.refresh_token === refreshToken
+  ) {
+    return existing.session;
+  }
+  // Same user + unexpired access token — adopt refresh quietly without firing SIGNED_IN churn.
+  if (
+    existing.session?.user &&
+    existing.session.access_token &&
+    existing.session.expires_at &&
+    existing.session.expires_at * 1000 > Date.now() + 60_000
+  ) {
+    // Still update if refresh token rotated, but avoid full setSession when access unchanged.
+    if (existing.session.access_token === accessToken) {
+      return existing.session;
+    }
+  }
+
   const { data, error } = await supabase.auth.setSession({
     access_token: accessToken,
     refresh_token: refreshToken,
@@ -560,6 +617,14 @@ export async function applyWebSessionTokens(accessToken: string, refreshToken: s
   if (error) {
     log.warn('WebSession', 'apply web tokens failed', error.message);
     return null;
+  }
+  if (data.session) {
+    const { persistSession } = await import('./auth');
+    await persistSession(data.session);
+    log.info('WebSession', 'desk supabase tokens adopted', {
+      project: supabaseProjectRef(),
+      userId: data.session.user.id,
+    });
   }
   return data.session;
 }
@@ -590,14 +655,16 @@ export type WebViewLoadRequest = {
   canGoBack?: boolean;
 };
 
-/** Block server loads that 404 on tukua.ai (SPA paths must use client routing). */
+/** Block server loads of SPA paths (must use client routing). */
 export function shouldAllowWebViewRequest(url: string) {
   try {
     const u = new URL(url);
     if (u.protocol === 'about:' || u.protocol === 'blob:' || u.protocol === 'data:') return true;
-    if (!u.hostname.includes('tukua.ai')) return true;
+    if (!isAppWebHost(u.hostname)) return true;
     if (u.pathname === '/' || u.pathname === '/index.html') return true;
     if (isTukuaStaticAsset(u.pathname)) return true;
+    // Allow initial load of web-only tabs (courses, profile) - they need server bootstrap
+    if (u.pathname === '/courses' || u.pathname === '/profile' || u.pathname.startsWith('/profile/')) return true;
     if (isSpaClientRoute(u.pathname)) return false;
     if (u.pathname.endsWith('/') && u.pathname.length > 1) return false;
     return true;

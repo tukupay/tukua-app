@@ -8,6 +8,8 @@ import {
   saveBiometricCredentials,
 } from './biometricStorage';
 import { fetchProfile, signInWithEmail } from './auth';
+import { ensureNestDeskSession, saveDeskCredentials } from './deskApi';
+import { log } from './logger';
 
 export type BiometricEnableResult =
   | { ok: true }
@@ -34,14 +36,35 @@ export async function authenticateDevice(reason: string) {
   return result.success;
 }
 
+/**
+ * Device unlock only — returns stored email/password for the caller to run
+ * the same Nest-then-Supabase login path as password login.
+ */
+export async function unlockBiometricCredentials(): Promise<
+  { email: string; password: string } | null
+> {
+  const { email, pass, enabled } = await getBiometricCredentials();
+  if (!enabled || !email || !pass) return null;
+
+  const ok = await authenticateDevice('Log in with your fingerprint or face');
+  if (!ok) return null;
+
+  return { email, password: pass };
+}
+
+/** @deprecated Prefer unlockBiometricCredentials + screen finishLogin for Nest parity. */
 export async function biometricLogin(): Promise<boolean> {
-  const { email, pass } = await getBiometricCredentials();
-  if (!email || !pass) return false;
+  const unlocked = await unlockBiometricCredentials();
+  if (!unlocked) return false;
 
-  const ok = await authenticateDevice('Log in with your fingerprint or PIN');
-  if (!ok) return false;
+  try {
+    await saveDeskCredentials(unlocked.email, unlocked.password);
+    await ensureNestDeskSession();
+  } catch (e) {
+    log.warn('Biometrics', 'Nest soft-connect after bio', String(e));
+  }
 
-  const { user } = await signInWithEmail(email, pass);
+  const { user } = await signInWithEmail(unlocked.email, unlocked.password);
   if (user) {
     await fetchProfile(user.id);
   }

@@ -9,21 +9,31 @@ const STEPS = [
   { icon: 'briefcase-outline' as const, label: 'Get hired', hint: 'Jobs & funding' },
 ];
 
-export function BrandSteps({ compact }: { compact?: boolean }) {
+export function BrandSteps({ compact, onGreen }: { compact?: boolean; onGreen?: boolean }) {
+  const iconColor = onGreen ? 'rgba(255,255,255,0.95)' : Colors.brandGreenDark;
   return (
     <View style={[styles.row, compact && styles.rowCompact]}>
       {STEPS.map((step, i) => (
         <React.Fragment key={step.label}>
           <View style={styles.step}>
-            <Ionicons name={step.icon} size={compact ? 13 : 14} color={Colors.primary} />
-            <Text style={[styles.label, compact && styles.labelCompact]}>{step.label}</Text>
-            {!compact && <Text style={styles.hint}>{step.hint}</Text>}
+            <Ionicons name={step.icon} size={compact ? 13 : 14} color={iconColor} />
+            <Text
+              style={[
+                styles.label,
+                compact && styles.labelCompact,
+                onGreen && styles.labelOnGreen,
+              ]}>
+              {step.label}
+            </Text>
+            {!compact && (
+              <Text style={[styles.hint, onGreen && styles.hintOnGreen]}>{step.hint}</Text>
+            )}
           </View>
           {i < STEPS.length - 1 && (
             <View style={styles.connector}>
-              <View style={styles.dot} />
-              <View style={styles.line} />
-              <View style={styles.dot} />
+              <View style={[styles.dot, onGreen && styles.dotOnGreen]} />
+              <View style={[styles.line, onGreen && styles.lineOnGreen]} />
+              <View style={[styles.dot, onGreen && styles.dotOnGreen]} />
             </View>
           )}
         </React.Fragment>
@@ -49,7 +59,7 @@ const styles = StyleSheet.create({
     marginTop: 3,
     fontSize: 10,
     fontWeight: '700',
-    color: Colors.foreground,
+    color: Colors.brandGreenDark,
     fontFamily: 'Poppins_600SemiBold',
     textAlign: 'center',
   },
@@ -57,12 +67,19 @@ const styles = StyleSheet.create({
     fontSize: 9,
     marginTop: 2,
   },
+  labelOnGreen: {
+    color: 'rgba(255,255,255,0.95)',
+  },
   hint: {
     fontSize: 8,
-    color: Colors.mutedForeground,
+    color: Colors.brandGreenMid,
     fontFamily: 'Inter_400Regular',
     textAlign: 'center',
     marginTop: 1,
+    opacity: 0.85,
+  },
+  hintOnGreen: {
+    color: 'rgba(255,255,255,0.65)',
   },
   connector: {
     flexDirection: 'row',
@@ -75,11 +92,18 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: 'rgba(31,139,76,0.25)',
   },
+  lineOnGreen: {
+    backgroundColor: 'rgba(255,255,255,0.28)',
+  },
   dot: {
     width: 3,
     height: 3,
     borderRadius: 1.5,
-    backgroundColor: Colors.primary,
+    backgroundColor: Colors.brandGreenDark,
     opacity: 0.5,
+  },
+  dotOnGreen: {
+    backgroundColor: 'rgba(255,255,255,0.7)',
+    opacity: 1,
   },
 });

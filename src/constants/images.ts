@@ -1,6 +1,9 @@
 export const Images = {
   curve1: require('../../assets/images/curve1.png'),
   curve2: require('../../assets/images/curve2.png'),
+  /** Full-bleed artistic wash for brand lettering */
+  brandArt: require('../../assets/images/notes.png'),
+  brandArtAlt: require('../../assets/images/samples/planting.jpg'),
   /** Square trimmed bird master */
   logoTrimmed: require('../../assets/images/logo/logo-trimmed.png'),
   /** Header — 128×128 square */

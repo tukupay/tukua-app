@@ -67,6 +67,7 @@ export function WebViewControlProvider({ children }: { children: React.ReactNode
   const pendingRoutesRef = useRef<Map<string, string>>(new Map());
   const tabFocusHandlersRef = useRef<Map<string, TabFocusHandler>>(new Map());
   const tabJumperRef = useRef<TabJumper>(() => {});
+  const tabJumpersRef = useRef<TabJumper[]>([]);
   const [activeTabPath, setActiveTabPath] = useState('/chat');
 
   const register = useCallback((path: string, ref: React.RefObject<WebView | null>) => {
@@ -88,9 +89,11 @@ export function WebViewControlProvider({ children }: { children: React.ReactNode
   }, []);
 
   const registerTabJumper = useCallback((jumper: TabJumper) => {
+    tabJumpersRef.current = [...tabJumpersRef.current.filter((j) => j !== jumper), jumper];
     tabJumperRef.current = jumper;
     return () => {
-      tabJumperRef.current = () => {};
+      tabJumpersRef.current = tabJumpersRef.current.filter((j) => j !== jumper);
+      tabJumperRef.current = tabJumpersRef.current[tabJumpersRef.current.length - 1] ?? (() => {});
     };
   }, []);
 
@@ -146,8 +149,9 @@ export function WebViewControlProvider({ children }: { children: React.ReactNode
       const tabPath = resolveTabPath(webPath, preferTabPath);
       pendingRoutesRef.current.set(tabPath, webPath);
       focusTab(tabPath);
+      // Profile / Courses may be lazy — retry inject until the WebView mounts.
       const script = buildSpaNavigateScript(webPath, { force: true, push: webPath !== tabPath });
-      setTimeout(() => injectWithRetry(tabPath, script, 15, 120), 100);
+      setTimeout(() => injectWithRetry(tabPath, script, 30, 150), 80);
     },
     [focusTab, injectWithRetry],
   );
