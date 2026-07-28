@@ -31,6 +31,7 @@ import {
   searchTransportPeople,
   searchTransportStudents,
   securityGateCheck,
+  type FaceMatchCandidate,
   type TransportStudentMatch,
 } from '../../lib/transportApi';
 import { TUKUA_FACE_MODEL } from '../../lib/faceEmbedding';
@@ -123,6 +124,7 @@ export function SecurityDailyAttendanceScreen({ navigation }: Props) {
   const [identifying, setIdentifying] = useState(false);
   const [hint, setHint] = useState('Open camera — face auto-detects (same style as gate scanner).');
   const [matched, setMatched] = useState<FaceMatch | null>(null);
+  const [faceCandidates, setFaceCandidates] = useState<FaceMatchCandidate[]>([]);
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<TransportStudentMatch[]>([]);
   const [searching, setSearching] = useState(false);
@@ -264,6 +266,7 @@ export function SecurityDailyAttendanceScreen({ navigation }: Props) {
         variant: 'success',
       });
       setMatched(null);
+      setFaceCandidates([]);
       setCameraOpen(false);
       coolDownRef.current = false;
       await loadRows(1, false);
@@ -280,6 +283,7 @@ export function SecurityDailyAttendanceScreen({ navigation }: Props) {
 
   const runFaceIdentify = useCallback(async () => {
     if (busy || identifying || !cameraOpen || matched || coolDownRef.current) return;
+    if (faceCandidates.length) return;
     if (!cameraRef.current) return;
     coolDownRef.current = true;
     setIdentifying(true);
@@ -297,9 +301,13 @@ export function SecurityDailyAttendanceScreen({ navigation }: Props) {
         model_version: TUKUA_FACE_MODEL,
         threshold: FACE_MATCH_THRESHOLD,
       });
+      const ranked = Array.isArray(res?.candidates)
+        ? [...res.candidates].sort((a, b) => Number(b.score ?? 0) - Number(a.score ?? 0))
+        : [];
       const id = res?.person_id || res?.student_id;
       if (res?.match && id) {
         const pct = scorePct(res.score);
+        setFaceCandidates([]);
         setMatched({
           person_id: id,
           person_type: personTab === 'parent' ? 'staff' : personTab,
@@ -309,6 +317,11 @@ export function SecurityDailyAttendanceScreen({ navigation }: Props) {
         });
         setCameraOpen(false);
         setHint(pct ? `Matched · ${pct}` : 'Confirm the matched person.');
+      } else if (res?.reason === 'ambiguous' && ranked.length > 0) {
+        setFaceCandidates(ranked);
+        setCameraOpen(false);
+        setHint('Several close matches — pick the right person (highest score first).');
+        coolDownRef.current = false;
       } else {
         const pct = scorePct(res?.score);
         const base =
@@ -317,9 +330,7 @@ export function SecurityDailyAttendanceScreen({ navigation }: Props) {
             ? 'No face detected — center a face and try again.'
             : res?.reason === 'embedding_pending'
               ? 'Face still processing — wait a moment, then scan again.'
-              : res?.reason === 'ambiguous'
-                ? 'Match unclear — several faces scored close. Re-scan or search by name.'
-                : 'No match — try again or use Search.');
+              : 'No match — try again or use Search.');
         setHint(pct ? `${base} (${pct})` : base);
         coolDownRef.current = false;
       }
@@ -329,15 +340,31 @@ export function SecurityDailyAttendanceScreen({ navigation }: Props) {
     } finally {
       setIdentifying(false);
     }
-  }, [busy, identifying, cameraOpen, matched, personTab]);
+  }, [busy, identifying, cameraOpen, matched, faceCandidates.length, personTab]);
 
   useEffect(() => {
     if (mode !== 'face' || !permission?.granted || !cameraOpen || matched) return;
+    if (faceCandidates.length) return;
     const t = setInterval(() => {
       void runFaceIdentify();
     }, 2200);
     return () => clearInterval(t);
-  }, [mode, permission?.granted, cameraOpen, matched, runFaceIdentify]);
+  }, [mode, permission?.granted, cameraOpen, matched, faceCandidates.length, runFaceIdentify]);
+
+  const pickCandidate = (c: FaceMatchCandidate) => {
+    const id = String(c.person_id || c.student_id || '');
+    if (!id) return;
+    setFaceCandidates([]);
+    setMatched({
+      person_id: id,
+      person_type: personTab === 'parent' ? 'staff' : personTab,
+      name: c.name || (personTab === 'student' ? 'Student' : personTab === 'teacher' ? 'Teacher' : 'Staff'),
+      meta: c.student_number ?? null,
+      score: c.score,
+    });
+    setCameraOpen(false);
+    setHint(scorePct(c.score) ? `Picked · ${scorePct(c.score)}` : 'Confirm the matched person.');
+  };
 
   const confirmMatch = async () => {
     if (!matched) return;
@@ -425,6 +452,7 @@ export function SecurityDailyAttendanceScreen({ navigation }: Props) {
       }
     }
     setMatched(null);
+    setFaceCandidates([]);
     setCameraOpen(true);
     setFacing('back');
     setHint('Hold still — auto-detecting…');
@@ -433,6 +461,7 @@ export function SecurityDailyAttendanceScreen({ navigation }: Props) {
 
   const resetScanUi = () => {
     setMatched(null);
+    setFaceCandidates([]);
     setCameraOpen(false);
     coolDownRef.current = false;
     setHint('Open camera — face auto-detects (same style as gate scanner).');
@@ -546,6 +575,39 @@ export function SecurityDailyAttendanceScreen({ navigation }: Props) {
                       disabled={busy}
                       onPress={() => {
                         setMatched(null);
+                        setFaceCandidates([]);
+                        void openCamera();
+                      }}>
+                      <Text style={styles.secondaryText}>Scan again</Text>
+                    </Pressable>
+                  </View>
+                ) : faceCandidates.length > 0 ? (
+                  <View style={{ gap: 8 }}>
+                    <Text style={styles.matchLabel}>Close matches — pick one</Text>
+                    <Text style={styles.hint}>{hint}</Text>
+                    {faceCandidates.map((c) => {
+                      const id = String(c.person_id || c.student_id || '');
+                      return (
+                        <Pressable
+                          key={id}
+                          style={styles.candidateRow}
+                          disabled={busy}
+                          onPress={() => pickCandidate(c)}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.hitName}>{c.name || 'Person'}</Text>
+                            <Text style={styles.hint}>{c.student_number || '—'}</Text>
+                          </View>
+                          <Text style={styles.candidateScore}>
+                            {scorePct(c.score) ?? '—'}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                    <Pressable
+                      style={styles.secondary}
+                      disabled={busy}
+                      onPress={() => {
+                        setFaceCandidates([]);
                         void openCamera();
                       }}>
                       <Text style={styles.secondaryText}>Scan again</Text>
@@ -824,6 +886,15 @@ const styles = StyleSheet.create({
   scanOverlayText: { color: '#fff', fontWeight: '700' },
   hint: { fontSize: 12, color: '#64748b' },
   matchLabel: { fontSize: 12, fontWeight: '700', color: Colors.brandGreenDark, textTransform: 'uppercase' },
+  candidateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(0,0,0,0.08)',
+  },
+  candidateScore: { fontSize: 16, fontWeight: '800', color: Colors.brandGreenDark },
   input: {
     borderWidth: 1,
     borderColor: Colors.border,

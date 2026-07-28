@@ -3,8 +3,17 @@
  */
 import { deskFetch } from './deskApi';
 
-/** Boarding / gate face match default — lockstep with Nest FACE_MATCH_THRESHOLD. */
-export const FACE_MATCH_THRESHOLD = 0.9;
+/** Boarding / gate face match default — lockstep with Nest FACE_MATCH_THRESHOLD (≥70%). */
+export const FACE_MATCH_THRESHOLD = 0.7;
+
+export type FaceMatchCandidate = {
+  student_id?: string;
+  person_id?: string;
+  name?: string;
+  student_number?: string | null;
+  score?: number;
+  person_type?: string;
+};
 
 export type SecurityAssignment = {
   vehicle_name?: string | null;
@@ -170,6 +179,7 @@ export async function identifyTransportFace(body: {
     name?: string;
     message?: string;
     reason?: string;
+    candidates?: FaceMatchCandidate[];
   }>('/transport/face/identify', {
     method: 'POST',
     body: { person_type: 'student', threshold: FACE_MATCH_THRESHOLD, ...body },
@@ -194,6 +204,7 @@ export async function analyzeTransportFace(body: {
     reason?: string;
     enrolled_count?: number;
     face_detected?: boolean;
+    candidates?: FaceMatchCandidate[];
   }>('/transport/face/analyze', {
     method: 'POST',
     body: { person_type: 'student', threshold: FACE_MATCH_THRESHOLD, ...body },

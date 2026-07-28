@@ -22,6 +22,7 @@ import {
   searchTransportStudents,
   FACE_MATCH_THRESHOLD,
   type BoardedStudent,
+  type FaceMatchCandidate,
   type TransportStudentMatch,
 } from '../../lib/transportApi';
 import { TUKUA_FACE_MODEL } from '../../lib/faceEmbedding';
@@ -53,6 +54,7 @@ export function BoardStudentPanel({ tripId, tripActive, onBoarded, onCancel }: P
   const [facing, setFacing] = useState<'front' | 'back'>('back');
   const [faceHint, setFaceHint] = useState('Pick Scan to open the camera.');
   const [matched, setMatched] = useState<FaceMatch | null>(null);
+  const [faceCandidates, setFaceCandidates] = useState<FaceMatchCandidate[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<TransportStudentMatch[]>([]);
   const [searching, setSearching] = useState(false);
@@ -177,6 +179,7 @@ export function BoardStudentPanel({ tripId, tripActive, onBoarded, onCancel }: P
 
   const cancelFace = useCallback(() => {
     setMatched(null);
+    setFaceCandidates([]);
     setCameraOpen(false);
     setFaceHint('Pick Scan to open the camera.');
     coolDownRef.current = false;
@@ -196,14 +199,30 @@ export function BoardStudentPanel({ tripId, tripActive, onBoarded, onCancel }: P
       }
     }
     setMatched(null);
+    setFaceCandidates([]);
     setCameraOpen(true);
     setFacing('back');
     setFaceHint('Hold still — scanning face…');
     coolDownRef.current = false;
   };
 
+  const pickCandidate = useCallback((c: FaceMatchCandidate) => {
+    const id = String(c.person_id || c.student_id || '');
+    if (!id) return;
+    setFaceCandidates([]);
+    setMatched({
+      student_id: id,
+      name: c.name || 'Student',
+      student_number: c.student_number ?? null,
+      score: c.score,
+    });
+    setCameraOpen(false);
+    setFaceHint('Confirm the matched student.');
+  }, []);
+
   const runFaceIdentify = useCallback(async () => {
     if (!tripActive || boarding || identifying || !cameraOpen || matched || coolDownRef.current) return;
+    if (faceCandidates.length) return;
     if (!cameraRef.current) return;
     coolDownRef.current = true;
     setIdentifying(true);
@@ -220,7 +239,11 @@ export function BoardStudentPanel({ tripId, tripActive, onBoarded, onCancel }: P
         model_version: TUKUA_FACE_MODEL,
         threshold: FACE_MATCH_THRESHOLD,
       });
+      const ranked = Array.isArray(res?.candidates)
+        ? [...res.candidates].sort((a, b) => Number(b.score ?? 0) - Number(a.score ?? 0))
+        : [];
       if (res?.match && res.student_id) {
+        setFaceCandidates([]);
         setMatched({
           student_id: res.student_id,
           name: res.name || 'Student',
@@ -229,6 +252,11 @@ export function BoardStudentPanel({ tripId, tripActive, onBoarded, onCancel }: P
         });
         setCameraOpen(false);
         setFaceHint('Confirm the matched student.');
+      } else if (res?.reason === 'ambiguous' && ranked.length > 0) {
+        setFaceCandidates(ranked);
+        setCameraOpen(false);
+        setFaceHint('Several close matches — pick the right student (highest score first).');
+        coolDownRef.current = false;
       } else {
         const hint =
           res?.message ||
@@ -236,9 +264,7 @@ export function BoardStudentPanel({ tripId, tripActive, onBoarded, onCancel }: P
             ? 'No face detected — center a face and try again.'
             : res?.reason === 'embedding_pending'
               ? 'Face still processing — wait a moment, then scan again.'
-              : res?.reason === 'ambiguous'
-                ? 'Match unclear — several faces scored close. Re-scan or search by name.'
-                : 'No confident match — try again or use Search.');
+              : 'No confident match — try again or use Search.');
         setFaceHint(hint);
         coolDownRef.current = false;
       }
@@ -250,15 +276,16 @@ export function BoardStudentPanel({ tripId, tripActive, onBoarded, onCancel }: P
     } finally {
       setIdentifying(false);
     }
-  }, [tripActive, boarding, identifying, cameraOpen, matched]);
+  }, [tripActive, boarding, identifying, cameraOpen, matched, faceCandidates.length]);
 
   useEffect(() => {
     if (mode !== 'face' || !tripActive || !permission?.granted || !cameraOpen || matched) return;
+    if (faceCandidates.length) return;
     const t = setInterval(() => {
       void runFaceIdentify();
     }, 2200);
     return () => clearInterval(t);
-  }, [mode, tripActive, permission?.granted, cameraOpen, matched, runFaceIdentify]);
+  }, [mode, tripActive, permission?.granted, cameraOpen, matched, faceCandidates.length, runFaceIdentify]);
 
   const loadMoreBoarded = () => {
     if (boardedLoadingMore || boardedLoading) return;
@@ -282,6 +309,7 @@ export function BoardStudentPanel({ tripId, tripActive, onBoarded, onCancel }: P
           onPress={() => {
             setMode('face');
             setMatched(null);
+            setFaceCandidates([]);
             setCameraOpen(false);
             setFaceHint('Pick Scan to open the camera.');
           }}>
@@ -292,6 +320,7 @@ export function BoardStudentPanel({ tripId, tripActive, onBoarded, onCancel }: P
           onPress={() => {
             setMode('search');
             setCameraOpen(false);
+            setFaceCandidates([]);
           }}>
           <Text style={[styles.tabText, mode === 'search' && styles.tabTextOn]}>Search</Text>
         </Pressable>
@@ -326,6 +355,39 @@ export function BoardStudentPanel({ tripId, tripActive, onBoarded, onCancel }: P
                 disabled={boarding}
                 onPress={() => {
                   setMatched(null);
+                  setFaceCandidates([]);
+                  void openCamera();
+                }}>
+                <Text style={styles.secondaryBtnText}>Scan again</Text>
+              </Pressable>
+            </View>
+          ) : faceCandidates.length > 0 ? (
+            <View style={styles.matchCard}>
+              <Text style={styles.matchLabel}>Close matches — pick one</Text>
+              <Text style={styles.hint}>{faceHint}</Text>
+              {faceCandidates.map((c) => {
+                const id = String(c.person_id || c.student_id || '');
+                return (
+                  <Pressable
+                    key={id}
+                    style={styles.candidateRow}
+                    disabled={boarding}
+                    onPress={() => pickCandidate(c)}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.matchName}>{c.name || 'Student'}</Text>
+                      <Text style={styles.matchMeta}>{c.student_number || '—'}</Text>
+                    </View>
+                    <Text style={styles.candidateScore}>
+                      {c.score != null ? `${(Number(c.score) * 100).toFixed(0)}%` : '—'}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+              <Pressable
+                style={styles.secondaryBtn}
+                disabled={boarding}
+                onPress={() => {
+                  setFaceCandidates([]);
                   void openCamera();
                 }}>
                 <Text style={styles.secondaryBtnText}>Scan again</Text>
@@ -534,6 +596,15 @@ const styles = StyleSheet.create({
   matchLabel: { fontSize: 12, fontWeight: '700', color: Colors.mutedForeground, textTransform: 'uppercase' },
   matchName: { fontSize: 18, fontWeight: '800', color: Colors.ink },
   matchMeta: { fontSize: 13, color: Colors.mutedForeground },
+  candidateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(0,0,0,0.08)',
+  },
+  candidateScore: { fontSize: 16, fontWeight: '800', color: Colors.brandGreenDark },
   input: {
     borderWidth: 1,
     borderColor: Colors.border,
