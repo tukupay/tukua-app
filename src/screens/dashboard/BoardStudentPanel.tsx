@@ -50,7 +50,7 @@ export function BoardStudentPanel({ tripId, tripActive, onBoarded, onCancel }: P
   const [boarding, setBoarding] = useState(false);
   const [identifying, setIdentifying] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
-  const [facing, setFacing] = useState<'front' | 'back'>('front');
+  const [facing, setFacing] = useState<'front' | 'back'>('back');
   const [faceHint, setFaceHint] = useState('Pick Scan to open the camera.');
   const [matched, setMatched] = useState<FaceMatch | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -197,6 +197,7 @@ export function BoardStudentPanel({ tripId, tripActive, onBoarded, onCancel }: P
     }
     setMatched(null);
     setCameraOpen(true);
+    setFacing('back');
     setFaceHint('Hold still — scanning face…');
     coolDownRef.current = false;
   };
@@ -235,7 +236,9 @@ export function BoardStudentPanel({ tripId, tripActive, onBoarded, onCancel }: P
             ? 'No face detected — center a face and try again.'
             : res?.reason === 'embedding_pending'
               ? 'Face still processing — wait a moment, then scan again.'
-              : 'No confident match — try again or use Search.');
+              : res?.reason === 'ambiguous'
+                ? 'Match unclear — several faces scored close. Re-scan or search by name.'
+                : 'No confident match — try again or use Search.');
         setFaceHint(hint);
         coolDownRef.current = false;
       }

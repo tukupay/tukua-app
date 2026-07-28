@@ -128,8 +128,11 @@ export function GateCheckInScreen({ navigation }: Props) {
         showsVerticalScrollIndicator={false}>
         <ModuleBackBar onBack={() => navigation.goBack()} />
         <ModuleKicker>Staff</ModuleKicker>
-        <Text style={styles.title}>Attendance Scanner</Text>
-        <Text style={styles.sub}>Scan the security gate QR code with the camera.</Text>
+        <Text style={styles.title}>My gate check-in</Text>
+        <Text style={styles.sub}>
+          For teachers and staff only — scan the school gate QR to check yourself in or out. Security marks
+          students via Daily attendance.
+        </Text>
 
         <GateDirectionToggle
           value={direction}

@@ -13,6 +13,7 @@ import React, {
   useState,
   ReactNode,
 } from 'react';
+import { AppState } from 'react-native';
 import { Session } from '@supabase/supabase-js';
 import {
   adoptSupabaseTokenAsDeskSession,
@@ -235,8 +236,8 @@ function resolveContext(
 
   const school = schools.find((s) => s.id === schoolId)!;
   const schoolRoles = uniqueSchoolRoles(school.roles);
-  let activeRole =
-    stored?.activeRole && schoolRoles.includes(stored.activeRole) ? stored.activeRole : null;
+  const storedRole = stored?.activeRole ? String(stored.activeRole).toLowerCase().trim() : null;
+  let activeRole = storedRole && schoolRoles.includes(storedRole) ? storedRole : null;
 
   // ── Step 2: resolve role at school ──
   if (schoolRoles.length > 1 && !activeRole) {
@@ -517,6 +518,18 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
       setPickerMode(mode);
       setSchoolsReady(true);
       setDeskActiveContext({ schoolId, studentId });
+      // Keep Nest/desk user_roles locked to the restored hat so resume doesn't fall to "individual".
+      if (activeRole) {
+        setDeskUser((prev) =>
+          prev
+            ? {
+                ...prev,
+                school_id: schoolId ?? prev.school_id,
+                user_roles: [activeRole],
+              }
+            : prev,
+        );
+      }
       return { schools: list, schoolId, studentId, activeRole, needsPick, pickerMode: mode, schoolRoleOptions: roleOpts };
     },
     [],
@@ -800,7 +813,12 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
             ...(prev ?? user),
             ...user,
             school_id: schoolId ?? prev?.school_id ?? user.school_id,
-            user_roles: activeRole ? [activeRole] : prev?.user_roles ?? user.user_roles,
+            // Prefer restored hat; never wipe a saved role with a full multi-role Nest payload.
+            user_roles: activeRole
+              ? [activeRole]
+              : prev?.user_roles?.length
+                ? prev.user_roles
+                : user.user_roles,
           }));
           return;
         }
@@ -841,7 +859,10 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
         const token = await getDeskToken();
         const nestUser = (await getCachedDeskUser()) ?? cached;
         setDeskToken(token);
-        if (nestUser) setDeskUser(nestUser);
+        if (nestUser) {
+          // Do not trust nestUser.user_roles yet — syncSupabaseAsDesk restores the saved hat.
+          setDeskUser(nestUser);
+        }
         log.info('DeskAuth', 'nest session ready on hydrate');
       }
 
@@ -867,6 +888,29 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void hydrate();
   }, [hydrate]);
+
+  // Re-apply saved school/role/student when returning from background (OS may have dropped in-memory state).
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') return;
+      const uid = authUserIdRef.current;
+      if (!uid) return;
+      void applySchoolsForUser(uid, { quiet: true }).then((membership) => {
+        if (membership?.activeRole) {
+          setDeskUser((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  school_id: membership.schoolId ?? prev.school_id,
+                  user_roles: [membership.activeRole!],
+                }
+              : prev,
+          );
+        }
+      });
+    });
+    return () => sub.remove();
+  }, [applySchoolsForUser]);
 
   useEffect(() => {
     const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {

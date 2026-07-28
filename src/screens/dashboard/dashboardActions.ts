@@ -359,7 +359,7 @@ export const TEACHER_HERO: HeroStat[] = [
 
 
 export const TEACHER_DASHBOARD_ACTIONS: DashboardAction[] = [
-  { id: 'attendance-scanner', title: 'Attendance Scanner', description: 'Scan gate QR · check in', icon: 'camera', nativeScreen: 'GateCheckIn', accent: '#0891B2' },
+  { id: 'attendance-scanner', title: 'My gate check-in', description: 'Scan gate QR for yourself', icon: 'camera', nativeScreen: 'GateCheckIn', accent: '#0891B2' },
   { id: 'enter-marks', title: 'Enter Marks', description: 'Grade assessments', icon: 'edit-3', deskPath: '/teacher/enter-marks', accent: '#1F8B4C' },
   { id: 'class-lists', title: 'Class Lists', description: 'View class rosters', icon: 'users', deskPath: '/teacher/classes', accent: '#2563EB' },
   { id: 'my-timetable', title: 'My Timetable', description: 'Teaching periods', icon: 'calendar', deskPath: '/teacher/calendar/timetable?scope=mine', accent: '#D97706' },
@@ -437,13 +437,11 @@ export const SECURITY_HERO: HeroStat[] = [
 
 export const SECURITY_DASHBOARD_ACTIONS: DashboardAction[] = [
 
-  { id: 'daily-register', title: 'Gate check-in', description: 'Scan gate QR · visitor / staff', icon: 'clipboard', nativeScreen: 'GateCheckIn', accent: '#0F5C42' },
-
-  { id: 'daily-attendance', title: 'Daily attendance', description: 'Face · QR · search students', icon: 'check-square', nativeScreen: 'SecurityDailyAttendance', accent: '#0891B2' },
+  { id: 'daily-attendance', title: 'Daily attendance', description: 'Mark students · teachers · staff (face · QR · search)', icon: 'check-square', nativeScreen: 'SecurityDailyAttendance', accent: '#0891B2' },
 
   { id: 'trips', title: 'Trips & board', description: 'Start trip · GPS · board students', icon: 'navigation', nativeScreen: 'SecurityHome', accent: '#0E7490' },
 
-  { id: 'gate-qr', title: 'Gate QR', description: 'Projector gate check-in', icon: 'grid', nativeScreen: 'GateQr', accent: '#7C3AED' },
+  { id: 'gate-qr', title: 'Gate QR display', description: 'Show rotating QR for staff check-in', icon: 'grid', nativeScreen: 'GateQr', accent: '#7C3AED' },
 
   { id: 'face-enroll', title: 'Face enroll', description: 'Save faces for students · staff · teachers', icon: 'user', nativeScreen: 'SecurityFaceEnroll', accent: '#2563EB' },
 
@@ -454,7 +452,7 @@ export const SECURITY_DASHBOARD_ACTIONS: DashboardAction[] = [
 
 
 export const SCHOOL_ADMIN_DASHBOARD_ACTIONS: DashboardAction[] = [
-  { id: 'attendance-scanner', title: 'Attendance Scanner', description: 'Scan gate QR · check in', icon: 'camera', nativeScreen: 'GateCheckIn', accent: '#0891B2' },
+  { id: 'attendance-scanner', title: 'My gate check-in', description: 'Scan gate QR for yourself (staff)', icon: 'camera', nativeScreen: 'GateCheckIn', accent: '#0891B2' },
   { id: 'face-enroll', title: 'Face enroll', description: 'Students · teachers · staff', icon: 'user', deskPath: '/transport/face-enroll', accent: '#0E7490' },
   { id: 'admin', title: 'Admin', description: 'Settings & users', icon: 'settings', deskPath: '/admin', accent: '#0A3D2E' },
   { id: 'students', title: 'Students', description: 'Student records', icon: 'book', deskPath: '/admin/students', accent: '#1F8B4C' },

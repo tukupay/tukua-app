@@ -300,9 +300,6 @@ export function SecurityHomeScreen({ navigation }: Props) {
               <ActivityIndicator color={Colors.brandGreenDark} style={{ marginTop: 24 }} />
             ) : (
               <>
-                <Pressable style={styles.linkBtn} onPress={() => navigation.navigate('GateCheckIn')}>
-                  <Text style={styles.linkBtnText}>Gate check-in (staff QR)</Text>
-                </Pressable>
                 <Pressable
                   style={styles.linkBtn}
                   onPress={() => navigation.navigate('SecurityDailyAttendance')}>

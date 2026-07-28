@@ -73,6 +73,25 @@ function shiftDate(iso: string, delta: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** e.g. 1st Dec 2026 */
+function formatSessionDateLabel(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim());
+  if (!m) return iso;
+  const day = Number(m[3]);
+  const monthIdx = Number(m[2]) - 1;
+  const year = Number(m[1]);
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const suffix =
+    day % 10 === 1 && day !== 11
+      ? 'st'
+      : day % 10 === 2 && day !== 12
+        ? 'nd'
+        : day % 10 === 3 && day !== 13
+          ? 'rd'
+          : 'th';
+  return `${day}${suffix} ${months[monthIdx] ?? m[2]} ${year}`;
+}
+
 function personTabLabel(t: PersonTab): string {
   if (t === 'student') return 'Students';
   if (t === 'teacher') return 'Teachers';
@@ -100,11 +119,9 @@ export function SecurityDailyAttendanceScreen({ navigation }: Props) {
   const [permission, requestPermission] = useCameraPermissions();
   const [cameraOpen, setCameraOpen] = useState(false);
   const [facing, setFacing] = useState<'front' | 'back'>('back');
-  /** Preview rotation (degrees) — helps when phone/camera orientation is sideways. */
-  const [previewRotation, setPreviewRotation] = useState(0);
   const [busy, setBusy] = useState(false);
   const [identifying, setIdentifying] = useState(false);
-  const [hint, setHint] = useState('Open camera — face auto-detects.');
+  const [hint, setHint] = useState('Open camera — face auto-detects (same style as gate scanner).');
   const [matched, setMatched] = useState<FaceMatch | null>(null);
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<TransportStudentMatch[]>([]);
@@ -300,7 +317,9 @@ export function SecurityDailyAttendanceScreen({ navigation }: Props) {
             ? 'No face detected — center a face and try again.'
             : res?.reason === 'embedding_pending'
               ? 'Face still processing — wait a moment, then scan again.'
-              : 'No match — try again or use Search.');
+              : res?.reason === 'ambiguous'
+                ? 'Match unclear — several faces scored close. Re-scan or search by name.'
+                : 'No match — try again or use Search.');
         setHint(pct ? `${base} (${pct})` : base);
         coolDownRef.current = false;
       }
@@ -334,7 +353,7 @@ export function SecurityDailyAttendanceScreen({ navigation }: Props) {
       person_id: pt === 'student' ? undefined : matched.person_id,
       person_type: pt,
       full_name: matched.name,
-      method: 'face',
+      method: 'biometric',
     });
   };
 
@@ -408,7 +427,6 @@ export function SecurityDailyAttendanceScreen({ navigation }: Props) {
     setMatched(null);
     setCameraOpen(true);
     setFacing('back');
-    setPreviewRotation(0);
     setHint('Hold still — auto-detecting…');
     coolDownRef.current = false;
   };
@@ -417,7 +435,7 @@ export function SecurityDailyAttendanceScreen({ navigation }: Props) {
     setMatched(null);
     setCameraOpen(false);
     coolDownRef.current = false;
-    setHint('Open camera — face auto-detects.');
+    setHint('Open camera — face auto-detects (same style as gate scanner).');
   };
 
   return (
@@ -439,36 +457,30 @@ export function SecurityDailyAttendanceScreen({ navigation }: Props) {
         onEndReachedThreshold={0.35}
         ListHeaderComponent={
           <View style={{ gap: 12 }}>
-            <ModuleKicker>Security</ModuleKicker>
-            <Text style={styles.h1}>Daily attendance</Text>
-            <Text style={styles.sub}>
-              Teachers · parents · students — face, QR, or search (Desk day register).
-            </Text>
+        <ModuleKicker>Security</ModuleKicker>
+        <Text style={styles.h1}>Daily attendance</Text>
+        <Text style={styles.sub}>
+          Mark students, teachers, or parents/staff — face, QR, or search. (Staff self check-in uses Gate QR
+          scanner.)
+        </Text>
 
             <View style={styles.dateRow}>
               <Pressable style={styles.dateBtn} onPress={() => setSessionDate((d) => shiftDate(d, -1))}>
                 <Ionicons name="chevron-back" size={18} color={Colors.ink} />
               </Pressable>
-              <TextInput
-                style={styles.dateInput}
-                value={sessionDate}
-                onChangeText={(t) => {
-                  if (/^\d{4}-\d{2}-\d{2}$/.test(t.trim())) setSessionDate(t.trim());
-                  else setSessionDate(t);
-                }}
-                onBlur={() => {
-                  if (!/^\d{4}-\d{2}-\d{2}$/.test(sessionDate)) setSessionDate(todayIso());
-                }}
-                placeholder="YYYY-MM-DD"
-                placeholderTextColor="#94a3b8"
-                autoCapitalize="none"
-              />
+              <View style={styles.dateInput}>
+                <Text style={styles.dateLabelText}>
+                  {sessionDate === todayIso() ? `Today · ${formatSessionDateLabel(sessionDate)}` : formatSessionDateLabel(sessionDate)}
+                </Text>
+              </View>
               <Pressable style={styles.dateBtn} onPress={() => setSessionDate((d) => shiftDate(d, 1))}>
                 <Ionicons name="chevron-forward" size={18} color={Colors.ink} />
               </Pressable>
-              <Pressable style={styles.todayBtn} onPress={() => setSessionDate(todayIso())}>
-                <Text style={styles.todayBtnText}>Today</Text>
-              </Pressable>
+              {sessionDate !== todayIso() ? (
+                <Pressable style={styles.todayBtn} onPress={() => setSessionDate(todayIso())}>
+                  <Text style={styles.todayBtnText}>Today</Text>
+                </Pressable>
+              ) : null}
             </View>
 
             <View style={styles.tabs}>
@@ -546,14 +558,8 @@ export function SecurityDailyAttendanceScreen({ navigation }: Props) {
                 ) : (
                   <View style={{ gap: 8 }}>
                     <View style={styles.cam}>
-                      <CameraView
-                        ref={cameraRef}
-                        style={[
-                          StyleSheet.absoluteFill,
-                          { transform: [{ rotate: `${previewRotation}deg` }] },
-                        ]}
-                        facing={facing}
-                      />
+                      <CameraView ref={cameraRef} style={styles.cameraFill} facing={facing} />
+                      <View style={styles.ovalGuide} pointerEvents="none" />
                       {identifying ? (
                         <View style={styles.scanOverlay}>
                           <ActivityIndicator color="#fff" />
@@ -571,12 +577,6 @@ export function SecurityDailyAttendanceScreen({ navigation }: Props) {
                         onPress={() => setFacing((f) => (f === 'front' ? 'back' : 'front'))}>
                         <Ionicons name="camera-reverse-outline" size={16} color={Colors.ink} />
                         <Text style={styles.secondaryText}>Flip</Text>
-                      </Pressable>
-                      <Pressable
-                        style={styles.secondary}
-                        onPress={() => setPreviewRotation((r) => (r + 90) % 360)}>
-                        <Ionicons name="refresh-outline" size={16} color={Colors.ink} />
-                        <Text style={styles.secondaryText}>Rotate</Text>
                       </Pressable>
                       <Pressable
                         style={styles.btn}
@@ -648,7 +648,7 @@ export function SecurityDailyAttendanceScreen({ navigation }: Props) {
               ) : (
                 <View style={styles.cam}>
                   <CameraView
-                    style={StyleSheet.absoluteFill}
+                    style={styles.cameraFill}
                     facing="back"
                     barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
                     onBarcodeScanned={busy ? undefined : onQr}
@@ -660,7 +660,7 @@ export function SecurityDailyAttendanceScreen({ navigation }: Props) {
 
             <View style={styles.sectionRow}>
               <Text style={styles.section}>
-                {sessionDate === todayIso() ? "Today" : sessionDate}&apos;s marks ({total})
+                {sessionDate === todayIso() ? 'Today' : formatSessionDateLabel(sessionDate)}&apos;s marks ({total})
               </Text>
               <Pressable onPress={() => void loadRows(1, false)} hitSlop={8}>
                 <Text style={styles.refresh}>Refresh</Text>
@@ -751,10 +751,15 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     borderRadius: 12,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dateLabelText: {
     color: Colors.ink,
     fontWeight: '700',
     textAlign: 'center',
+    fontSize: 14,
   },
   todayBtn: {
     backgroundColor: 'rgba(0,0,0,0.05)',
@@ -791,7 +796,24 @@ const styles = StyleSheet.create({
   },
   secondaryText: { fontWeight: '700', color: Colors.ink },
   row: { flexDirection: 'row', gap: 8, alignItems: 'center' },
-  cam: { height: 260, borderRadius: 16, overflow: 'hidden', backgroundColor: '#0b1220' },
+  cam: {
+    minHeight: 360,
+    borderRadius: 18,
+    overflow: 'hidden',
+    backgroundColor: '#0f172a',
+    position: 'relative',
+  },
+  cameraFill: { minHeight: 360, width: '100%' },
+  ovalGuide: {
+    position: 'absolute',
+    alignSelf: 'center',
+    top: '18%',
+    width: '62%',
+    height: '52%',
+    borderRadius: 999,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.65)',
+  },
   scanOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.35)',

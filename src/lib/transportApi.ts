@@ -3,8 +3,8 @@
  */
 import { deskFetch } from './deskApi';
 
-/** Boarding / gate face match default — lockstep with Nest FACE_MATCH_THRESHOLD (0.82). */
-export const FACE_MATCH_THRESHOLD = 0.82;
+/** Boarding / gate face match default — lockstep with Nest FACE_MATCH_THRESHOLD. */
+export const FACE_MATCH_THRESHOLD = 0.9;
 
 export type SecurityAssignment = {
   vehicle_name?: string | null;
