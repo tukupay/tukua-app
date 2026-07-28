@@ -34,6 +34,7 @@ export type DashboardStackParamList = {
   Bursary: undefined;
   SecurityHome: undefined;
   SecurityFaceEnroll: undefined;
+  SecurityDailyAttendance: undefined;
   FaceSelfEnroll: undefined;
   GateQr: undefined;
   GateCheckIn: undefined;

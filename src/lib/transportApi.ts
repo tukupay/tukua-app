@@ -3,9 +3,13 @@
  */
 import { deskFetch } from './deskApi';
 
+/** Boarding / gate face match default — lockstep with Nest FACE_MATCH_THRESHOLD (0.82). */
+export const FACE_MATCH_THRESHOLD = 0.82;
+
 export type SecurityAssignment = {
   vehicle_name?: string | null;
   vehicle_plate?: string | null;
+  vehicle_photo_url?: string | null;
   route_name?: string | null;
   vehicle_id?: string | null;
   route_id?: string | null;
@@ -17,6 +21,19 @@ export type SecurityTripRun = {
   trip_kind?: string;
   started_at?: string;
   vehicle_id?: string;
+  vehicle_name?: string | null;
+  vehicle_plate?: string | null;
+  vehicle_photo_url?: string | null;
+};
+
+export type BoardedStudent = {
+  boarding_id: string;
+  student_id: string;
+  name: string;
+  student_number?: string | null;
+  class_name?: string | null;
+  boarded_at?: string | null;
+  method?: string | null;
 };
 
 export async function fetchSecurityAssignment() {
@@ -24,7 +41,11 @@ export async function fetchSecurityAssignment() {
 }
 
 export async function fetchSecurityActiveTrip() {
-  return deskFetch<{ trip?: SecurityTripRun | null }>('/transport/me/active-trip');
+  return deskFetch<{
+    trip?: SecurityTripRun | null;
+    boarded_students?: BoardedStudent[];
+    boarded_total?: number;
+  }>('/transport/me/active-trip');
 }
 
 export async function startSecurityTrip(body: {
@@ -69,6 +90,12 @@ export type TransportStudentMatch = {
   student_number?: string;
   admission_number?: string;
   class_label?: string;
+  person_type?: string;
+  employee_number?: string | null;
+  staff_number?: string | null;
+  parent_number?: string | null;
+  email?: string | null;
+  phone?: string | null;
 };
 
 export async function searchTransportStudents(q: string, limit = 15) {
@@ -83,7 +110,7 @@ export async function searchTransportStudents(q: string, limit = 15) {
 }
 
 export async function searchTransportPeople(
-  personType: 'teacher' | 'staff',
+  personType: 'teacher' | 'staff' | 'parent',
   q: string,
   limit = 15,
 ) {
@@ -106,10 +133,27 @@ export async function boardSecurityStudent(
     method?: string;
   },
 ) {
-  return deskFetch<unknown>(`/transport/trip-runs/${encodeURIComponent(tripRunId)}/board`, {
+  return deskFetch<{
+    boarding?: unknown;
+    notification?: { notified?: boolean; detail?: string };
+    boarded_students?: BoardedStudent[];
+    boarded_total?: number;
+    trip_kind_label?: string;
+  }>(`/transport/trip-runs/${encodeURIComponent(tripRunId)}/board`, {
     method: 'POST',
     body,
   });
+}
+
+export async function fetchBoardedStudents(tripRunId: string, page = 1, limit = 40) {
+  const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+  return deskFetch<{
+    students?: BoardedStudent[];
+    total?: number;
+    page?: number;
+    limit?: number;
+    pages?: number;
+  }>(`/transport/trip-runs/${encodeURIComponent(tripRunId)}/boarded?${params.toString()}`);
 }
 
 export async function identifyTransportFace(body: {
@@ -125,9 +169,10 @@ export async function identifyTransportFace(body: {
     student_number?: string | null;
     name?: string;
     message?: string;
+    reason?: string;
   }>('/transport/face/identify', {
     method: 'POST',
-    body: { person_type: 'student', ...body },
+    body: { person_type: 'student', threshold: FACE_MATCH_THRESHOLD, ...body },
   });
 }
 
@@ -146,10 +191,12 @@ export async function analyzeTransportFace(body: {
     student_number?: string | null;
     name?: string;
     message?: string;
+    reason?: string;
     enrolled_count?: number;
+    face_detected?: boolean;
   }>('/transport/face/analyze', {
     method: 'POST',
-    body: { person_type: 'student', threshold: 0.55, ...body },
+    body: { person_type: 'student', threshold: FACE_MATCH_THRESHOLD, ...body },
   });
 }
 
@@ -202,4 +249,100 @@ export async function fetchGateTodayStatus() {
     suggested_action?: 'in' | 'out';
     has_scanned_today?: boolean;
   }>('/attendance/gate/my-today');
+}
+
+/** Security: mark student/teacher/staff/parent at gate (face/QR/search). */
+export async function securityGateCheck(body: {
+  student_id?: string;
+  admission_number?: string;
+  teacher_id?: string;
+  person_id?: string;
+  person_type?: 'student' | 'teacher' | 'staff' | 'parent';
+  full_name?: string;
+  qr_token?: string;
+  action: 'in' | 'out';
+  method?: string;
+}) {
+  return deskFetch<{ record?: unknown; person_type?: string }>('/attendance/gate/check', {
+    method: 'POST',
+    body,
+  });
+}
+
+/** Paginated daily (gate) student attendance for a date. */
+export async function fetchDailyStudentAttendance(opts: {
+  date: string;
+  page?: number;
+  limit?: number;
+  q?: string;
+  class_id?: string;
+}) {
+  const params = new URLSearchParams({ date: opts.date });
+  if (opts.page) params.set('page', String(opts.page));
+  if (opts.limit) params.set('limit', String(opts.limit));
+  if (opts.q) params.set('q', opts.q);
+  if (opts.class_id) params.set('class_id', opts.class_id);
+  return deskFetch<{
+    rows?: Array<{
+      student_id: string;
+      name: string;
+      admission_number?: string | null;
+      class_name?: string | null;
+      status?: string;
+      check_in_at?: string | null;
+      check_out_at?: string | null;
+      method?: string | null;
+    }>;
+    total?: number;
+    page?: number;
+    limit?: number;
+    date?: string;
+  }>(`/attendance/daily/students?${params.toString()}`);
+}
+
+/** Ensure today's daily register session. */
+export async function ensureDailyRegister(sessionDate?: string) {
+  return deskFetch<{ session?: { id: string; session_date?: string } }>('/registers/daily/ensure', {
+    method: 'POST',
+    body: { session_date: sessionDate || new Date().toISOString().slice(0, 10) },
+  });
+}
+
+export async function fetchRegisterEntries(
+  sessionId: string,
+  opts?: { q?: string; person_type?: string; page?: number; limit?: number },
+) {
+  const params = new URLSearchParams();
+  if (opts?.q) params.set('q', opts.q);
+  if (opts?.person_type) params.set('person_type', opts.person_type);
+  if (opts?.page) params.set('page', String(opts.page));
+  if (opts?.limit) params.set('limit', String(opts.limit));
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  return deskFetch<{
+    entries?: Array<{
+      id: string;
+      full_name?: string | null;
+      person_type?: string | null;
+      person_id?: string | null;
+      direction?: string | null;
+      marked_at?: string | null;
+      method?: string | null;
+      purpose?: string | null;
+      id_number?: string | null;
+      phone?: string | null;
+      status?: string | null;
+    }>;
+    count?: number;
+    total?: number;
+    page?: number;
+    limit?: number;
+    pages?: number;
+  }>(`/registers/sessions/${encodeURIComponent(sessionId)}/entries${suffix}`);
+}
+
+export async function listLiveTrips() {
+  return deskFetch<{
+    trips?: Array<SecurityTripRun & { boarded_count?: number; vehicle_photo_url?: string | null }>;
+    count?: number;
+  }>('/transport/live');
 }

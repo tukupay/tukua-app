@@ -139,6 +139,15 @@ export function AccountsScreen({ navigation }: Props) {
         if (accountsRes.status === 'fulfilled') {
           const accounts = accountsRes.value;
           const raw = Array.isArray(accounts?.balances) ? accounts.balances : [];
+          // Prefer one FY per student (calendar year e.g. "2026") — never sum all FY rows
+          // (that inflated mobile totals e.g. 32945+13550+7268 = 53763).
+          const yearNow = String(new Date().getFullYear());
+          const scoreFy = (fy: string | null | undefined) => {
+            const s = String(fy ?? '');
+            if (s === yearNow) return 3;
+            if (/^\d{4}$/.test(s)) return 2;
+            return 1;
+          };
           const byStudent = new Map<string, FeeCard>();
           for (const b of raw) {
             if (!b || typeof b !== 'object') continue;
@@ -155,8 +164,11 @@ export function AccountsScreen({ navigation }: Props) {
                 total: bal,
               });
             } else {
-              existing.years.push({ financial_year: fy, balance: bal });
-              existing.total += bal;
+              const prevFy = existing.years[0]?.financial_year ?? null;
+              if (scoreFy(fy) > scoreFy(prevFy)) {
+                existing.years = [{ financial_year: fy, balance: bal }];
+                existing.total = bal;
+              }
             }
           }
           setFeeCards([...byStudent.values()]);

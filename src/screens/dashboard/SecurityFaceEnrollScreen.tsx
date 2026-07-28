@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  FlatList,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -169,9 +170,15 @@ export function SecurityFaceEnrollScreen({ navigation }: Props) {
       setQuery('');
       setHits([]);
     } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      const friendly = /no clear face|no face|face detected/i.test(msg)
+        ? msg
+        : /network|fetch|timeout/i.test(msg)
+          ? 'Network error — check connection and try again.'
+          : msg;
       showDialog({
         title: 'Could not save face',
-        message: e instanceof Error ? e.message : String(e),
+        message: friendly,
         variant: 'danger',
       });
     } finally {
@@ -234,14 +241,20 @@ export function SecurityFaceEnrollScreen({ navigation }: Props) {
                 {query.trim().length >= 2 && !searching && hits.length === 0 ? (
                   <Text style={styles.empty}>No matches — try another spelling or admission number.</Text>
                 ) : null}
-                <ScrollView style={styles.hitList} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-                  {hits.map((p) => (
-                    <Pressable key={p.id} style={styles.hit} onPress={() => pickPerson(p)}>
+                <FlatList
+                  data={hits}
+                  keyExtractor={(p) => p.id}
+                  style={styles.hitList}
+                  nestedScrollEnabled
+                  keyboardShouldPersistTaps="handled"
+                  onEndReachedThreshold={0.4}
+                  renderItem={({ item: p }) => (
+                    <Pressable style={styles.hit} onPress={() => pickPerson(p)}>
                       <Text style={styles.hitName}>{p.name}</Text>
                       <Text style={styles.hitMeta}>{metaFor(p)}</Text>
                     </Pressable>
-                  ))}
-                </ScrollView>
+                  )}
+                />
               </ModuleGlassCard>
             ) : (
               <ModuleGlassCard>

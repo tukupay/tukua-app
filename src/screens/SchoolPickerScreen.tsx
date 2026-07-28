@@ -188,6 +188,8 @@ export function SchoolPickerScreen() {
   const [addStep, setAddStep] = useState<1 | 2>(1);
   const [schoolQuery, setSchoolQuery] = useState('');
   const [studentQuery, setStudentQuery] = useState('');
+  /** Filter already-linked schools / students when switching context. */
+  const [pickerFilter, setPickerFilter] = useState('');
   const [schoolHits, setSchoolHits] = useState<JoinSchoolHit[]>([]);
   const [studentHits, setStudentHits] = useState<JoinStudentHit[]>([]);
   const [joinedSchool, setJoinedSchool] = useState<JoinSchoolHit | null>(null);
@@ -250,6 +252,32 @@ export function SchoolPickerScreen() {
     () => mergePickerStudents(studentList, deskChildren, schools),
     [studentList, deskChildren, schools],
   );
+
+  const filteredSchools = useMemo(() => {
+    const q = pickerFilter.trim().toLowerCase();
+    if (!q) return schools;
+    return schools.filter((s) => {
+      const roles = (s.roles ?? []).join(' ').toLowerCase();
+      return (
+        s.name.toLowerCase().includes(q) ||
+        String((s as { code?: string }).code || '').toLowerCase().includes(q) ||
+        roles.includes(q)
+      );
+    });
+  }, [schools, pickerFilter]);
+
+  const filteredDisplayStudents = useMemo(() => {
+    const q = pickerFilter.trim().toLowerCase();
+    if (!q) return displayStudents;
+    return displayStudents.filter((s) => {
+      return (
+        s.name.toLowerCase().includes(q) ||
+        String(s.admissionNumber || '').toLowerCase().includes(q) ||
+        String(s.schoolName || '').toLowerCase().includes(q) ||
+        String((s as DisplayStudent).className || '').toLowerCase().includes(q)
+      );
+    });
+  }, [displayStudents, pickerFilter]);
 
   // One role only → skip picker.
   useEffect(() => {
@@ -334,6 +362,7 @@ export function SchoolPickerScreen() {
     setAddStep(1);
     setSchoolQuery('');
     setStudentQuery('');
+    setPickerFilter('');
     setSchoolHits([]);
     setStudentHits([]);
     setJoinedSchool(null);
@@ -687,11 +716,12 @@ export function SchoolPickerScreen() {
           />
         ) : showStudentMode ? (
           <FlatList
-            data={displayStudents}
+            data={filteredDisplayStudents}
             keyExtractor={(item) => item.key}
             style={styles.listFlex}
             contentContainerStyle={[styles.list, { paddingBottom: bottomPad + 8 }]}
             showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
             bounces
             ItemSeparatorComponent={() => <View style={{ height: listGap }} />}
             ListHeaderComponent={
@@ -703,12 +733,24 @@ export function SchoolPickerScreen() {
                     ? 'Add a student to request a link. The school must approve before you can open this workspace.'
                     : 'Choose who to open. You can switch anytime from the dashboard.'}
                 </Text>
+                {displayStudents.length > 0 ? (
+                  <TextInput
+                    style={styles.searchInput}
+                    value={pickerFilter}
+                    onChangeText={setPickerFilter}
+                    placeholder="Search name or admission…"
+                    placeholderTextColor="#94a3b8"
+                    autoCorrect={false}
+                    autoCapitalize="none"
+                  />
+                ) : null}
               </View>
             }
             ListEmptyComponent={
               <Text style={styles.emptyHint}>
-                No approved students yet. Use Add your student below — pending requests stay inactive until the
-                school accepts.
+                {pickerFilter.trim()
+                  ? 'No students match that search.'
+                  : 'No approved students yet. Use Add your student below — pending requests stay inactive until the school accepts.'}
               </Text>
             }
             ListFooterComponent={addStudentFooter}
@@ -765,17 +807,34 @@ export function SchoolPickerScreen() {
           />
         ) : (
           <FlatList
-            data={schools}
+            data={filteredSchools}
             keyExtractor={(item) => item.id}
             style={styles.listFlex}
             contentContainerStyle={[styles.list, { paddingBottom: bottomPad + 8 }]}
             showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
             ItemSeparatorComponent={() => <View style={{ height: listGap }} />}
             ListHeaderComponent={
               <View style={[styles.headerChrome, { paddingTop: floatingHeaderInset(insets.top) }]}>
                 <Text style={styles.title}>Select school</Text>
                 <Text style={styles.subtitle}>Choose the school workspace to open.</Text>
+                {schools.length > 0 ? (
+                  <TextInput
+                    style={styles.searchInput}
+                    value={pickerFilter}
+                    onChangeText={setPickerFilter}
+                    placeholder="Search school name…"
+                    placeholderTextColor="#94a3b8"
+                    autoCorrect={false}
+                    autoCapitalize="none"
+                  />
+                ) : null}
               </View>
+            }
+            ListEmptyComponent={
+              schools.length > 0 && pickerFilter.trim() ? (
+                <Text style={styles.emptyHint}>No schools match that search.</Text>
+              ) : null
             }
             ListFooterComponent={
               schools.length === 0 ? (

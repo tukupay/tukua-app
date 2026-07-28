@@ -52,6 +52,8 @@ export type DashboardAction = {
 
     | 'SecurityFaceEnroll'
 
+    | 'SecurityDailyAttendance'
+
     | 'FaceSelfEnroll'
 
     | 'GateQr'
@@ -436,6 +438,8 @@ export const SECURITY_HERO: HeroStat[] = [
 export const SECURITY_DASHBOARD_ACTIONS: DashboardAction[] = [
 
   { id: 'daily-register', title: 'Gate check-in', description: 'Scan gate QR · visitor / staff', icon: 'clipboard', nativeScreen: 'GateCheckIn', accent: '#0F5C42' },
+
+  { id: 'daily-attendance', title: 'Daily attendance', description: 'Face · QR · search students', icon: 'check-square', nativeScreen: 'SecurityDailyAttendance', accent: '#0891B2' },
 
   { id: 'trips', title: 'Trips & board', description: 'Start trip · GPS · board students', icon: 'navigation', nativeScreen: 'SecurityHome', accent: '#0E7490' },
 

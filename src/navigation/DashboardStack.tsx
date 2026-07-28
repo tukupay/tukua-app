@@ -18,6 +18,7 @@ import { AttendanceScreen } from '../screens/dashboard/AttendanceScreen';
 import { BursaryScreen } from '../screens/dashboard/BursaryScreen';
 import { SecurityHomeScreen } from '../screens/dashboard/SecurityHomeScreen';
 import { SecurityFaceEnrollScreen } from '../screens/dashboard/SecurityFaceEnrollScreen';
+import { SecurityDailyAttendanceScreen } from '../screens/dashboard/SecurityDailyAttendanceScreen';
 import { FaceSelfEnrollScreen } from '../screens/dashboard/FaceSelfEnrollScreen';
 import { GateQrScreen } from '../screens/dashboard/GateQrScreen';
 import { GateCheckInScreen } from '../screens/dashboard/GateCheckInScreen';
@@ -120,6 +121,11 @@ export function DashboardStack() {
         name="SecurityFaceEnroll"
         component={SecurityFaceEnrollScreen}
         options={{ title: 'Face enroll', headerShown: false }}
+      />
+      <Stack.Screen
+        name="SecurityDailyAttendance"
+        component={SecurityDailyAttendanceScreen}
+        options={{ title: 'Daily attendance', headerShown: false }}
       />
       <Stack.Screen
         name="FaceSelfEnroll"

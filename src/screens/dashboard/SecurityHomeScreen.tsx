@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  FlatList,
+  Image,
   Pressable,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -11,6 +12,7 @@ import {
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
+import { Ionicons } from '@expo/vector-icons';
 import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
 import { ModuleBackBar, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
@@ -19,6 +21,9 @@ import { Colors } from '../../theme/yana';
 import { fetchParentSchool } from '../../lib/parentPortalApi';
 import {
   endSecurityTrip,
+  ensureDailyRegister,
+  fetchDailyStudentAttendance,
+  fetchRegisterEntries,
   fetchSecurityActiveTrip,
   fetchSecurityAssignment,
   postSecurityTripGpsBatch,
@@ -33,6 +38,12 @@ type Props = NativeStackScreenProps<DashboardStackParamList, 'SecurityHome'>;
 
 type GpsPin = { latitude: number; longitude: number; speed_kmh?: number; recorded_at: string };
 
+type DailyRecord = {
+  id: string;
+  title: string;
+  meta: string;
+};
+
 /**
  * Security trips & boarding only. Face enroll is a separate screen (SecurityFaceEnroll).
  */
@@ -46,9 +57,70 @@ export function SecurityHomeScreen({ navigation }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [starting, setStarting] = useState(false);
   const [ending, setEnding] = useState(false);
+  const [dailyRecords, setDailyRecords] = useState<DailyRecord[]>([]);
+  const [dailyTotal, setDailyTotal] = useState(0);
+  const [dailyPage, setDailyPage] = useState(1);
+  const [dailyLoadingMore, setDailyLoadingMore] = useState(false);
   const gpsWatchRef = useRef<Location.LocationSubscription | null>(null);
   const gpsBufferRef = useRef<GpsPin[]>([]);
   const gpsFlushRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const loadDailyRecords = useCallback(async (page = 1, append = false) => {
+    if (append) setDailyLoadingMore(true);
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const items: DailyRecord[] = [];
+      try {
+        const ensured = await ensureDailyRegister(today);
+        const sessionId = ensured?.session?.id;
+        if (sessionId) {
+          const entries = await fetchRegisterEntries(sessionId);
+          for (const e of entries?.entries ?? []) {
+            items.push({
+              id: `reg-${e.id}`,
+              title: e.full_name || 'Visitor / person',
+              meta: [
+                e.person_type || 'register',
+                e.direction || '',
+                e.marked_at ? String(e.marked_at).slice(11, 16) : '',
+              ]
+                .filter(Boolean)
+                .join(' · '),
+            });
+          }
+        }
+      } catch {
+        /* register optional */
+      }
+      try {
+        const daily = await fetchDailyStudentAttendance({ date: today, page, limit: 30 });
+        const marked = (daily?.rows ?? []).filter((r) => r.check_in_at || r.check_out_at);
+        for (const r of marked) {
+          items.push({
+            id: `att-${r.student_id}`,
+            title: r.name,
+            meta: [
+              r.admission_number || '',
+              r.check_in_at ? `in ${String(r.check_in_at).slice(11, 16)}` : '',
+              r.check_out_at ? `out ${String(r.check_out_at).slice(11, 16)}` : '',
+            ]
+              .filter(Boolean)
+              .join(' · '),
+          });
+        }
+        setDailyTotal(Math.max(items.length, Number(daily?.total ?? 0)));
+      } catch {
+        setDailyTotal(items.length);
+      }
+      // Client-side page slice for combined list
+      const pageSize = 30;
+      const slice = items.slice(0, page * pageSize);
+      setDailyRecords(append ? slice : slice);
+      setDailyPage(page);
+    } finally {
+      setDailyLoadingMore(false);
+    }
+  }, []);
 
   const load = useCallback(
     async (soft = false) => {
@@ -62,6 +134,7 @@ export function SecurityHomeScreen({ navigation }: Props) {
         setSchoolName(String(schoolRes?.school?.name ?? 'Your school'));
         setAssignment(assignRes?.assignment ?? null);
         setActiveTrip(tripRes?.trip ?? null);
+        await loadDailyRecords(1, false);
       } catch (e) {
         showDialog({
           title: 'Could not load',
@@ -73,7 +146,7 @@ export function SecurityHomeScreen({ navigation }: Props) {
         setRefreshing(false);
       }
     },
-    [showDialog],
+    [showDialog, loadDailyRecords],
   );
 
   useEffect(() => {
@@ -181,12 +254,22 @@ export function SecurityHomeScreen({ navigation }: Props) {
   };
 
   const tripActive = Boolean(activeTrip?.id && activeTrip.status === 'active');
+  const busPhoto =
+    activeTrip?.vehicle_photo_url || assignment?.vehicle_photo_url || null;
+  const busLabel =
+    activeTrip?.vehicle_name ||
+    assignment?.vehicle_name ||
+    activeTrip?.vehicle_plate ||
+    assignment?.vehicle_plate ||
+    'Bus';
 
   return (
     <View style={styles.root}>
       <DashboardBackground patternOnly liquid />
       <ModuleBackBar label="Trips & board" onBack={() => navigation.goBack()} />
-      <ScrollView
+      <FlatList
+        data={dailyRecords}
+        keyExtractor={(item) => item.id}
         contentContainerStyle={[
           styles.scroll,
           { paddingTop: floatingHeaderInset(insets.top), paddingBottom: moduleScrollBottomPad(insets.bottom) },
@@ -201,79 +284,131 @@ export function SecurityHomeScreen({ navigation }: Props) {
             tintColor={Colors.brandGreenDark}
           />
         }
-      >
-        <ModuleKicker>Ops</ModuleKicker>
-        <Text style={styles.h1}>{schoolName}</Text>
-        <Text style={styles.sub}>Start trip · GPS · board students. Face enroll is a separate tile.</Text>
+        onEndReached={() => {
+          if (dailyLoadingMore || loading) return;
+          if (dailyRecords.length >= Math.max(dailyTotal, dailyRecords.length)) return;
+          void loadDailyRecords(dailyPage + 1, true);
+        }}
+        onEndReachedThreshold={0.4}
+        ListHeaderComponent={
+          <View style={{ gap: 12 }}>
+            <ModuleKicker>Ops</ModuleKicker>
+            <Text style={styles.h1}>{schoolName}</Text>
+            <Text style={styles.sub}>Start trip · GPS · board students. Face enroll is a separate tile.</Text>
 
-        {loading ? (
-          <ActivityIndicator color={Colors.brandGreenDark} style={{ marginTop: 24 }} />
-        ) : (
-          <>
-            <Pressable style={styles.linkBtn} onPress={() => navigation.navigate('GateCheckIn')}>
-              <Text style={styles.linkBtnText}>Gate check-in</Text>
-            </Pressable>
+            {loading ? (
+              <ActivityIndicator color={Colors.brandGreenDark} style={{ marginTop: 24 }} />
+            ) : (
+              <>
+                <Pressable style={styles.linkBtn} onPress={() => navigation.navigate('GateCheckIn')}>
+                  <Text style={styles.linkBtnText}>Gate check-in (staff QR)</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.linkBtn}
+                  onPress={() => navigation.navigate('SecurityDailyAttendance')}>
+                  <Text style={styles.linkBtnText}>Daily attendance (face · QR · search)</Text>
+                </Pressable>
 
-            <ModuleGlassCard>
-              <Text style={styles.cardTitle}>My assignment</Text>
-              {assignment ? (
-                <>
-                  <Text style={styles.line}>
-                    Bus: {assignment.vehicle_name ?? '—'} ({assignment.vehicle_plate ?? '—'})
-                  </Text>
-                  <Text style={styles.line}>Route: {assignment.route_name ?? '—'}</Text>
-                </>
-              ) : (
-                <Text style={styles.muted}>No vehicle assigned yet. Admin assigns driver + assistant on Desk.</Text>
-              )}
-            </ModuleGlassCard>
+                <ModuleGlassCard>
+                  <Text style={styles.cardTitle}>My assignment</Text>
+                  {assignment ? (
+                    <View style={styles.busRow}>
+                      {busPhoto ? (
+                        <Image source={{ uri: busPhoto }} style={styles.busImg} />
+                      ) : (
+                        <View style={[styles.busImg, styles.busPlaceholder]}>
+                          <Ionicons name="bus-outline" size={28} color={Colors.brandGreenDark} />
+                        </View>
+                      )}
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.line}>
+                          Bus: {assignment.vehicle_name ?? '—'} ({assignment.vehicle_plate ?? '—'})
+                        </Text>
+                        <Text style={styles.line}>Route: {assignment.route_name ?? '—'}</Text>
+                      </View>
+                    </View>
+                  ) : (
+                    <Text style={styles.muted}>No vehicle assigned yet. Admin assigns driver + assistant on Desk.</Text>
+                  )}
+                </ModuleGlassCard>
 
-            <ModuleGlassCard>
-              <Text style={styles.cardTitle}>Active trip</Text>
-              {tripActive ? (
-                <>
-                  <Text style={styles.line}>On trip · {activeTrip?.trip_kind ?? 'run'}</Text>
-                  <Text style={styles.muted}>GPS buffered and sent about every 20 seconds for parent tracking</Text>
-                  <Pressable style={[styles.btn, styles.btnDanger]} disabled={ending} onPress={() => void endTrip()}>
-                    <Text style={styles.btnText}>{ending ? 'Ending…' : 'End trip'}</Text>
-                  </Pressable>
-                </>
-              ) : (
-                <>
-                  <Text style={styles.muted}>
-                    Driver/assistant are set when the trip is created on Desk. Start your assigned bus run here.
-                  </Text>
-                  <Pressable
-                    style={styles.btn}
-                    disabled={starting || !assignment?.vehicle_id}
-                    onPress={() => void startTrip()}
-                  >
-                    <Text style={styles.btnText}>{starting ? 'Starting…' : 'Start trip'}</Text>
-                  </Pressable>
-                </>
-              )}
-            </ModuleGlassCard>
+                <ModuleGlassCard>
+                  <Text style={styles.cardTitle}>Active trip</Text>
+                  {tripActive ? (
+                    <>
+                      <View style={styles.busRow}>
+                        {busPhoto ? (
+                          <Image source={{ uri: busPhoto }} style={styles.busImg} />
+                        ) : (
+                          <View style={[styles.busImg, styles.busPlaceholder]}>
+                            <Ionicons name="bus-outline" size={28} color={Colors.brandGreenDark} />
+                          </View>
+                        )}
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.line}>
+                            {busLabel} · {activeTrip?.trip_kind?.replace(/_/g, ' ') ?? 'run'}
+                          </Text>
+                          <Text style={styles.muted}>GPS buffered ~every 20s for parent tracking</Text>
+                        </View>
+                      </View>
+                      <Pressable style={[styles.btn, styles.btnDanger]} disabled={ending} onPress={() => void endTrip()}>
+                        <Text style={styles.btnText}>{ending ? 'Ending…' : 'End trip'}</Text>
+                      </Pressable>
+                    </>
+                  ) : (
+                    <>
+                      <Text style={styles.muted}>
+                        Driver/assistant are set when the trip is created on Desk. Start your assigned bus run here.
+                      </Text>
+                      <Pressable
+                        style={styles.btn}
+                        disabled={starting || !assignment?.vehicle_id}
+                        onPress={() => void startTrip()}>
+                        <Text style={styles.btnText}>{starting ? 'Starting…' : 'Start trip'}</Text>
+                      </Pressable>
+                    </>
+                  )}
+                </ModuleGlassCard>
 
-            <ModuleGlassCard>
-              <BoardStudentPanel
-                tripId={activeTrip?.id ?? null}
-                tripActive={tripActive}
-                onBoarded={() => {
-                  /* keep GPS buffer; avoid full reload flash */
-                }}
-                onCancel={() => undefined}
-              />
-            </ModuleGlassCard>
+                <ModuleGlassCard>
+                  <BoardStudentPanel
+                    tripId={activeTrip?.id ?? null}
+                    tripActive={tripActive}
+                    onBoarded={() => {
+                      /* keep GPS buffer; avoid full reload flash */
+                    }}
+                    onCancel={() => undefined}
+                  />
+                </ModuleGlassCard>
 
-            <Pressable style={styles.linkBtn} onPress={() => navigation.navigate('SecurityFaceEnroll')}>
-              <Text style={styles.linkBtnText}>Face enroll (save faces)</Text>
-            </Pressable>
-            <Pressable style={styles.linkBtn} onPress={() => navigation.navigate('GateQr')}>
-              <Text style={styles.linkBtnText}>Show Gate QR (staff check-in)</Text>
-            </Pressable>
-          </>
+                <Pressable style={styles.linkBtn} onPress={() => navigation.navigate('SecurityFaceEnroll')}>
+                  <Text style={styles.linkBtnText}>Face enroll (save faces)</Text>
+                </Pressable>
+                <Pressable style={styles.linkBtn} onPress={() => navigation.navigate('GateQr')}>
+                  <Text style={styles.linkBtnText}>Show Gate QR (staff check-in)</Text>
+                </Pressable>
+
+                <Text style={styles.cardTitle}>Daily records</Text>
+                <Text style={styles.muted}>Today&apos;s gate / register entries</Text>
+              </>
+            )}
+          </View>
+        }
+        ListEmptyComponent={
+          !loading ? <Text style={styles.muted}>No daily records yet today.</Text> : null
+        }
+        ListFooterComponent={
+          dailyLoadingMore ? (
+            <ActivityIndicator style={{ marginVertical: 12 }} color={Colors.brandGreenDark} />
+          ) : null
+        }
+        renderItem={({ item }) => (
+          <View style={styles.recordRow}>
+            <Text style={styles.line}>{item.title}</Text>
+            <Text style={styles.muted}>{item.meta}</Text>
+          </View>
         )}
-      </ScrollView>
+      />
     </View>
   );
 }
@@ -286,6 +421,13 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 15, fontWeight: '700', color: Colors.ink, marginBottom: 8 },
   line: { fontSize: 14, color: Colors.ink, marginBottom: 4 },
   muted: { fontSize: 12, color: '#64748b', marginBottom: 8 },
+  busRow: { flexDirection: 'row', gap: 12, alignItems: 'center', marginBottom: 8 },
+  busImg: { width: 72, height: 54, borderRadius: 10 },
+  busPlaceholder: {
+    backgroundColor: 'rgba(15,92,66,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   btn: {
     marginTop: 8,
     backgroundColor: Colors.brandGreenDark,
@@ -302,4 +444,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(15,92,66,0.12)',
   },
   linkBtnText: { fontWeight: '700', color: Colors.brandGreenDark },
+  recordRow: {
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(0,0,0,0.08)',
+  },
 });

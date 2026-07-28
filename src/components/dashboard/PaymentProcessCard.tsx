@@ -358,6 +358,8 @@ export function PaymentProcessCard({
 
       if (cancelled.current) return;
 
+      const checkoutId = String(res?.checkout_request_id || '').trim();
+
       setPhase('awaiting_mpesa');
 
       setStatusLine(
@@ -374,11 +376,36 @@ export function PaymentProcessCard({
 
       setStatusLine('Syncing school balances and receipts…');
 
+      // Ensure votehead allocations + Desk SQLite dual-write once M-Pesa completes.
+      if (checkoutId) {
+        try {
+          const { deskFetch } = await import('../../lib/deskApi');
+          await deskFetch('/accounts/collections/apply-completed', {
+            method: 'POST',
+            body: { checkout_request_id: checkoutId },
+          });
+        } catch {
+          /* still pending or Nest offline — refresh loop below */
+        }
+      }
+
       let found = false;
 
       for (let i = 0; i < 5; i++) {
 
         if (cancelled.current) return;
+
+        if (checkoutId && i > 0) {
+          try {
+            const { deskFetch } = await import('../../lib/deskApi');
+            await deskFetch('/accounts/collections/apply-completed', {
+              method: 'POST',
+              body: { checkout_request_id: checkoutId },
+            });
+          } catch {
+            /* keep polling */
+          }
+        }
 
         if (onRefresh) await onRefresh();
 
