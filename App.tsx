@@ -1,19 +1,23 @@
+import 'react-native-gesture-handler';
 import React, { useCallback, useEffect, useState } from 'react';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
-// Polyfill for crypto.randomUUID (React Native doesn't have it natively)
-if (typeof crypto === 'undefined') {
-  // @ts-expect-error - React Native global
-  global.crypto = {};
-}
-if (typeof crypto.randomUUID !== 'function') {
-  // @ts-expect-error - React Native global
-  crypto.randomUUID = () => {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-      const r = (Math.random() * 16) | 0;
-      const v = c === 'x' ? r : (r & 0x3) | 0x8;
-      return v.toString(16);
-    });
-  };
+// Polyfill crypto.randomUUID — never throw at module load (host crypto can be read-only).
+try {
+  const g = globalThis as typeof globalThis & { crypto?: { randomUUID?: () => string } };
+  if (!g.crypto) {
+    g.crypto = {} as Crypto;
+  }
+  if (typeof g.crypto.randomUUID !== 'function') {
+    g.crypto.randomUUID = () =>
+      'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+        const r = (Math.random() * 16) | 0;
+        const v = c === 'x' ? r : (r & 0x3) | 0x8;
+        return v.toString(16);
+      });
+  }
+} catch {
+  /* ignore — Supabase may still work without UUID polyfill */
 }
 
 import {
@@ -76,21 +80,23 @@ export default function App() {
 
   if (!appReady) {
     return (
-      <>
+      <GestureHandlerRootView style={{ flex: 1 }}>
         <ImmersiveSystemBars />
         <SplashLoadingScreen />
-      </>
+      </GestureHandlerRootView>
     );
   }
 
   return (
-    <DialogProvider>
-      <AuthProvider>
-        <DeskAuthProvider>
-          <ImmersiveSystemBars />
-          <AppNavigator />
-        </DeskAuthProvider>
-      </AuthProvider>
-    </DialogProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <DialogProvider>
+        <AuthProvider>
+          <DeskAuthProvider>
+            <ImmersiveSystemBars />
+            <AppNavigator />
+          </DeskAuthProvider>
+        </AuthProvider>
+      </DialogProvider>
+    </GestureHandlerRootView>
   );
 }

@@ -13,12 +13,34 @@
     },
     "preview": {
       "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://jltzzevsnxxroylmwyna.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpsdHp6ZXZzbnh4cm95bG13eW5hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMxNTEzMTEsImV4cCI6MjA5ODcyNzMxMX0.sZlubmgsFrPeVapd6kzuUWl_SIztBA0k2R2WH9FejW0",
+        "EXPO_PUBLIC_COMPAT_WEB_SESSION_KEY": "bankgpt_session",
+        "EXPO_PUBLIC_TUKUPAY_API": "https://test.api.tuku.money",
+        "EXPO_PUBLIC_WEB_URL": "https://tukua.ai",
+        "EXPO_PUBLIC_TUKUA_WEB_URL": "https://tukua.ai",
+        "EXPO_PUBLIC_DESK_API_URL": "https://tukua.up.railway.app/api",
+        "EXPO_PUBLIC_DESK_WEB_URL": "https://tukua.ai",
+        "EAS_BUILD_NO_EXPO_GO_WARNING": "true"
+      },
       "android": {
         "buildType": "apk",
         "credentialsSource": "local"
       }
     },
     "production": {
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://jltzzevsnxxroylmwyna.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpsdHp6ZXZzbnh4cm95bG13eW5hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMxNTEzMTEsImV4cCI6MjA5ODcyNzMxMX0.sZlubmgsFrPeVapd6kzuUWl_SIztBA0k2R2WH9FejW0",
+        "EXPO_PUBLIC_COMPAT_WEB_SESSION_KEY": "bankgpt_session",
+        "EXPO_PUBLIC_TUKUPAY_API": "https://test.api.tuku.money",
+        "EXPO_PUBLIC_WEB_URL": "https://tukua.ai",
+        "EXPO_PUBLIC_TUKUA_WEB_URL": "https://tukua.ai",
+        "EXPO_PUBLIC_DESK_API_URL": "https://tukua.up.railway.app/api",
+        "EXPO_PUBLIC_DESK_WEB_URL": "https://tukua.ai",
+        "EAS_BUILD_NO_EXPO_GO_WARNING": "true"
+      },
       "android": {
         "buildType": "app-bundle",
         "credentialsSource": "local"

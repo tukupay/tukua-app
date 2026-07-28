@@ -17,15 +17,22 @@ import { TransportScreen } from '../screens/dashboard/TransportScreen';
 import { AttendanceScreen } from '../screens/dashboard/AttendanceScreen';
 import { BursaryScreen } from '../screens/dashboard/BursaryScreen';
 import { SecurityHomeScreen } from '../screens/dashboard/SecurityHomeScreen';
-import { SecurityFaceEnrollScreen } from '../screens/dashboard/SecurityFaceEnrollScreen';
-import { SecurityDailyAttendanceScreen } from '../screens/dashboard/SecurityDailyAttendanceScreen';
-import { FaceSelfEnrollScreen } from '../screens/dashboard/FaceSelfEnrollScreen';
-import { GateQrScreen } from '../screens/dashboard/GateQrScreen';
-import { GateCheckInScreen } from '../screens/dashboard/GateCheckInScreen';
 import { DashboardStackParamList } from './types';
 import { Colors } from '../theme/yana';
 
 const Stack = createNativeStackNavigator<DashboardStackParamList>();
+
+/** Camera / ML Kit screens — load on demand so cold start does not pull expo-camera. */
+const lazyCamera = {
+  SecurityFaceEnroll: () =>
+    require('../screens/dashboard/SecurityFaceEnrollScreen').SecurityFaceEnrollScreen,
+  SecurityDailyAttendance: () =>
+    require('../screens/dashboard/SecurityDailyAttendanceScreen').SecurityDailyAttendanceScreen,
+  FaceSelfEnroll: () =>
+    require('../screens/dashboard/FaceSelfEnrollScreen').FaceSelfEnrollScreen,
+  GateQr: () => require('../screens/dashboard/GateQrScreen').GateQrScreen,
+  GateCheckIn: () => require('../screens/dashboard/GateCheckInScreen').GateCheckInScreen,
+};
 
 export function DashboardStack() {
   return (
@@ -119,27 +126,27 @@ export function DashboardStack() {
       />
       <Stack.Screen
         name="SecurityFaceEnroll"
-        component={SecurityFaceEnrollScreen}
+        getComponent={lazyCamera.SecurityFaceEnroll}
         options={{ title: 'Face enroll', headerShown: false }}
       />
       <Stack.Screen
         name="SecurityDailyAttendance"
-        component={SecurityDailyAttendanceScreen}
+        getComponent={lazyCamera.SecurityDailyAttendance}
         options={{ title: 'Daily attendance', headerShown: false }}
       />
       <Stack.Screen
         name="FaceSelfEnroll"
-        component={FaceSelfEnrollScreen}
+        getComponent={lazyCamera.FaceSelfEnroll}
         options={{ title: 'My face', headerShown: false }}
       />
       <Stack.Screen
         name="GateQr"
-        component={GateQrScreen}
+        getComponent={lazyCamera.GateQr}
         options={{ title: 'Gate QR', headerShown: false }}
       />
       <Stack.Screen
         name="GateCheckIn"
-        component={GateCheckInScreen}
+        getComponent={lazyCamera.GateCheckIn}
         options={{ title: 'Gate check-in', headerShown: false }}
       />
       <Stack.Screen

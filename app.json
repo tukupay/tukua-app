@@ -2,10 +2,11 @@
   "expo": {
     "name": "Tukua",
     "slug": "tukua",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "orientation": "portrait",
     "icon": "./assets/images/icons/app-icon-1024.png",
     "userInterfaceStyle": "light",
+    "newArchEnabled": false,
     "splash": {
       "backgroundColor": "#FFFFFF",
       "image": "./assets/images/logo/splash-bird.png",
@@ -35,7 +36,7 @@
         "backgroundColor": "#FFFFFF"
       },
       "package": "com.app.tukua",
-      "versionCode": 4,
+      "versionCode": 5,
       "softwareKeyboardLayoutMode": "pan",
       "usesCleartextTraffic": true,
       "statusBar": {
