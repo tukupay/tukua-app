@@ -79,7 +79,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data, error } = await supabase.auth.getUser();
       if (error) {
         log.warn('Auth', 'getUser failed during profile refresh', error.message);
-        if (/jwt|expired|invalid|session/i.test(error.message)) {
+        if (/jwt|expired|invalid|session/i.test(error.message) && !/network|fetch|offline|timeout/i.test(error.message)) {
+          await clearDeskSession();
           await signOut();
           setSession(null);
           setProfile(null);
@@ -98,17 +99,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [loadUserPreferences]);
 
   const ensureFreshSession = useCallback(async () => {
+    const { data: before } = await supabase.auth.getSession();
     const fresh = await refreshSessionIfNeeded();
     setSession((prev) => {
-      if (prev?.access_token === fresh?.access_token && prev?.expires_at === fresh?.expires_at) {
+      const next = fresh ?? before.session ?? prev;
+      if (prev?.access_token === next?.access_token && prev?.expires_at === next?.expires_at) {
         return prev;
       }
-      return fresh;
+      return next;
     });
-    if (!fresh) {
+    const resolved = fresh ?? before.session;
+    if (!resolved) {
       setProfile(null);
     }
-    return fresh;
+    return resolved;
   }, []);
 
   useEffect(() => {
@@ -157,18 +161,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (state !== 'active') return;
       void (async () => {
         log.info('Auth', 'app foreground — refreshing session');
+        const { data: before } = await supabase.auth.getSession();
         const fresh = await refreshSessionIfNeeded();
         setSession((prev) => {
-          if (prev?.access_token === fresh?.access_token && prev?.expires_at === fresh?.expires_at) {
+          const next = fresh ?? before.session ?? prev;
+          if (prev?.access_token === next?.access_token && prev?.expires_at === next?.expires_at) {
             return prev;
           }
-          return fresh;
+          return next;
         });
-        if (!fresh) {
+        const resolved = fresh ?? before.session;
+        if (!resolved) {
           setProfile(null);
           setSavageMode(false);
-        } else if (fresh.user) {
-          void loadUserPreferences(fresh.user.id);
+        } else if (resolved.user) {
+          void loadUserPreferences(resolved.user.id);
         }
       })();
     };

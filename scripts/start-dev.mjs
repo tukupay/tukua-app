@@ -70,13 +70,21 @@ async function main() {
   }
 
   console.log('[start-dev] Starting Expo…');
+  // Expo CLI can crash on Windows with "Body is unusable: Body has already been read"
+  // while fetching native-module versions for doctor checks — that kills Metro and
+  // (via killOthersOn:failure) the whole npm run dev:all stack. Skip that network check.
+  const expoEnv = {
+    ...process.env,
+    EXPO_NO_DEPENDENCY_VALIDATION:
+      process.env.EXPO_NO_DEPENDENCY_VALIDATION ?? '1',
+  };
   const expo = spawn(
     process.platform === 'win32' ? 'npx.cmd' : 'npx',
     ['expo', 'start', ...expoArgs],
     {
       cwd: root,
       stdio: 'inherit',
-      env: process.env,
+      env: expoEnv,
       shell: process.platform === 'win32',
     },
   );

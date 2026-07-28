@@ -12,7 +12,15 @@ import { AssessmentsScreen } from '../screens/dashboard/AssessmentsScreen';
 import { TeachersScreen } from '../screens/dashboard/TeachersScreen';
 import { LibraryScreen } from '../screens/dashboard/LibraryScreen';
 import { AccountsScreen } from '../screens/dashboard/AccountsScreen';
+import { ReceiptViewScreen } from '../screens/dashboard/ReceiptViewScreen';
 import { TransportScreen } from '../screens/dashboard/TransportScreen';
+import { AttendanceScreen } from '../screens/dashboard/AttendanceScreen';
+import { BursaryScreen } from '../screens/dashboard/BursaryScreen';
+import { SecurityHomeScreen } from '../screens/dashboard/SecurityHomeScreen';
+import { SecurityFaceEnrollScreen } from '../screens/dashboard/SecurityFaceEnrollScreen';
+import { FaceSelfEnrollScreen } from '../screens/dashboard/FaceSelfEnrollScreen';
+import { GateQrScreen } from '../screens/dashboard/GateQrScreen';
+import { GateCheckInScreen } from '../screens/dashboard/GateCheckInScreen';
 import { DashboardStackParamList } from './types';
 import { Colors } from '../theme/yana';
 
@@ -84,9 +92,49 @@ export function DashboardStack() {
         options={{ title: 'Accounts', headerShown: false }}
       />
       <Stack.Screen
+        name="ReceiptView"
+        component={ReceiptViewScreen}
+        options={{ title: 'Receipt', headerShown: false }}
+      />
+      <Stack.Screen
         name="Transport"
         component={TransportScreen}
         options={{ title: 'Transport', headerShown: false }}
+      />
+      <Stack.Screen
+        name="Attendance"
+        component={AttendanceScreen}
+        options={{ title: 'Attendance', headerShown: false }}
+      />
+      <Stack.Screen
+        name="Bursary"
+        component={BursaryScreen}
+        options={{ title: 'Bursary', headerShown: false }}
+      />
+      <Stack.Screen
+        name="SecurityHome"
+        component={SecurityHomeScreen}
+        options={{ title: 'Security', headerShown: false }}
+      />
+      <Stack.Screen
+        name="SecurityFaceEnroll"
+        component={SecurityFaceEnrollScreen}
+        options={{ title: 'Face enroll', headerShown: false }}
+      />
+      <Stack.Screen
+        name="FaceSelfEnroll"
+        component={FaceSelfEnrollScreen}
+        options={{ title: 'My face', headerShown: false }}
+      />
+      <Stack.Screen
+        name="GateQr"
+        component={GateQrScreen}
+        options={{ title: 'Gate QR', headerShown: false }}
+      />
+      <Stack.Screen
+        name="GateCheckIn"
+        component={GateCheckInScreen}
+        options={{ title: 'Gate check-in', headerShown: false }}
       />
       <Stack.Screen
         name="FeaturePlaceholder"

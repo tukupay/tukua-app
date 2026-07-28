@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../theme/yana';
 import { TAB_BAR_BODY_HEIGHT } from '../constants/layout';
@@ -37,11 +37,23 @@ class ErrorBoundaryInner extends React.Component<
   }
 }
 
+function rejectionMessage(reason: unknown): string {
+  if (reason instanceof Error) return reason.message || 'Unexpected error';
+  if (typeof reason === 'string') return reason;
+  try {
+    return JSON.stringify(reason);
+  } catch {
+    return String(reason ?? 'Unexpected error');
+  }
+}
+
 export function MobileErrorBoundary({ children }: Props) {
   const [banners, setBanners] = useState<Banner[]>([]);
 
   const push = useCallback((message: string) => {
-    setBanners((prev) => [...prev.slice(-2), { id: Date.now(), message }]);
+    const trimmed = message.trim();
+    if (!trimmed) return;
+    setBanners((prev) => [...prev.slice(-2), { id: Date.now(), message: trimmed }]);
   }, []);
 
   const dismiss = useCallback((id: number) => {
@@ -49,15 +61,14 @@ export function MobileErrorBoundary({ children }: Props) {
   }, []);
 
   useEffect(() => {
-    const onUnhandled = (event: PromiseRejectionEvent) => {
-      const reason = event.reason;
-      const message =
-        reason instanceof Error ? reason.message : String(reason ?? 'Unexpected error');
+    const onUnhandled = (event: PromiseRejectionEvent | { reason?: unknown; preventDefault?: () => void }) => {
+      const message = rejectionMessage(event.reason);
       if (message.includes('was not handled by any navigator')) {
         push('Navigation is not ready yet. Try again in a moment.');
         return;
       }
       push(message);
+      event.preventDefault?.();
     };
 
     const errorUtils = (
@@ -75,20 +86,35 @@ export function MobileErrorBoundary({ children }: Props) {
         push('Navigation is not ready yet. Try again in a moment.');
         return;
       }
+      push(message);
+      if (!isFatal) return;
       prevHandler?.(error, isFatal);
     });
 
-    if (Platform.OS === 'web') {
-      globalThis.addEventListener?.('unhandledrejection', onUnhandled as EventListener);
-    }
+    // Web + React Native Hermes (when available)
+    globalThis.addEventListener?.('unhandledrejection', onUnhandled as EventListener);
+
+    // RN legacy rejection tracking
+    const tracking = (
+      globalThis as {
+        HermesInternal?: { enablePromiseRejectionTracker?: (opts: {
+          allRejections: boolean;
+          onUnhandled: (id: number, error: Error) => void;
+        }) => void };
+      }
+    ).HermesInternal;
+    tracking?.enablePromiseRejectionTracker?.({
+      allRejections: true,
+      onUnhandled: (_id, error) => {
+        push(rejectionMessage(error));
+      },
+    });
 
     return () => {
       if (prevHandler) {
         errorUtils?.setGlobalHandler?.(prevHandler);
       }
-      if (Platform.OS === 'web') {
-        globalThis.removeEventListener?.('unhandledrejection', onUnhandled as EventListener);
-      }
+      globalThis.removeEventListener?.('unhandledrejection', onUnhandled as EventListener);
     };
   }, [push]);
 

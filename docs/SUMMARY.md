@@ -2,6 +2,9 @@
 
 Last updated: 2026-07-27
 
+> **Monorepo hub skill:** `tukua-main-skill` (alias `/cbe`) → [`.cursor/skills/tukua-main-skill/modules/tukua-mobile.md`](../../.cursor/skills/tukua-main-skill/modules/tukua-mobile.md)  
+> Run with Desk/web: repo root `npm run dev:all` (Expo + proxy included).
+
 ## What this app is
 
 **tukua-mobile** is the Expo / React Native shell for Tukua (parents, students, teachers).  

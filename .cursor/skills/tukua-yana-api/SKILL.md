@@ -63,7 +63,7 @@ Me: `GET /auth/me`
 **Local testing:** `EXPO_PUBLIC_DESK_API_URL=http://localhost:3253/api` (default). Start yana desktop api-host yourself. Railway later via yana deploy skill.
 
 Canonical doc (yana): `desktop/docs/PARENT_MOBILE_PORTAL.md`  
-CBE: `.claude/skills/cbe/modules/parent-mobile-portal.md`
+CBE: `.claude/skills/tukua-main-skill/modules/parent-mobile-portal.md`
 
 ### Roles (`yana/desktop/packages/types/src/roles.ts`)
 

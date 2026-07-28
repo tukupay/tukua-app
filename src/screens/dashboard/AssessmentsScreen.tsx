@@ -43,6 +43,12 @@ type ChildReport = {
     total_marks?: number | string | null;
     position?: number | string | null;
     class_position?: number | string | null;
+    rank_in_class?: number | string | null;
+    rank_in_level?: number | string | null;
+    rank_out_of_class?: number | string | null;
+    rank_out_of_level?: number | string | null;
+    class_mean_marks?: number | string | null;
+    level_mean_marks?: number | string | null;
     principal_comment?: string | null;
     class_teacher_comment?: string | null;
   } | null;
@@ -63,6 +69,24 @@ function examLabel(e?: ExamRow | null): string {
     [e.term, e.academic_year].filter(Boolean).join(' · ') ||
     'Exam'
   );
+}
+
+function rankLabel(report: ChildReport['report']): string {
+  if (!report) return '—';
+  const pos = report.rank_in_class ?? report.class_position ?? report.position;
+  const out = report.rank_out_of_class;
+  if (pos != null && out != null) return `${pos} / ${out}`;
+  if (pos != null) return String(pos);
+  return '—';
+}
+
+function levelRankLabel(report: ChildReport['report']): string {
+  if (!report) return '—';
+  const pos = report.rank_in_level;
+  const out = report.rank_out_of_level;
+  if (pos != null && out != null) return `${pos} / ${out}`;
+  if (out != null) return `— / ${out}`;
+  return '—';
 }
 
 export function AssessmentsScreen({ navigation }: Props) {
@@ -126,10 +150,20 @@ export function AssessmentsScreen({ navigation }: Props) {
   }, [allExams, year]);
 
   const children = useMemo(() => {
-    const all = payload?.children ?? [];
-    if (!selectedStudentId) return all;
-    const filtered = all.filter((c) => c.student_id === selectedStudentId);
-    return filtered.length ? filtered : all;
+    const all = Array.isArray(payload?.children) ? payload.children : [];
+    const filtered = selectedStudentId
+      ? all.filter((c) => String(c.student_id ?? '') === selectedStudentId)
+      : all;
+    const source = filtered.length ? filtered : selectedStudentId ? [] : all;
+    const seen = new Set<string>();
+    return source.filter((c, index) => {
+      const sid = String(c.student_id ?? '').trim();
+      const adm = String(c.admission_number ?? '').trim();
+      const key = sid || adm || `row-${index}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   }, [payload?.children, selectedStudentId]);
 
   const selectYear = (y: string) => {
@@ -217,8 +251,9 @@ export function AssessmentsScreen({ navigation }: Props) {
         ) : (
           children.map((child, index) => {
             const report = child.report;
+            const cardKey = `${String(child.student_id ?? 'unknown')}-${String(child.admission_number ?? 'na')}-${index}`;
             return (
-              <ModuleGlassCard key={String(child.student_id ?? index)}>
+              <ModuleGlassCard key={cardKey}>
                 <View style={styles.cardTop}>
                   <View style={styles.iconWrap}>
                     <Ionicons name="ribbon-outline" size={18} color={Colors.primary} />
@@ -244,19 +279,36 @@ export function AssessmentsScreen({ navigation }: Props) {
                       <Text style={styles.statValue}>{report.mean_grade || '—'}</Text>
                     </View>
                     <View style={styles.stat}>
-                      <Text style={styles.statLabel}>Position</Text>
-                      <Text style={styles.statValue}>
-                        {report.class_position != null
-                          ? String(report.class_position)
-                          : report.position != null
-                            ? String(report.position)
-                            : '—'}
-                      </Text>
+                      <Text style={styles.statLabel}>Class rank</Text>
+                      <Text style={styles.statValue}>{rankLabel(report)}</Text>
                     </View>
                   </View>
                 ) : (
                   <Text style={styles.noReport}>No report for this exam yet.</Text>
                 )}
+                {report &&
+                (report.rank_out_of_level != null ||
+                  report.level_mean_marks != null ||
+                  report.rank_in_level != null) ? (
+                  <View style={styles.stats}>
+                    <View style={styles.stat}>
+                      <Text style={styles.statLabel}>Level rank</Text>
+                      <Text style={styles.statValue}>{levelRankLabel(report)}</Text>
+                    </View>
+                    <View style={styles.stat}>
+                      <Text style={styles.statLabel}>Class mean</Text>
+                      <Text style={styles.statValue}>
+                        {report.class_mean_marks != null ? String(report.class_mean_marks) : '—'}
+                      </Text>
+                    </View>
+                    <View style={styles.stat}>
+                      <Text style={styles.statLabel}>Level mean</Text>
+                      <Text style={styles.statValue}>
+                        {report.level_mean_marks != null ? String(report.level_mean_marks) : '—'}
+                      </Text>
+                    </View>
+                  </View>
+                ) : null}
                 {report?.class_teacher_comment ? (
                   <Text style={styles.comment}>Teacher: {report.class_teacher_comment}</Text>
                 ) : null}

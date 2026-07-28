@@ -27,6 +27,12 @@ import {
   fetchParentAccountsStatement,
   fetchParentPocketMoney,
 } from '../../lib/parentPortalApi';
+import {
+  fetchSecurityActiveTrip,
+  fetchSecurityAssignment,
+  type SecurityAssignment,
+  type SecurityTripRun,
+} from '../../lib/transportApi';
 import { formatTokensShort } from '../../components/navigation/TokenBalancePill';
 import { useRegisterTabJumper } from '../../hooks/useRegisterTabJumper';
 import {
@@ -36,6 +42,8 @@ import {
   INDIVIDUAL_DASHBOARD_ACTIONS,
   PARENT_DASHBOARD_ACTIONS,
   PARENT_HERO,
+  SECURITY_DASHBOARD_ACTIONS,
+  SECURITY_HERO,
   SCHOOL_ADMIN_DASHBOARD_ACTIONS,
   STUDENT_DASHBOARD_ACTIONS,
   STUDENT_HERO,
@@ -83,6 +91,9 @@ const BOLD_ICON: Partial<Record<FeatherIconName, keyof typeof Ionicons.glyphMap>
   pocket: 'cash',
   clock: 'time',
   navigation: 'navigate',
+  upload: 'cloud-upload',
+  camera: 'camera',
+  map: 'map',
 };
 
 function BoldIcon({
@@ -108,6 +119,8 @@ function actionsForPersona(persona: DeskPersona): DashboardAction[] {
       return STUDENT_DASHBOARD_ACTIONS;
     case 'teacher':
       return TEACHER_DASHBOARD_ACTIONS;
+    case 'security':
+      return SECURITY_DASHBOARD_ACTIONS;
     case 'school_admin':
       return SCHOOL_ADMIN_DASHBOARD_ACTIONS;
     case 'super_admin':
@@ -125,6 +138,8 @@ function heroForPersona(persona: DeskPersona): HeroStat[] {
       return STUDENT_HERO;
     case 'teacher':
       return TEACHER_HERO;
+    case 'security':
+      return SECURITY_HERO;
     default:
       return PARENT_HERO.slice(0, 3);
   }
@@ -204,6 +219,8 @@ export function DashboardHomeScreen() {
   const [tokensLoading, setTokensLoading] = useState(false);
   const [feeBalance, setFeeBalance] = useState<number | null>(null);
   const [pocketBalance, setPocketBalance] = useState<number | null>(null);
+  const [securityAssignment, setSecurityAssignment] = useState<SecurityAssignment | null>(null);
+  const [securityActiveTrip, setSecurityActiveTrip] = useState<SecurityTripRun | null>(null);
 
   const fade = useRef(new Animated.Value(0)).current;
   const slide = useRef(new Animated.Value(16)).current;
@@ -273,6 +290,25 @@ export function DashboardHomeScreen() {
     }
   }, [deskToken, persona, selectedStudentId]);
 
+  const loadSecurityHero = useCallback(async () => {
+    if (!deskToken || persona !== 'security') {
+      setSecurityAssignment(null);
+      setSecurityActiveTrip(null);
+      return;
+    }
+    try {
+      const [assignRes, tripRes] = await Promise.allSettled([
+        fetchSecurityAssignment(),
+        fetchSecurityActiveTrip(),
+      ]);
+      setSecurityAssignment(assignRes.status === 'fulfilled' ? assignRes.value?.assignment ?? null : null);
+      setSecurityActiveTrip(tripRes.status === 'fulfilled' ? tripRes.value?.trip ?? null : null);
+    } catch {
+      setSecurityAssignment(null);
+      setSecurityActiveTrip(null);
+    }
+  }, [deskToken, persona]);
+
   useEffect(() => {
     void loadTokens();
   }, [loadTokens]);
@@ -280,6 +316,10 @@ export function DashboardHomeScreen() {
   useEffect(() => {
     void loadStudentBalances();
   }, [loadStudentBalances]);
+
+  useEffect(() => {
+    void loadSecurityHero();
+  }, [loadSecurityHero]);
 
   useEffect(() => {
     Animated.parallel([
@@ -328,6 +368,11 @@ export function DashboardHomeScreen() {
       'Welcome';
     return full.split(/\s+/)[0] || 'there';
   }, [deskUser, profile]);
+
+  const userDisplayName = useMemo(() => {
+    const full = [deskUser?.first_name, deskUser?.last_name].filter(Boolean).join(' ').trim();
+    return full || deskUser?.email || profile?.fullName || profile?.email || parentFirstName;
+  }, [deskUser, parentFirstName, profile]);
 
   const greeting = useMemo(() => {
     const h = new Date().getHours();
@@ -390,8 +435,31 @@ export function DashboardHomeScreen() {
         total.subtitleValue = selectedStudent?.name || 'Student balances';
       }
     }
+    if (persona === 'security') {
+      const active = next.find((s) => s.id === 'active-trip');
+      const assignmentStat = next.find((s) => s.id === 'assignment');
+      if (active) {
+        const onTrip = securityActiveTrip?.status === 'active';
+        active.value = onTrip ? 'Active' : 'None';
+        active.subtitleValue = onTrip
+          ? securityActiveTrip?.trip_kind?.replace(/_/g, ' ') ?? 'On run'
+          : 'Start from Trips';
+      }
+      if (assignmentStat) {
+        assignmentStat.value = securityAssignment?.vehicle_name ?? '—';
+        assignmentStat.subtitleValue = securityAssignment?.route_name ?? 'Unassigned';
+      }
+    }
     return next;
-  }, [baseHero, persona, feeBalance, pocketBalance, selectedStudent?.name]);
+  }, [
+    baseHero,
+    persona,
+    feeBalance,
+    pocketBalance,
+    selectedStudent?.name,
+    securityActiveTrip,
+    securityAssignment,
+  ]);
 
   const primaryHero = heroStats[0];
   const secondaryHero = heroStats.slice(1, 3);
@@ -464,10 +532,17 @@ export function DashboardHomeScreen() {
             ) : null}
           </View>
 
-          {/* Role chip */}
+          {/* Role chip + signed-in user */}
           <View style={styles.roleRow}>
-            <View style={styles.roleChip}>
-              <Text style={styles.roleChipText}>{personaLabel}</Text>
+            <View style={styles.roleIdentityCol}>
+              <Text style={styles.userName} numberOfLines={1}>
+                {userDisplayName}
+              </Text>
+              <View style={styles.roleChipRow}>
+                <View style={styles.roleChip}>
+                  <Text style={styles.roleChipText}>{personaLabel}</Text>
+                </View>
+              </View>
             </View>
             <Pressable
               style={styles.tokenChip}
@@ -636,6 +711,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     marginBottom: 14,
+  },
+  roleIdentityCol: {
+    flex: 1,
+    minWidth: 0,
+    gap: 4,
+  },
+  userName: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: Colors.ink,
+  },
+  roleChipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   roleChip: {
     paddingHorizontal: 10,

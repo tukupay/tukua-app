@@ -244,12 +244,12 @@ export function WebAppScreen({ path, label }: Props) {
 
       void (async () => {
         const fresh = await ensureFreshSession();
-        if (!fresh) {
+        if (!fresh && !session) {
           log.warn('WebApp', 'session expired on tab focus — logging out', { path });
           await logout();
         }
       })();
-    }, [ensureFreshSession, logout, path, syncTabRoute]),
+    }, [ensureFreshSession, logout, path, session, syncTabRoute]),
   );
 
   useEffect(() => {
@@ -325,17 +325,19 @@ export function WebAppScreen({ path, label }: Props) {
 
     void (async () => {
       const fresh = await ensureFreshSession();
-      if (!fresh) {
+      if (!fresh && !session) {
         log.warn('WebApp', 'session expired on web bounce — logging out');
         await logout();
         return;
       }
+      const active = fresh ?? session;
+      if (!active) return;
 
       if (chatMode) {
         log.warn('WebApp', 'chat sign-in bounce — re-inject session (no full reload)', {
           attempt: recoverCountRef.current,
         });
-        webRef.current?.injectJavaScript(buildPreloadSessionScript(fresh));
+        webRef.current?.injectJavaScript(buildPreloadSessionScript(active));
         webRef.current?.injectJavaScript(
           `${buildSpaNavigateScript(path, { force: true })}\ntrue;`,
         );
@@ -349,10 +351,10 @@ export function WebAppScreen({ path, label }: Props) {
       bootstrappedRef.current = false;
       const target = currentPathnameRef.current || path;
       webRef.current?.injectJavaScript(
-        `${buildFastTabNavigateScript(fresh, target)}\ntrue;`,
+        `${buildFastTabNavigateScript(active, target)}\ntrue;`,
       );
     })();
-  }, [chatMode, ensureFreshSession, logout, path]);
+  }, [chatMode, ensureFreshSession, logout, path, session]);
 
   const handleNav = (nav: WebViewNavigation) => {
     if (!nav.url) return;

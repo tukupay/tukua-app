@@ -28,12 +28,16 @@ import {
   ensureNestDeskSession,
   onDeskSessionCleared,
   setDeskActiveContext,
+  awaitDeskLoginInFlight,
 } from '../lib/deskApi';
 import {
   DeskPersona,
+  deskRoleLabel,
+  isParentDeskRole,
   normalizeDeskRoles,
   personaLabel,
   resolveDeskPersona,
+  sortDeskRolesForPicker,
 } from '../lib/deskRoles';
 import { fetchUserSchools, flattenLinkedStudents, LinkedStudent, UserSchool } from '../lib/orgRoles';
 import { fetchParentChildren } from '../lib/parentPortalApi';
@@ -61,15 +65,21 @@ type DeskAuthContextType = {
   selectedSchool: UserSchool | null;
   selectedStudentId: string | null;
   selectedStudent: LinkedStudent | null;
-  /** True when parent/teacher must pick a student (or school fallback). */
+  /** Active role hat at the selected school (when user has 2+ roles). */
+  selectedRole: string | null;
+  /** True when user must pick school, role, or student. */
   needsSchoolPick: boolean;
   /**
-   * Picker UI mode. Teachers/admins with 2+ schools always pick school
-   * (even if they also have linked students as parents).
+   * Picker UI mode. Flow: school → role → student (parent, multi-child).
    */
-  pickerMode: 'student' | 'school';
+  pickerMode: 'student' | 'school' | 'role';
+  /** Roles available at the selected school (for role picker). */
+  schoolRoleOptions: string[];
   selectStudent: (student: LinkedStudent) => Promise<void>;
   selectSchool: (schoolId: string) => Promise<void>;
+  selectRole: (role: string) => Promise<void>;
+  /** Step back within picker (role → school, student → role). */
+  backInPicker: () => Promise<void>;
   /** Clear selection and show picker again. */
   requestSchoolChange: () => Promise<void>;
   connectDesk: (email: string, password: string) => Promise<DeskLoginResult>;
@@ -92,10 +102,14 @@ const DeskAuthContext = createContext<DeskAuthContextType>({
   selectedSchool: null,
   selectedStudentId: null,
   selectedStudent: null,
+  selectedRole: null,
   needsSchoolPick: false,
   pickerMode: 'student',
+  schoolRoleOptions: [],
   selectStudent: async () => {},
   selectSchool: async () => {},
+  selectRole: async () => {},
+  backInPicker: async () => {},
   requestSchoolChange: async () => {},
   connectDesk: async () => {
     throw new Error('DeskAuth not ready');
@@ -151,6 +165,22 @@ function deskUserFromSession(
   };
 }
 
+function uniqueSchoolRoles(roles: unknown): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const r of normalizeDeskRoles(roles)) {
+    if (!seen.has(r)) {
+      seen.add(r);
+      out.push(r);
+    }
+  }
+  return sortDeskRolesForPicker(out);
+}
+
+function linkedStudentsAtSchool(linked: LinkedStudent[], schoolId: string): LinkedStudent[] {
+  return linked.filter((s) => s.schoolId === schoolId);
+}
+
 function resolveContext(
   schools: UserSchool[],
   linked: LinkedStudent[],
@@ -159,90 +189,133 @@ function resolveContext(
 ): {
   schoolId: string | null;
   studentId: string | null;
+  activeRole: string | null;
   needsPick: boolean;
-  pickerMode: 'student' | 'school';
+  pickerMode: 'student' | 'school' | 'role';
+  schoolRoleOptions: string[];
 } {
-  // Teachers/admins at 2+ schools → always Select school (even with parent links)
+  const empty = {
+    schoolId: null as string | null,
+    studentId: null as string | null,
+    activeRole: null as string | null,
+    needsPick: false,
+    pickerMode: 'school' as const,
+    schoolRoleOptions: [] as string[],
+  };
+
+  if (!schools.length) {
+    return {
+      ...empty,
+      needsPick: true,
+      pickerMode: 'school',
+    };
+  }
+
+  // ── Step 1: resolve school ──
+  let schoolId: string | null = null;
+
   if (prefersSchoolPicker(schools)) {
     if (opts?.forcePick) {
-      return { schoolId: null, studentId: null, needsPick: true, pickerMode: 'school' };
+      return { ...empty, needsPick: true, pickerMode: 'school' };
     }
     if (stored?.schoolId && schools.some((s) => s.id === stored.schoolId)) {
-      return {
-        schoolId: stored.schoolId,
-        studentId: null,
-        needsPick: false,
-        pickerMode: 'school',
-      };
+      schoolId = stored.schoolId;
+    } else {
+      return { ...empty, needsPick: true, pickerMode: 'school' };
     }
-    return { schoolId: null, studentId: null, needsPick: true, pickerMode: 'school' };
+  } else if (schools.length === 1) {
+    schoolId = schools[0].id;
+  } else if (opts?.forcePick) {
+    return { ...empty, needsPick: true, pickerMode: 'school' };
+  } else if (stored?.schoolId && schools.some((s) => s.id === stored.schoolId)) {
+    schoolId = stored.schoolId;
+  } else {
+    return { ...empty, needsPick: true, pickerMode: 'school' };
   }
 
-  // Parent path: pick a student
-  if (linked.length > 0) {
-    if (linked.length === 1) {
+  const school = schools.find((s) => s.id === schoolId)!;
+  const schoolRoles = uniqueSchoolRoles(school.roles);
+  let activeRole =
+    stored?.activeRole && schoolRoles.includes(stored.activeRole) ? stored.activeRole : null;
+
+  // ── Step 2: resolve role at school ──
+  if (schoolRoles.length > 1 && !activeRole) {
+    return {
+      schoolId,
+      studentId: null,
+      activeRole: null,
+      needsPick: true,
+      pickerMode: 'role',
+      schoolRoleOptions: schoolRoles,
+    };
+  }
+  if (schoolRoles.length === 1) activeRole = schoolRoles[0];
+
+  // ── Step 3: parent → student (block dashboard until an approved child link) ──
+  if (activeRole && isParentDeskRole(activeRole)) {
+    const kids = linkedStudentsAtSchool(linked, schoolId);
+    if (kids.length === 0) {
+      // Linked to school but no approved students — stay on Select student + Add CTA.
       return {
-        schoolId: linked[0].schoolId,
-        studentId: linked[0].id,
+        schoolId,
+        studentId: null,
+        activeRole,
+        needsPick: true,
+        pickerMode: 'student',
+        schoolRoleOptions: schoolRoles,
+      };
+    }
+    if (kids.length === 1) {
+      return {
+        schoolId,
+        studentId: kids[0].id,
+        activeRole,
         needsPick: false,
         pickerMode: 'student',
+        schoolRoleOptions: schoolRoles,
       };
     }
     if (opts?.forcePick) {
-      return { schoolId: null, studentId: null, needsPick: true, pickerMode: 'student' };
+      return {
+        schoolId,
+        studentId: null,
+        activeRole,
+        needsPick: true,
+        pickerMode: 'student',
+        schoolRoleOptions: schoolRoles,
+      };
     }
-    if (stored?.studentId && stored.schoolId) {
-      const match = linked.find(
-        (s) => s.id === stored.studentId && s.schoolId === stored.schoolId,
-      );
+    if (stored?.studentId) {
+      const match = kids.find((s) => s.id === stored.studentId);
       if (match) {
         return {
-          schoolId: match.schoolId,
+          schoolId,
           studentId: match.id,
+          activeRole,
           needsPick: false,
           pickerMode: 'student',
+          schoolRoleOptions: schoolRoles,
         };
       }
     }
-    // Legacy school-only: auto if exactly one child at that school
-    if (stored?.schoolId && !stored.studentId) {
-      const atSchool = linked.filter((s) => s.schoolId === stored.schoolId);
-      if (atSchool.length === 1) {
-        return {
-          schoolId: atSchool[0].schoolId,
-          studentId: atSchool[0].id,
-          needsPick: false,
-          pickerMode: 'student',
-        };
-      }
-    }
-    return { schoolId: null, studentId: null, needsPick: true, pickerMode: 'student' };
+    return {
+      schoolId,
+      studentId: null,
+      activeRole,
+      needsPick: true,
+      pickerMode: 'student',
+      schoolRoleOptions: schoolRoles,
+    };
   }
 
-  // No linked students — school context (teachers / admins)
-  if (!schools.length) {
-    return { schoolId: null, studentId: null, needsPick: false, pickerMode: 'school' };
-  }
-  if (schools.length === 1) {
-    return {
-      schoolId: schools[0].id,
-      studentId: null,
-      needsPick: false,
-      pickerMode: 'school',
-    };
-  }
-  if (opts?.forcePick) {
-    return { schoolId: null, studentId: null, needsPick: true, pickerMode: 'school' };
-  }
-  if (stored?.schoolId && schools.some((s) => s.id === stored.schoolId)) {
-    return {
-      schoolId: stored.schoolId,
-      studentId: null,
-      needsPick: false,
-      pickerMode: 'school',
-    };
-  }
-  return { schoolId: null, studentId: null, needsPick: true, pickerMode: 'school' };
+  return {
+    schoolId,
+    studentId: null,
+    activeRole,
+    needsPick: false,
+    pickerMode: 'school',
+    schoolRoleOptions: schoolRoles,
+  };
 }
 
 export function DeskAuthProvider({ children }: { children: ReactNode }) {
@@ -251,10 +324,12 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
   const [schools, setSchools] = useState<UserSchool[]>([]);
   const [selectedSchoolId, setSelectedSchoolIdState] = useState<string | null>(null);
   const [selectedStudentId, setSelectedStudentIdState] = useState<string | null>(null);
+  const [selectedRole, setSelectedRoleState] = useState<string | null>(null);
+  const [schoolRoleOptions, setSchoolRoleOptions] = useState<string[]>([]);
   /** Full row from picker (Nest-enriched name/class/photo) — linkedStudents alone often lacks photo. */
   const [studentSnapshot, setStudentSnapshot] = useState<LinkedStudent | null>(null);
   const [needsSchoolPick, setNeedsSchoolPick] = useState(false);
-  const [pickerMode, setPickerMode] = useState<'student' | 'school'>('student');
+  const [pickerMode, setPickerMode] = useState<'student' | 'school' | 'role'>('student');
   const [deskReady, setDeskReady] = useState(false);
   const [schoolsReady, setSchoolsReady] = useState(false);
   const [authUserId, setAuthUserId] = useState<string | null>(null);
@@ -347,6 +422,7 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
   }, [deskToken, selectedStudentId, selectedSchoolId]);
 
   const orgRoles = selectedSchool?.roles ?? schools[0]?.roles ?? [];
+  const activeRoles = selectedRole ? [selectedRole] : orgRoles;
   const orgSchoolId = selectedSchoolId ?? schools[0]?.id ?? null;
 
   const persona = useMemo(() => {
@@ -355,8 +431,10 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
       (Array.isArray(deskUser.user_roles)
         ? deskUser.user_roles.length > 0
         : String(deskUser.user_roles).trim().length > 0)
-        ? deskUser.user_roles
-        : orgRoles;
+        ? selectedRole
+          ? [selectedRole]
+          : deskUser.user_roles
+        : activeRoles;
 
     const schoolId = selectedSchoolId ?? deskUser?.school_id ?? orgSchoolId;
     const next = resolveDeskPersona(roles, {
@@ -369,6 +447,7 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
       roles,
       orgRoles,
       deskRoles: deskUser?.user_roles,
+      selectedRole,
       schoolId,
       studentId: selectedStudentId,
       hasDeskToken: Boolean(deskToken),
@@ -380,6 +459,8 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
     deskUser,
     deskToken,
     orgRoles,
+    activeRoles,
+    selectedRole,
     orgSchoolId,
     selectedSchoolId,
     selectedStudentId,
@@ -398,17 +479,15 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
         await clearSelectedContext(userId);
       }
       const stored = opts?.forcePick ? null : await getSelectedContext(userId);
-      const { schoolId, studentId, needsPick, pickerMode: mode } = resolveContext(
-        list,
-        linked,
-        stored,
-        { forcePick: opts?.forcePick },
-      );
+      const { schoolId, studentId, activeRole, needsPick, pickerMode: mode, schoolRoleOptions: roleOpts } =
+        resolveContext(list, linked, stored, { forcePick: opts?.forcePick });
 
       if (!needsPick && schoolId) {
-        const next: StoredContext = { schoolId, studentId };
+        const next: StoredContext = { schoolId, studentId, activeRole };
         const same =
-          stored?.schoolId === next.schoolId && stored?.studentId === next.studentId;
+          stored?.schoolId === next.schoolId &&
+          stored?.studentId === next.studentId &&
+          stored?.activeRole === next.activeRole;
         if (!same) {
           await setSelectedContext(userId, next);
         }
@@ -417,6 +496,8 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
       setSchools(list);
       setSelectedSchoolIdState(schoolId);
       setSelectedStudentIdState(studentId);
+      setSelectedRoleState(activeRole);
+      setSchoolRoleOptions(roleOpts);
       if (studentId && schoolId) {
         const snap = linked.find((s) => s.id === studentId && s.schoolId === schoolId) ?? null;
         setStudentSnapshot(snap);
@@ -427,7 +508,7 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
       setPickerMode(mode);
       setSchoolsReady(true);
       setDeskActiveContext({ schoolId, studentId });
-      return { schools: list, schoolId, studentId, needsPick, pickerMode: mode };
+      return { schools: list, schoolId, studentId, activeRole, needsPick, pickerMode: mode, schoolRoleOptions: roleOpts };
     },
     [],
   );
@@ -435,12 +516,15 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
   const selectStudent = useCallback(
     async (student: LinkedStudent) => {
       if (!authUserId) return;
+      const role = selectedRole ?? uniqueSchoolRoles(student.schoolRoles)[0] ?? 'parent';
       await setSelectedContext(authUserId, {
         schoolId: student.schoolId,
         studentId: student.id,
+        activeRole: role,
       });
       setSelectedSchoolIdState(student.schoolId);
       setSelectedStudentIdState(student.id);
+      setSelectedRoleState(role);
       setStudentSnapshot(student);
       setNeedsSchoolPick(false);
       setPickerMode('student');
@@ -451,7 +535,7 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
           ? {
               ...prev,
               school_id: student.schoolId,
-              user_roles: student.schoolRoles?.length ? student.schoolRoles : prev.user_roles,
+              user_roles: [role],
             }
           : prev,
       );
@@ -463,7 +547,55 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
         hasAvatar: Boolean(student.avatarUrl),
       });
     },
-    [authUserId],
+    [authUserId, selectedRole],
+  );
+
+  const selectRole = useCallback(
+    async (role: string) => {
+      if (!authUserId || !selectedSchoolId) return;
+      const school = schools.find((s) => s.id === selectedSchoolId);
+      if (!school) return;
+      const roles = uniqueSchoolRoles(school.roles);
+      if (!roles.includes(role)) return;
+
+      await setSelectedContext(authUserId, {
+        schoolId: selectedSchoolId,
+        studentId: null,
+        activeRole: role,
+      });
+      setSelectedRoleState(role);
+      setDeskUser((prev) =>
+        prev ? { ...prev, school_id: selectedSchoolId, user_roles: [role] } : prev,
+      );
+
+      if (isParentDeskRole(role)) {
+        const kids = linkedStudentsAtSchool(linkedStudents, selectedSchoolId);
+        if (kids.length === 1) {
+          await selectStudent(kids[0]);
+          return;
+        }
+        // Zero or multiple kids: never unlock parent persona without an active child.
+        setSelectedStudentIdState(null);
+        setStudentSnapshot(null);
+        setNeedsSchoolPick(true);
+        setPickerMode('student');
+        setDeskActiveContext({ schoolId: selectedSchoolId, studentId: null });
+        log.info('DeskAuth', 'role selected → student pick', {
+          role,
+          schoolId: selectedSchoolId,
+          kids: kids.length,
+        });
+        return;
+      }
+
+      setSelectedStudentIdState(null);
+      setStudentSnapshot(null);
+      setNeedsSchoolPick(false);
+      setPickerMode('school');
+      setDeskActiveContext({ schoolId: selectedSchoolId, studentId: null });
+      log.info('DeskAuth', 'role selected', { role, schoolId: selectedSchoolId });
+    },
+    [authUserId, selectedSchoolId, schools, linkedStudents, selectStudent],
   );
 
   const selectSchool = useCallback(
@@ -472,88 +604,140 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
       const school = schools.find((s) => s.id === schoolId);
       if (!school) return;
 
-      // Staff multi-school: school only (ignore linked children for this pick)
-      if (prefersSchoolPicker(schools)) {
-        await setSelectedContext(authUserId, { schoolId, studentId: null });
+      const roles = uniqueSchoolRoles(school.roles);
+
+      if (roles.length > 1) {
         setSelectedSchoolIdState(schoolId);
         setSelectedStudentIdState(null);
+        setSelectedRoleState(null);
         setStudentSnapshot(null);
-        setNeedsSchoolPick(false);
-        setPickerMode('school');
+        setSchoolRoleOptions(roles);
+        setNeedsSchoolPick(true);
+        setPickerMode('role');
+        setDeskActiveContext({ schoolId, studentId: null });
+        log.info('DeskAuth', 'school selected → role pick', { schoolId, name: school.name });
+        return;
+      }
+
+      const role = roles[0] ?? null;
+      setSelectedSchoolIdState(schoolId);
+      setSelectedRoleState(role);
+      setSchoolRoleOptions(roles);
+
+      if (role && isParentDeskRole(role)) {
+        const kids = school.students ?? [];
+        if (kids.length === 1) {
+          await selectStudent({
+            key: `${school.id}:${kids[0].id}`,
+            id: kids[0].id,
+            name: kids[0].name,
+            admissionNumber: kids[0].admissionNumber,
+            relationship: kids[0].relationship,
+            className: kids[0].className,
+            avatarUrl: kids[0].avatarUrl,
+            schoolId: school.id,
+            schoolName: school.name,
+            schoolLogoUrl: school.logoUrl,
+            schoolRoles: school.roles,
+          });
+          return;
+        }
+        // Zero or multiple: stay on Select student (block dashboard until approved child).
+        setSelectedStudentIdState(null);
+        setStudentSnapshot(null);
+        setNeedsSchoolPick(true);
+        setPickerMode('student');
         setDeskActiveContext({ schoolId, studentId: null });
         setDeskUser((prev) =>
           prev
             ? {
                 ...prev,
                 school_id: schoolId,
-                user_roles: school.roles?.length ? school.roles : prev.user_roles,
+                user_roles: role ? [role] : prev.user_roles,
               }
             : prev,
         );
-        log.info('DeskAuth', 'school selected (staff)', { schoolId, name: school.name });
-        return;
-      }
-
-      const kids = school.students ?? [];
-      if (kids.length === 1) {
-        await selectStudent({
-          key: `${school.id}:${kids[0].id}`,
-          id: kids[0].id,
-          name: kids[0].name,
-          admissionNumber: kids[0].admissionNumber,
-          relationship: kids[0].relationship,
-          className: kids[0].className,
-          avatarUrl: kids[0].avatarUrl,
-          schoolId: school.id,
-          schoolName: school.name,
-          schoolLogoUrl: school.logoUrl,
-          schoolRoles: school.roles,
+        log.info('DeskAuth', 'school selected → student pick', {
+          schoolId,
+          name: school.name,
+          kids: kids.length,
         });
         return;
       }
-      if (kids.length > 1) {
-        // School chosen but multiple children — still need a student
-        setSelectedSchoolIdState(schoolId);
-        setSelectedStudentIdState(null);
-        setNeedsSchoolPick(true);
-        setPickerMode('student');
-        return;
-      }
 
-      await setSelectedContext(authUserId, { schoolId, studentId: null });
-      setSelectedSchoolIdState(schoolId);
+      await setSelectedContext(authUserId, { schoolId, studentId: null, activeRole: role });
       setSelectedStudentIdState(null);
+      setStudentSnapshot(null);
       setNeedsSchoolPick(false);
       setPickerMode('school');
+      setDeskActiveContext({ schoolId, studentId: null });
       setDeskUser((prev) =>
         prev
           ? {
               ...prev,
               school_id: schoolId,
-              user_roles: school.roles?.length ? school.roles : prev.user_roles,
+              user_roles: role ? [role] : prev.user_roles,
             }
           : prev,
       );
-      log.info('DeskAuth', 'school selected', { schoolId, name: school.name });
+      log.info('DeskAuth', 'school selected', { schoolId, name: school.name, role });
     },
     [authUserId, schools, selectStudent],
   );
 
+  const backInPicker = useCallback(async () => {
+    if (!authUserId) return;
+    if (pickerMode === 'student') {
+      const school = schools.find((s) => s.id === selectedSchoolId);
+      const roles = uniqueSchoolRoles(school?.roles ?? schoolRoleOptions);
+      if (roles.length > 1) {
+        setSelectedStudentIdState(null);
+        setStudentSnapshot(null);
+        setSelectedRoleState(null);
+        setNeedsSchoolPick(true);
+        setPickerMode('role');
+        if (selectedSchoolId) {
+          await setSelectedContext(authUserId, {
+            schoolId: selectedSchoolId,
+            studentId: null,
+            activeRole: null,
+          });
+        }
+        return;
+      }
+    }
+    if (pickerMode === 'role' || pickerMode === 'student') {
+      if (schools.length > 1 || prefersSchoolPicker(schools)) {
+        await clearSelectedContext(authUserId);
+        setSelectedSchoolIdState(null);
+        setSelectedStudentIdState(null);
+        setSelectedRoleState(null);
+        setStudentSnapshot(null);
+        setNeedsSchoolPick(true);
+        setPickerMode('school');
+        setDeskActiveContext({ schoolId: null, studentId: null });
+      }
+    }
+  }, [authUserId, pickerMode, schools, selectedSchoolId, schoolRoleOptions]);
+
   const requestSchoolChange = useCallback(async () => {
     if (!authUserId) return;
-    const canSwitch = schools.length > 1 || linkedStudents.length > 1;
+    const canSwitch =
+      schools.length > 1 ||
+      linkedStudents.length > 1 ||
+      schoolRoleOptions.length > 1 ||
+      uniqueSchoolRoles(selectedSchool?.roles).length > 1;
     if (!canSwitch) return;
     await clearSelectedContext(authUserId);
     setSelectedSchoolIdState(null);
     setSelectedStudentIdState(null);
+    setSelectedRoleState(null);
     setStudentSnapshot(null);
     setDeskActiveContext({ schoolId: null, studentId: null });
     setNeedsSchoolPick(true);
-    setPickerMode(
-      prefersSchoolPicker(schools) ? 'school' : linkedStudents.length > 0 ? 'student' : 'school',
-    );
+    setPickerMode(schools.length > 1 || prefersSchoolPicker(schools) ? 'school' : 'student');
     log.info('DeskAuth', 'context change requested');
-  }, [authUserId, linkedStudents.length, schools]);
+  }, [authUserId, linkedStudents.length, schools, schoolRoleOptions.length, selectedSchool?.roles]);
 
   const syncSupabaseAsDesk = useCallback(
     async (session: Session | null, opts?: { quiet?: boolean; forceSchoolPick?: boolean }) => {
@@ -562,7 +746,9 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
         setSchools([]);
         setSelectedSchoolIdState(null);
         setSelectedStudentIdState(null);
+        setSelectedRoleState(null);
         setStudentSnapshot(null);
+        setSchoolRoleOptions([]);
         setNeedsSchoolPick(false);
         setSchoolsReady(true);
         return;
@@ -577,9 +763,12 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
         quiet,
         forcePick: opts?.forceSchoolPick,
       });
-      const roles = membership.schoolId
-        ? membership.schools.find((s) => s.id === membership.schoolId)?.roles ?? []
-        : membership.schools[0]?.roles ?? [];
+      const activeRole = membership.activeRole;
+      const roles = activeRole
+        ? [activeRole]
+        : membership.schoolId
+          ? membership.schools.find((s) => s.id === membership.schoolId)?.roles ?? []
+          : membership.schools[0]?.roles ?? [];
       const schoolId = membership.schoolId ?? membership.schools[0]?.id ?? null;
 
       const user = deskUserFromSession(session, roles, schoolId);
@@ -587,22 +776,29 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
       // Nest password login already stored a desk JWT — keep it (Supabase JWT fails many /parents/me routes).
       if (preferNestDeskTokenRef.current || (await hasNestDeskToken())) {
         preferNestDeskTokenRef.current = true;
-        const existing = await getDeskToken();
+        let existing = await getDeskToken();
+        if (!existing) {
+          await awaitDeskLoginInFlight();
+          existing = await getDeskToken();
+        }
+        if (!existing) {
+          await ensureNestDeskSession();
+          existing = await getDeskToken();
+        }
         if (existing) {
           setDeskToken(existing);
           setDeskUser((prev) => ({
             ...(prev ?? user),
             ...user,
             school_id: schoolId ?? prev?.school_id ?? user.school_id,
-            user_roles: prev?.user_roles ?? user.user_roles,
+            user_roles: activeRole ? [activeRole] : prev?.user_roles ?? user.user_roles,
           }));
           return;
         }
-        preferNestDeskTokenRef.current = false;
       }
 
       await adoptSupabaseTokenAsDeskSession(session.access_token, user);
-      setDeskToken(session.access_token);
+      setDeskToken(await getDeskToken());
       setDeskUser(user);
 
       // Never await auth/me on the picker / session path — Desk can hang on Supabase JWTs.
@@ -666,11 +862,16 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       if (!session?.access_token) {
+        if (event !== 'SIGNED_OUT') {
+          return;
+        }
         setAuthUserId(null);
         setSchools([]);
         setSelectedSchoolIdState(null);
         setSelectedStudentIdState(null);
+        setSelectedRoleState(null);
         setStudentSnapshot(null);
+        setSchoolRoleOptions([]);
         setNeedsSchoolPick(false);
         setSchoolsReady(true);
         return;
@@ -749,7 +950,9 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
     setSchools([]);
     setSelectedSchoolIdState(null);
     setSelectedStudentIdState(null);
+    setSelectedRoleState(null);
     setStudentSnapshot(null);
+    setSchoolRoleOptions([]);
     setNeedsSchoolPick(false);
   }, [authUserId]);
 
@@ -769,10 +972,14 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
       selectedSchool,
       selectedStudentId,
       selectedStudent,
+      selectedRole,
       needsSchoolPick,
       pickerMode,
+      schoolRoleOptions,
       selectStudent,
       selectSchool,
+      selectRole,
+      backInPicker,
       requestSchoolChange,
       connectDesk,
       refreshDeskUser,
@@ -790,10 +997,14 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
       selectedSchool,
       selectedStudentId,
       selectedStudent,
+      selectedRole,
       needsSchoolPick,
       pickerMode,
+      schoolRoleOptions,
       selectStudent,
       selectSchool,
+      selectRole,
+      backInPicker,
       requestSchoolChange,
       connectDesk,
       refreshDeskUser,

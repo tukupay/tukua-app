@@ -1,7 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../theme/yana';
+import { resolveDisplayImageUri } from '../../lib/resolveMediaUri';
 
 type Props = {
   name?: string;
@@ -18,10 +19,14 @@ function initialsFromName(name: string): string {
 
 /** Profile photo when URL works; otherwise letter initials (never a blank circle). */
 export function ProfileAvatar({ name = 'Account', uri, size = 24 }: Props) {
-  const cleaned = typeof uri === 'string' && uri.trim().length > 0 ? uri.trim() : null;
+  const cleaned = resolveDisplayImageUri(uri);
   const [failed, setFailed] = useState(false);
   const initials = useMemo(() => initialsFromName(name), [name]);
   const showImage = Boolean(cleaned) && !failed;
+
+  useEffect(() => {
+    setFailed(false);
+  }, [cleaned]);
 
   if (showImage && cleaned) {
     return (

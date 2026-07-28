@@ -28,17 +28,23 @@ type Incident = {
   case_number?: string;
   title?: string;
   description?: string;
+  case_narrative?: string;
+  case_summary?: string;
   status?: string;
   severity?: string;
+  sentiment?: string;
   incident_date?: string;
   created_at?: string;
   category_name?: string;
   category_label?: string;
-  case_summary?: string;
+  steps_taken?: string | string[] | null;
+  recommendations?: string | string[] | null;
+  analysis_report_md?: string | null;
   students?: Array<{
     full_name?: string;
     admission_number?: string;
     student_id?: string;
+    student_name?: string;
   }>;
 };
 
@@ -53,6 +59,34 @@ function unwrapList(data: unknown): Incident[] {
   return [];
 }
 
+function asTextList(raw: string | string[] | null | undefined): string[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.map(String).filter(Boolean);
+  const s = String(raw).trim();
+  if (!s) return [];
+  try {
+    const parsed = JSON.parse(s) as unknown;
+    if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean);
+  } catch {
+    /* plain text */
+  }
+  return [s];
+}
+
+function extractAnalysisText(res: unknown): string {
+  if (!res || typeof res !== 'object') return 'Analysis complete.';
+  const obj = res as Record<string, unknown>;
+  const data = obj.data;
+  if (data && typeof data === 'object') {
+    const d = data as Record<string, unknown>;
+    const md = d.analysis_report_md ?? d.report_md ?? d.narrative;
+    if (typeof md === 'string' && md.trim()) return md.trim();
+  }
+  const msg = obj.message ?? obj.analysis_report_md;
+  if (typeof msg === 'string' && msg.trim()) return msg.trim();
+  return 'Analysis complete — pull to refresh for updated case details.';
+}
+
 export function DisciplineScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const { selectedStudent, selectedStudentId } = useDeskAuth();
@@ -62,13 +96,16 @@ export function DisciplineScreen({ navigation }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [seeding, setSeeding] = useState(false);
+  const [analyzingCase, setAnalyzingCase] = useState<string | null>(null);
+  const [analyzingStudent, setAnalyzingStudent] = useState<string | null>(null);
+  const [analysisByKey, setAnalysisByKey] = useState<Record<string, string>>({});
+  const [analysisError, setAnalysisError] = useState<Record<string, string>>({});
 
   const load = useCallback(
     async (soft = false) => {
       if (!soft) setLoading(true);
       setError(null);
       try {
-        // Student scope comes from X-Desk-Student-Id (deskApi); do not pass ?student_id=
         const data = await deskFetch<unknown>('/discipline/incidents');
         setItems(unwrapList(data));
       } catch (e) {
@@ -89,8 +126,9 @@ export function DisciplineScreen({ navigation }: Props) {
   }, [load]);
 
   const visible = useMemo(() => {
-    if (!selectedStudentId) return items;
-    return items.filter((inc) =>
+    const list = Array.isArray(items) ? items : [];
+    if (!selectedStudentId) return list;
+    return list.filter((inc) =>
       (inc.students ?? []).some((s) => String(s.student_id ?? '') === selectedStudentId),
     );
   }, [items, selectedStudentId]);
@@ -104,6 +142,60 @@ export function DisciplineScreen({ navigation }: Props) {
       log.warn('Discipline', 'seed failed', String(e));
     } finally {
       setSeeding(false);
+    }
+  };
+
+  const runCaseAnalyze = async (item: Incident) => {
+    const caseNo = String(item.case_number ?? '').trim();
+    if (!caseNo) {
+      setAnalysisError((prev) => ({
+        ...prev,
+        [`case-${item.id}`]: 'Case number missing — cannot analyze.',
+      }));
+      return;
+    }
+    const key = `case-${caseNo}`;
+    setAnalyzingCase(key);
+    setAnalysisError((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+    try {
+      const res = await deskFetch<unknown>(
+        `/discipline/cases/${encodeURIComponent(caseNo)}/analyze?use_ai=true`,
+        { method: 'POST' },
+      );
+      setAnalysisByKey((prev) => ({ ...prev, [key]: extractAnalysisText(res) }));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setAnalysisError((prev) => ({ ...prev, [key]: msg }));
+    } finally {
+      setAnalyzingCase(null);
+    }
+  };
+
+  const runStudentAnalyze = async (admission: string) => {
+    const adm = admission.trim();
+    if (!adm) return;
+    const key = `student-${adm}`;
+    setAnalyzingStudent(key);
+    setAnalysisError((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+    try {
+      const res = await deskFetch<unknown>(
+        `/discipline/students/${encodeURIComponent(adm)}/analyze?use_ai=true`,
+        { method: 'POST' },
+      );
+      setAnalysisByKey((prev) => ({ ...prev, [key]: extractAnalysisText(res) }));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setAnalysisError((prev) => ({ ...prev, [key]: msg }));
+    } finally {
+      setAnalyzingStudent(null);
     }
   };
 
@@ -132,7 +224,7 @@ export function DisciplineScreen({ navigation }: Props) {
         <ModuleBackBar onBack={() => navigation.goBack()} />
         <ModuleKicker>Discipline</ModuleKicker>
         <Text style={styles.heading}>
-          {selectedStudent?.name ? `${selectedStudent.name}’s cases` : 'Your children’s cases'}
+          {selectedStudent?.name ? `${selectedStudent.name}'s cases` : "Your children's cases"}
         </Text>
 
         {loading ? (
@@ -141,10 +233,10 @@ export function DisciplineScreen({ navigation }: Props) {
           </View>
         ) : error ? (
           <ModuleEmpty
-            title="Couldn’t load discipline"
+            title="Couldn't load discipline"
             body={
               /session expired|401|unauthorized/i.test(error)
-                ? 'School API session isn’t accepted yet for this account. Stay here — Chat still works. Pull to retry.'
+                ? "School API session isn't accepted yet for this account. Stay here — Chat still works. Pull to retry."
                 : error
             }
             onRetry={() => void load()}
@@ -159,8 +251,15 @@ export function DisciplineScreen({ navigation }: Props) {
           visible.map((item, index) => {
             const key = String(item.id ?? item.case_number ?? index);
             const open = expanded === key;
-            const student =
-              item.students?.[0]?.full_name || item.students?.[0]?.admission_number || null;
+            const caseNo = String(item.case_number ?? '').trim();
+            const caseAnalysisKey = caseNo ? `case-${caseNo}` : '';
+            const students = Array.isArray(item.students) ? item.students : [];
+            const steps = asTextList(item.steps_taken);
+            const recs = asTextList(item.recommendations);
+            const narrative = String(
+              item.case_narrative ?? item.description ?? item.case_summary ?? '',
+            ).trim();
+
             return (
               <Pressable key={key} onPress={() => setExpanded(open ? null : key)}>
                 <ModuleGlassCard>
@@ -169,15 +268,15 @@ export function DisciplineScreen({ navigation }: Props) {
                       <Ionicons name="shield-checkmark-outline" size={18} color={Colors.destructive} />
                     </View>
                     <View style={styles.cardBody}>
-                      <Text style={styles.cardTitle} numberOfLines={2}>
+                      <Text style={styles.cardTitle} numberOfLines={open ? 6 : 2}>
                         {item.title ||
                           item.case_summary ||
                           item.case_number ||
                           item.category_label ||
                           'Incident'}
                       </Text>
-                      <Text style={styles.meta} numberOfLines={1}>
-                        {[item.status, item.severity, item.category_label || item.category_name, student]
+                      <Text style={styles.meta} numberOfLines={open ? 4 : 1}>
+                        {[item.status, item.severity, item.category_label || item.category_name]
                           .filter(Boolean)
                           .join(' · ')}
                       </Text>
@@ -188,12 +287,121 @@ export function DisciplineScreen({ navigation }: Props) {
                       color={Colors.mutedForeground}
                     />
                   </View>
-                  {open && item.description ? (
-                    <Text style={styles.desc}>{item.description}</Text>
-                  ) : null}
-                  {open && (item.incident_date || item.created_at) ? (
-                    <Text style={styles.date}>{item.incident_date || item.created_at}</Text>
-                  ) : null}
+
+                  {open ? (
+                    <View style={styles.detail}>
+                      {caseNo ? (
+                        <Text style={styles.detailLine}>
+                          <Text style={styles.detailLabel}>Case # </Text>
+                          {caseNo}
+                        </Text>
+                      ) : null}
+                      {(item.incident_date || item.created_at) ? (
+                        <Text style={styles.detailLine}>
+                          <Text style={styles.detailLabel}>Date </Text>
+                          {String(item.incident_date ?? item.created_at ?? '').slice(0, 10)}
+                        </Text>
+                      ) : null}
+                      {item.sentiment ? (
+                        <Text style={styles.detailLine}>
+                          <Text style={styles.detailLabel}>Sentiment </Text>
+                          {item.sentiment}
+                        </Text>
+                      ) : null}
+                      {narrative ? (
+                        <>
+                          <Text style={styles.detailLabel}>Details</Text>
+                          <Text style={styles.desc}>{narrative}</Text>
+                        </>
+                      ) : null}
+                      {steps.length ? (
+                        <>
+                          <Text style={styles.detailLabel}>Steps taken</Text>
+                          {steps.map((s, i) => (
+                            <Text key={`${key}-step-${i}`} style={styles.bullet}>
+                              • {s}
+                            </Text>
+                          ))}
+                        </>
+                      ) : null}
+                      {recs.length ? (
+                        <>
+                          <Text style={styles.detailLabel}>Recommendations</Text>
+                          {recs.map((r, i) => (
+                            <Text key={`${key}-rec-${i}`} style={styles.bullet}>
+                              • {r}
+                            </Text>
+                          ))}
+                        </>
+                      ) : null}
+                      {students.length ? (
+                        <>
+                          <Text style={styles.detailLabel}>Students involved</Text>
+                          {students.map((s, i) => {
+                            const adm = String(s.admission_number ?? '').trim();
+                            const name = s.full_name || s.student_name || adm || 'Student';
+                            const sk = adm ? `student-${adm}` : '';
+                            return (
+                              <View key={`${key}-stu-${i}`} style={styles.studentRow}>
+                                <Text style={styles.studentName}>{name}</Text>
+                                {adm ? (
+                                  <Pressable
+                                    style={styles.aiBtn}
+                                    disabled={analyzingStudent === sk}
+                                    onPress={(e) => {
+                                      e.stopPropagation?.();
+                                      void runStudentAnalyze(adm);
+                                    }}>
+                                    {analyzingStudent === sk ? (
+                                      <ActivityIndicator size="small" color={Colors.brandGreenDark} />
+                                    ) : (
+                                      <>
+                                        <Ionicons name="sparkles-outline" size={14} color={Colors.brandGreenDark} />
+                                        <Text style={styles.aiBtnText}>AI student insight</Text>
+                                      </>
+                                    )}
+                                  </Pressable>
+                                ) : null}
+                                {sk && analysisByKey[sk] ? (
+                                  <Text style={styles.analysis}>{analysisByKey[sk]}</Text>
+                                ) : null}
+                                {sk && analysisError[sk] ? (
+                                  <Text style={styles.analysisErr}>{analysisError[sk]}</Text>
+                                ) : null}
+                              </View>
+                            );
+                          })}
+                        </>
+                      ) : null}
+
+                      {caseNo ? (
+                        <Pressable
+                          style={styles.aiBtnPrimary}
+                          disabled={analyzingCase === caseAnalysisKey}
+                          onPress={(e) => {
+                            e.stopPropagation?.();
+                            void runCaseAnalyze(item);
+                          }}>
+                          {analyzingCase === caseAnalysisKey ? (
+                            <ActivityIndicator size="small" color={Colors.white} />
+                          ) : (
+                            <>
+                              <Ionicons name="sparkles" size={16} color={Colors.white} />
+                              <Text style={styles.aiBtnPrimaryText}>AI case analysis</Text>
+                            </>
+                          )}
+                        </Pressable>
+                      ) : null}
+                      {caseAnalysisKey && analysisByKey[caseAnalysisKey] ? (
+                        <Text style={styles.analysis}>{analysisByKey[caseAnalysisKey]}</Text>
+                      ) : null}
+                      {caseAnalysisKey && analysisError[caseAnalysisKey] ? (
+                        <Text style={styles.analysisErr}>{analysisError[caseAnalysisKey]}</Text>
+                      ) : null}
+                    </View>
+                  ) : (
+                    <Text style={styles.tapHint}>Tap for full case detail</Text>
+                  )}
                 </ModuleGlassCard>
               </Pressable>
             );
@@ -226,11 +434,51 @@ const styles = StyleSheet.create({
   cardBody: { flex: 1 },
   cardTitle: { fontSize: 15, fontWeight: '700', color: Colors.brandGreenDark },
   meta: { marginTop: 3, fontSize: 12, color: Colors.mutedForeground },
-  desc: {
-    marginTop: 10,
-    fontSize: 14,
-    lineHeight: 20,
+  tapHint: { marginTop: 8, fontSize: 12, color: Colors.mutedForeground },
+  detail: { marginTop: 12, gap: 6 },
+  detailLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
     color: Colors.mutedForeground,
+    marginTop: 4,
   },
-  date: { marginTop: 8, fontSize: 11, color: Colors.mutedForeground },
+  detailLine: { fontSize: 13, color: Colors.ink },
+  desc: { fontSize: 14, lineHeight: 20, color: Colors.mutedForeground },
+  bullet: { fontSize: 13, lineHeight: 18, color: Colors.ink, paddingLeft: 4 },
+  studentRow: { gap: 6, marginTop: 4 },
+  studentName: { fontSize: 14, fontWeight: '700', color: Colors.ink },
+  aiBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: 'rgba(10,61,46,0.08)',
+  },
+  aiBtnText: { fontSize: 12, fontWeight: '700', color: Colors.brandGreenDark },
+  aiBtnPrimary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 10,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: Colors.brandGreenDark,
+  },
+  aiBtnPrimaryText: { color: Colors.white, fontWeight: '700', fontSize: 14 },
+  analysis: {
+    marginTop: 6,
+    fontSize: 13,
+    lineHeight: 19,
+    color: Colors.ink,
+    backgroundColor: 'rgba(10,61,46,0.05)',
+    padding: 10,
+    borderRadius: 10,
+  },
+  analysisErr: { marginTop: 4, fontSize: 12, color: Colors.orange },
 });

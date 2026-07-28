@@ -101,14 +101,30 @@ export const PARENT_TRIP_HISTORY: ParentTripHistory[] = [
   },
 ];
 
+/** Fallback school gate pin when no live trip GPS is available. */
+export const DEFAULT_SCHOOL_PIN: LatLng = {
+  lat: -1.2768,
+  lng: 36.8192,
+  label: 'School',
+};
+
+/** WebView-safe embed — never use directions URLs here (they block iframe). */
 export function googleMapsEmbedUrl(point: LatLng, zoom = 14): string {
   return `https://maps.google.com/maps?q=${point.lat},${point.lng}&z=${zoom}&output=embed`;
+}
+
+/** Embed showing two markers via center + zoom (no API key). */
+export function googleMapsEmbedTwoPinUrl(a: LatLng, b: LatLng, zoom = 13): string {
+  const lat = (a.lat + b.lat) / 2;
+  const lng = (a.lng + b.lng) / 2;
+  return `https://maps.google.com/maps?q=${lat},${lng}&z=${zoom}&output=embed`;
 }
 
 export function googleMapsSearchUrl(point: LatLng): string {
   return `https://www.google.com/maps/search/?api=1&query=${point.lat},${point.lng}`;
 }
 
+/** Opens native Maps app — not for WebView. */
 export function googleMapsDirectionsUrl(route: LatLng[]): string | null {
   if (route.length < 2) return null;
   const origin = route[0]!;
@@ -120,4 +136,28 @@ export function googleMapsDirectionsUrl(route: LatLng[]): string | null {
   let url = `https://www.google.com/maps/dir/?api=1&origin=${origin.lat},${origin.lng}&destination=${dest.lat},${dest.lng}`;
   if (waypoints) url += `&waypoints=${encodeURIComponent(waypoints)}`;
   return url;
+}
+
+/** Leaflet picker HTML for tap-to-set home coordinates in a WebView. */
+export function mapPickerHtml(lat: number, lng: number): string {
+  return `<!DOCTYPE html>
+<html><head>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>html,body,#map{margin:0;height:100%;}</style>
+</head><body>
+<div id="map"></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  var lat=${lat}, lng=${lng};
+  var map = L.map('map').setView([lat, lng], 15);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+  var marker = L.marker([lat, lng], { draggable: true }).addTo(map);
+  function send(p) {
+    if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify(p));
+  }
+  marker.on('dragend', function() { var p = marker.getLatLng(); send({ lat: p.lat, lng: p.lng }); });
+  map.on('click', function(e) { marker.setLatLng(e.latlng); send({ lat: e.latlng.lat, lng: e.latlng.lng }); });
+</script>
+</body></html>`;
 }

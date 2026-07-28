@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
+  Linking,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -13,6 +14,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
+import { ModuleTabPager } from '../../components/dashboard/ModuleTabPager';
 import { ModuleBackBar, ModuleEmpty, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import { useDeskAuth } from '../../context/DeskAuthContext';
@@ -20,8 +22,15 @@ import {
   fetchParentEvents,
   payParentEvent,
   rsvpParentEvent,
+  scanParentRegister,
+  fetchRegisterScanTodayStatus,
   seedParentDemoData,
 } from '../../lib/parentPortalApi';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import { useDialog } from '../../context/DialogContext';
+import { GateDirectionToggle } from '../../components/dashboard/GateDirectionToggle';
+import { useGateScanDirection } from '../../hooks/useGateScanDirection';
+import { GateDirection } from '../../lib/gateScanDirection';
 import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
 import { log } from '../../lib/logger';
@@ -50,7 +59,7 @@ type SchoolEvent = {
   payment_status?: string | null;
 };
 
-type MainTab = 'upcoming' | 'payable' | 'calendar';
+type MainTab = 'upcoming' | 'payable' | 'calendar' | 'scan';
 
 function unwrapEvents(data: unknown): SchoolEvent[] {
   if (Array.isArray(data)) return data as SchoolEvent[];
@@ -101,6 +110,8 @@ function dayKey(iso?: string) {
 export function EventsScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const { selectedStudentId } = useDeskAuth();
+  const { showDialog } = useDialog();
+  const [permission, requestPermission] = useCameraPermissions();
   const [items, setItems] = useState<SchoolEvent[]>([]);
   const [tab, setTab] = useState<MainTab>('upcoming');
   const [monthCursor, setMonthCursor] = useState(() => {
@@ -112,6 +123,24 @@ export function EventsScreen({ navigation }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [scanned, setScanned] = useState(false);
+  const [scanBusy, setScanBusy] = useState(false);
+
+  const fetchRegisterStatus = useCallback(async () => {
+    const data = await fetchRegisterScanTodayStatus();
+    return {
+      last_direction: data?.last_direction ?? null,
+      check_in_at: data?.last_direction === 'in' ? data?.last_marked_at ?? null : null,
+      check_out_at: data?.last_direction === 'out' ? data?.last_marked_at ?? null : null,
+    };
+  }, []);
+
+  const {
+    direction: scanDirection,
+    setDirection: setScanDirection,
+    loading: scanDirLoading,
+    hint: scanDirHint,
+  } = useGateScanDirection(fetchRegisterStatus);
 
   const load = useCallback(
     async (soft = false) => {
@@ -170,13 +199,54 @@ export function EventsScreen({ navigation }: Props) {
         status: 'attending',
         student_id: selectedStudentId ?? undefined,
       });
+      showDialog({
+        title: 'RSVP saved',
+        message: 'This records your intention to attend. Scan at the school gate or event QR to register attendance.',
+        variant: 'success',
+      });
       await load(true);
     } catch (e) {
       log.warn('Events', 'rsvp failed', String(e));
+      showDialog({
+        title: 'RSVP failed',
+        message: e instanceof Error ? e.message : String(e),
+        variant: 'danger',
+      });
     } finally {
       setBusyId(null);
     }
   };
+
+  const onScanRegister = useCallback(
+    async (raw: string, direction: GateDirection) => {
+      if (scanBusy) return;
+      setScanBusy(true);
+      try {
+        const res = await scanParentRegister({
+          qr_payload: raw,
+          person_type: 'parent',
+          direction,
+        });
+        const scanType = String(res?.scan_type ?? 'visit');
+        const isOut = direction === 'out';
+        showDialog({
+          title: scanType === 'event' ? (isOut ? 'Event check-out' : 'Event check-in') : isOut ? 'Checked out' : 'School visit recorded',
+          message: res?.message || (isOut ? 'Your departure was recorded.' : 'You are registered on today’s attendance / event register.'),
+          variant: 'success',
+        });
+      } catch (e) {
+        showDialog({
+          title: 'Scan failed',
+          message: e instanceof Error ? e.message : String(e),
+          variant: 'danger',
+        });
+        setScanned(false);
+      } finally {
+        setScanBusy(false);
+      }
+    },
+    [scanBusy, showDialog],
+  );
 
   const pay = async (ev: SchoolEvent) => {
     if (!ev.id) return;
@@ -229,24 +299,97 @@ export function EventsScreen({ navigation }: Props) {
         <ModuleKicker>Events</ModuleKicker>
         <Text style={styles.heading}>School activities</Text>
 
-        <View style={styles.tabs}>
-          {(
-            [
-              ['upcoming', 'All'],
-              ['payable', 'Payable'],
-              ['calendar', 'Calendar'],
-            ] as Array<[MainTab, string]>
-          ).map(([key, label]) => (
-            <Pressable
-              key={key}
-              style={[styles.tab, tab === key && styles.tabActive]}
-              onPress={() => setTab(key)}>
-              <Text style={[styles.tabText, tab === key && styles.tabTextActive]}>{label}</Text>
-            </Pressable>
-          ))}
-        </View>
+        <ModuleTabPager
+          tabs={[
+            { key: 'upcoming', label: 'All' },
+            { key: 'payable', label: 'Payable' },
+            { key: 'calendar', label: 'Calendar' },
+            { key: 'scan', label: 'Scan' },
+          ]}
+          value={tab}
+          onChange={(key) => {
+            setTab(key);
+            if (key === 'scan') setScanned(false);
+          }}
+          minHeight={360}
+          renderPage={(key) => {
+            const pageItems =
+              key === 'payable'
+                ? items.filter(isPayable)
+                : key === 'calendar' && selectedDay
+                  ? items.filter((e) => dayKey(e.start_at) === selectedDay)
+                  : items;
+            return (
+              <>
+        {key === 'scan' ? (
+          <ModuleGlassCard>
+            <Text style={styles.desc}>
+              Scan the school gate or event QR to register attendance. “I will attend” is RSVP only —
+              scanning records the real visit.
+            </Text>
+            <GateDirectionToggle
+              value={scanDirection}
+              onChange={setScanDirection}
+              disabled={scanBusy || scanDirLoading}
+              hint={scanDirHint}
+            />
+            {!permission?.granted ? (
+              <View style={{ gap: 10, marginTop: 8 }}>
+                <Text style={styles.meta}>Camera access is needed to scan.</Text>
+                <Pressable style={styles.primaryBtn} onPress={() => void requestPermission()}>
+                  <Text style={styles.primaryBtnText}>Allow camera</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.secondaryBtn}
+                  onPress={() => {
+                    setTab('upcoming');
+                    setScanned(false);
+                  }}>
+                  <Text style={styles.secondaryBtnText}>Cancel</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <View style={{ marginTop: 10 }}>
+                <View style={styles.scanCameraWrap}>
+                  <CameraView
+                    style={styles.scanCamera}
+                    facing="back"
+                    onBarcodeScanned={
+                      scanned || scanBusy
+                        ? undefined
+                        : ({ data }) => {
+                            setScanned(true);
+                            void onScanRegister(data, scanDirection);
+                          }
+                    }
+                    barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+                  />
+                </View>
+                {scanBusy ? (
+                  <ActivityIndicator color={Colors.brandGreenMid} style={{ marginTop: 12 }} />
+                ) : scanned ? (
+                  <Pressable style={styles.secondaryBtn} onPress={() => setScanned(false)}>
+                    <Text style={styles.secondaryBtnText}>Scan again</Text>
+                  </Pressable>
+                ) : (
+                  <Text style={[styles.meta, { marginTop: 10 }]}>
+                    Point at the school or event QR code.
+                  </Text>
+                )}
+                <Pressable
+                  style={[styles.secondaryBtn, { marginTop: 10 }]}
+                  onPress={() => {
+                    setTab('upcoming');
+                    setScanned(false);
+                  }}>
+                  <Text style={styles.secondaryBtnText}>Cancel</Text>
+                </Pressable>
+              </View>
+            )}
+          </ModuleGlassCard>
+        ) : null}
 
-        {tab === 'calendar' ? (
+        {key === 'calendar' ? (
           <View style={styles.calWrap}>
             <View style={styles.calHeader}>
               <Pressable
@@ -301,11 +444,11 @@ export function EventsScreen({ navigation }: Props) {
           </View>
         ) : null}
 
-        {loading ? (
+        {key !== 'scan' && loading ? (
           <View style={styles.loader}>
             <ActivityIndicator color={Colors.brandGreenMid} />
           </View>
-        ) : error ? (
+        ) : key !== 'scan' && error ? (
           <ModuleEmpty
             title="Couldn’t load events"
             body={
@@ -315,18 +458,18 @@ export function EventsScreen({ navigation }: Props) {
             }
             onRetry={() => void load()}
           />
-        ) : listItems.length === 0 ? (
+        ) : key !== 'scan' && pageItems.length === 0 ? (
           <ModuleEmpty
-            title={tab === 'payable' ? 'No payable events' : 'No events'}
+            title={key === 'payable' ? 'No payable events' : 'No events'}
             body={
-              tab === 'payable'
+              key === 'payable'
                 ? 'School trips and fee events will show here.'
                 : 'Parent-facing school events will appear when the school publishes them.'
             }
             onRetry={() => void seed()}
           />
-        ) : (
-          listItems.map((ev, index) => {
+        ) : key !== 'scan' ? (
+          pageItems.map((ev, index) => {
             const attending = String(ev.my_rsvp?.status ?? '') === 'attending';
             const paid = String(ev.payment_status ?? ev.my_payment?.status ?? '') === 'paid';
             const fee =
@@ -375,24 +518,60 @@ export function EventsScreen({ navigation }: Props) {
                   ) : null}
                   {!attending ? (
                     <Pressable
-                      style={[styles.secondaryBtn, isPayable(ev) && !paid && styles.btnDisabled]}
-                      disabled={busyId === ev.id || (isPayable(ev) && !paid)}
+                      style={styles.secondaryBtn}
+                      disabled={busyId === ev.id}
                       onPress={() => void attend(ev)}>
-                      <Text style={styles.secondaryBtnText}>
-                        {isPayable(ev) && !paid ? 'Pay to attend' : 'I will attend'}
-                      </Text>
+                      <Text style={styles.secondaryBtnText}>I will attend (RSVP)</Text>
                     </Pressable>
                   ) : (
                     <View style={styles.badgeAttend}>
                       <Ionicons name="checkmark-circle" size={16} color="#059669" />
-                      <Text style={styles.badgeAttendText}>Attending</Text>
+                      <Text style={styles.badgeAttendText}>RSVP’d — scan to check in</Text>
                     </View>
                   )}
+                  <Pressable
+                    style={styles.secondaryBtn}
+                    onPress={() => {
+                      setTab('scan');
+                      setScanned(false);
+                    }}>
+                    <Text style={styles.secondaryBtnText}>Scan to register</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.secondaryBtn}
+                    onPress={() => {
+                      const start = ev.start_at ? new Date(ev.start_at) : null;
+                      const end = ev.end_at ? new Date(ev.end_at) : start;
+                      if (!start || Number.isNaN(start.getTime())) {
+                        showDialog({
+                          title: 'No date',
+                          message: 'This event has no start time to add.',
+                          variant: 'warning',
+                        });
+                        return;
+                      }
+                      const fmt = (d: Date) =>
+                        d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+                      const dates = `${fmt(start)}/${fmt(end && !Number.isNaN(end.getTime()) ? end : new Date(start.getTime() + 3600000))}`;
+                      const url =
+                        `https://calendar.google.com/calendar/render?action=TEMPLATE` +
+                        `&text=${encodeURIComponent(ev.title || 'School event')}` +
+                        `&dates=${dates}` +
+                        `&details=${encodeURIComponent(ev.description || '')}` +
+                        `&location=${encodeURIComponent(ev.location || '')}`;
+                      void Linking.openURL(url);
+                    }}>
+                    <Text style={styles.secondaryBtnText}>Add to calendar</Text>
+                  </Pressable>
                 </View>
               </ModuleGlassCard>
             );
           })
-        )}
+        ) : null}
+              </>
+            );
+          }}
+        />
       </ScrollView>
     </View>
   );
@@ -407,16 +586,13 @@ const styles = StyleSheet.create({
     color: Colors.ink,
     marginBottom: 12,
   },
-  tabs: { flexDirection: 'row', gap: 8, marginBottom: 14 },
-  tab: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.05)',
+  scanCameraWrap: {
+    height: 260,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#0a0a0a',
   },
-  tabActive: { backgroundColor: Colors.brandGreenDark },
-  tabText: { fontSize: 13, fontWeight: '700', color: Colors.mutedForeground },
-  tabTextActive: { color: Colors.white },
+  scanCamera: { flex: 1 },
   calWrap: {
     backgroundColor: 'rgba(10,61,46,0.05)',
     borderRadius: 16,

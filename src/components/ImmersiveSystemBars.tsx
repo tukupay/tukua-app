@@ -3,27 +3,37 @@ import { AppState, Platform, StatusBar as RNStatusBar } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
 /**
- * Imperative hide — call after WebView load / tab focus / biometric prompts.
- * Android WebView and LocalAuthentication often restore the system status bar.
+ * Imperative hide — call after WebView load / tab focus / biometric prompts / camera dismiss.
+ * Hides the **top** system status bar only (clock / battery / signal / date).
+ * Do **not** hide the Android soft navigation bar (back / home / recent) — that is the bottom chrome.
  */
 export function hideSystemStatusBar() {
-  RNStatusBar.setHidden(true, 'fade');
+  try {
+    RNStatusBar.setHidden(true, 'fade');
+  } catch {
+    /* noop */
+  }
   if (Platform.OS === 'android') {
-    RNStatusBar.setTranslucent(true);
-    RNStatusBar.setBackgroundColor('transparent');
+    try {
+      RNStatusBar.setTranslucent(true);
+      RNStatusBar.setBackgroundColor('transparent');
+    } catch {
+      /* noop */
+    }
   }
 }
 
 /**
- * Keep the system status bar (clock / battery / signal) hidden for the whole app.
+ * Keep the top system status bar hidden for the whole app.
  *
  * What remounts / re-shows it:
  * - Android WebView onLoad / focus
  * - LocalAuthentication biometric sheet dismiss
  * - AppState resume from background
- * - Accidental StatusBar.setHidden(false) (never do this in feature code)
+ * - Camera / barcode scanner dismiss
  *
  * Do NOT un-hide on cleanup — Strict Mode remounts would flash the bar back.
+ * Do NOT hide the bottom navigation / gesture bar.
  */
 export function ImmersiveSystemBars() {
   const hide = useCallback(() => {
@@ -34,16 +44,19 @@ export function ImmersiveSystemBars() {
     hide();
 
     const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') hide();
+      if (state === 'active') {
+        hide();
+        setTimeout(hide, 120);
+        setTimeout(hide, 400);
+        setTimeout(hide, 1000);
+      }
     });
 
-    // WebView / OEM chrome often restores the bar after paint — keep re-applying.
-    const poll = Platform.OS === 'android' ? setInterval(hide, 800) : setInterval(hide, 2500);
+    const poll = Platform.OS === 'android' ? setInterval(hide, 500) : setInterval(hide, 1500);
 
     return () => {
       sub.remove();
       clearInterval(poll);
-      // Intentionally leave hidden — unmount during remount must not reveal the bar.
     };
   }, [hide]);
 

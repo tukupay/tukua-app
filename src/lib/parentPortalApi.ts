@@ -141,6 +141,62 @@ export async function rsvpParentEvent(
   });
 }
 
+/** Parent scan for daily school visit or event attendance register. */
+export async function scanParentRegister(body: {
+  qr_payload: string;
+  person_type?: string;
+  person_id?: string;
+  full_name?: string;
+  phone?: string;
+  direction?: 'in' | 'out';
+}) {
+  return deskFetch<{ entry?: unknown; session?: unknown; scan_type?: string; message?: string; direction?: string }>(
+    '/registers/scan',
+    { method: 'POST', body },
+  );
+}
+
+export async function fetchRegisterScanTodayStatus() {
+  return deskFetch<{
+    last_direction?: 'in' | 'out' | null;
+    last_marked_at?: string | null;
+    suggested_action?: 'in' | 'out';
+    has_scanned_today?: boolean;
+  }>('/registers/scan/today-status');
+}
+
+export async function quoteSchoolCollection(body: {
+  purpose: 'school_fees' | 'school_pocket' | 'teacher_tip';
+  amount: number;
+}) {
+  return deskFetch<{
+    amount_kes?: number;
+    bank_app_charge_pct?: number;
+    bank_app_charge_kes?: number;
+    total_kes?: number;
+  }>('/accounts/collections/quote', { method: 'POST', body });
+}
+
+export async function promptSchoolCollectionStk(body: {
+  purpose: 'school_fees' | 'school_pocket' | 'teacher_tip';
+  amount: number;
+  phone: string;
+  student_id?: string;
+  teacher_id?: string;
+  description?: string;
+}) {
+  return deskFetch<{
+    checkout_request_id?: string;
+    customer_message?: string;
+    quote?: {
+      amount_kes?: number;
+      bank_app_charge_pct?: number;
+      bank_app_charge_kes?: number;
+      total_kes?: number;
+    };
+  }>('/accounts/collections/stk-prompt', { method: 'POST', body });
+}
+
 export async function payParentEvent(
   eventId: string,
   body?: { student_id?: string; method?: string; reference?: string },
@@ -149,4 +205,201 @@ export async function payParentEvent(
     method: 'POST',
     body: body ?? {},
   });
+}
+
+export type ParentInvoice = {
+  id?: string;
+  student_id?: string;
+  invoice_number?: string | null;
+  invoice_date?: string | null;
+  due_date?: string | null;
+  amount?: number | string | null;
+  balance?: number | string | null;
+  status?: string | null;
+  description?: string | null;
+};
+
+export type ParentPaymentSlip = {
+  id?: string;
+  student_id?: string | null;
+  amount?: number | string | null;
+  bank_ref?: string | null;
+  paid_on?: string | null;
+  note?: string | null;
+  status?: string | null;
+  created_at?: string | null;
+  currency?: string | null;
+  file_url?: string | null;
+  file_name?: string | null;
+};
+
+export type ParentBursaryProgram = {
+  id?: string;
+  title?: string | null;
+  description?: string | null;
+  status?: string | null;
+  deadline?: string | null;
+};
+
+export type ParentBursaryContribution = {
+  id?: string;
+  program_id?: string | null;
+  amount?: number | string | null;
+  note?: string | null;
+  status?: string | null;
+  created_at?: string | null;
+};
+
+export type ParentAttendanceRecord = {
+  id?: string;
+  student_id?: string;
+  attendance_date?: string | null;
+  status?: string | null;
+  attendance_status?: string | null;
+};
+
+export type ParentAttendanceSummary = {
+  student_id: string;
+  full_name?: string | null;
+  present: number;
+  absent: number;
+  late: number;
+  total: number;
+};
+
+export type ParentTransportHome = {
+  id?: string;
+  student_id?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  address_text?: string | null;
+  label?: string | null;
+};
+
+export type ParentTransportTrip = {
+  id?: string;
+  student_id?: string;
+  trip_type?: string | null;
+  direction?: string | null;
+  status?: string | null;
+  vehicle_label?: string | null;
+  route_label?: string | null;
+  boarded_at?: string | null;
+  alighted_at?: string | null;
+  live_lat?: number | null;
+  live_lng?: number | null;
+  face_boarded?: number | null;
+  created_at?: string | null;
+  latest_gps?: { lat?: number; lng?: number; speed_kmh?: number | null } | null;
+  gps_path?: Array<{ lat?: number; lng?: number; label?: string }>;
+};
+
+export async function fetchParentInvoices(studentId?: string | null) {
+  const sid = resolveStudentId(studentId);
+  const q = sid ? `?student_id=${encodeURIComponent(sid)}` : '';
+  return deskFetch<{ invoices?: ParentInvoice[]; count?: number }>(`/parents/me/invoices${q}`);
+}
+
+export async function fetchParentPaymentSlips(studentId?: string | null) {
+  const sid = resolveStudentId(studentId);
+  const q = sid ? `?student_id=${encodeURIComponent(sid)}` : '';
+  return deskFetch<{ slips?: ParentPaymentSlip[]; count?: number }>(
+    `/parents/me/payment-slips${q}`,
+  );
+}
+
+export async function createParentPaymentSlip(body: {
+  student_id?: string;
+  /** Optional — AI/bursar may fill from the photo; photo-only submit allowed. */
+  amount?: number | string;
+  bank_ref?: string;
+  paid_on?: string;
+  note?: string;
+  file_url?: string;
+  file_name?: string;
+}) {
+  const sid = resolveStudentId(body.student_id);
+  return deskFetch<{ slip?: ParentPaymentSlip }>('/parents/me/payment-slips', {
+    method: 'POST',
+    body: { ...body, student_id: sid ?? body.student_id },
+  });
+}
+
+export async function fetchParentBursary() {
+  return deskFetch<{
+    programs?: ParentBursaryProgram[];
+    contributions?: ParentBursaryContribution[];
+    kitty_total?: number;
+  }>('/parents/me/bursary');
+}
+
+export async function contributeParentBursary(body: {
+  amount: number | string;
+  program_id?: string;
+  note?: string;
+}) {
+  return deskFetch<{ contribution?: ParentBursaryContribution }>('/parents/me/bursary/contribute', {
+    method: 'POST',
+    body,
+  });
+}
+
+export async function fetchParentAttendance(studentId?: string | null) {
+  const sid = resolveStudentId(studentId);
+  const q = sid ? `?student_id=${encodeURIComponent(sid)}` : '';
+  return deskFetch<{
+    records?: ParentAttendanceRecord[];
+    summary?: ParentAttendanceSummary[];
+  }>(`/parents/me/attendance${q}`);
+}
+
+export async function fetchParentTransportTrips(studentId?: string | null) {
+  const sid = resolveStudentId(studentId);
+  const q = sid ? `?student_id=${encodeURIComponent(sid)}` : '';
+  return deskFetch<{
+    trips?: ParentTransportTrip[];
+    live?: ParentTransportTrip | null;
+    trip_runs?: ParentTransportTrip[];
+    demo?: boolean;
+    note?: string;
+  }>(`/parents/me/transport/trips${q}`);
+}
+
+export async function fetchParentTransportHome(studentId?: string | null) {
+  const sid = resolveStudentId(studentId);
+  if (!sid) throw new Error('Select a student first');
+  return deskFetch<{ home?: ParentTransportHome | null }>(
+    `/parents/me/transport/home?student_id=${encodeURIComponent(sid)}`,
+  );
+}
+
+export async function putParentTransportHome(body: {
+  student_id?: string;
+  latitude: number;
+  longitude: number;
+  address_text?: string;
+  label?: string;
+}) {
+  const sid = resolveStudentId(body.student_id);
+  if (!sid) throw new Error('Select a student first');
+  return deskFetch<{ home?: ParentTransportHome | null }>('/parents/me/transport/home', {
+    method: 'PUT',
+    body: { ...body, student_id: sid },
+  });
+}
+
+export async function faceBoardParentTransport(body: {
+  student_id?: string;
+  trip_id?: string;
+  face_event_id?: string;
+}) {
+  const sid = resolveStudentId(body.student_id);
+  if (!sid) throw new Error('Select a student first');
+  return deskFetch<{ trip?: ParentTransportTrip; demo?: boolean }>(
+    '/parents/me/transport/face-board',
+    {
+      method: 'POST',
+      body: { ...body, student_id: sid },
+    },
+  );
 }

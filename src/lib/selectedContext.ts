@@ -6,6 +6,8 @@ export type StoredContext = {
   schoolId: string;
   /** Parent focus — null for teacher/admin school-only context. */
   studentId: string | null;
+  /** Active hat when user has multiple roles at one school (parent, teacher, security, …). */
+  activeRole?: string | null;
 };
 
 function key(userId: string) {
@@ -26,6 +28,7 @@ export async function getSelectedContext(userId: string): Promise<StoredContext 
     return {
       schoolId: String(parsed.schoolId),
       studentId: parsed.studentId ? String(parsed.studentId) : null,
+      activeRole: parsed.activeRole ? String(parsed.activeRole) : null,
     };
   } catch {
     return null;

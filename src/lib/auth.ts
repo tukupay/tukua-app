@@ -38,6 +38,31 @@ function isSessionExpired(session: Session, skewSeconds = 90): boolean {
   return expiresAt <= Math.floor(Date.now() / 1000) + skewSeconds;
 }
 
+function isBenignNetworkError(message: string): boolean {
+  const m = message.toLowerCase();
+  return (
+    m.includes('failed to fetch') ||
+    m.includes('network') ||
+    m.includes('offline') ||
+    m.includes('load failed') ||
+    m.includes('timeout') ||
+    m.includes('network request failed')
+  );
+}
+
+function isConfirmedInvalidJwt(message: string): boolean {
+  const m = message.toLowerCase();
+  if (isBenignNetworkError(message)) return false;
+  return (
+    m.includes('invalid') ||
+    m.includes('expired') ||
+    m.includes('jwt') ||
+    m.includes('refresh_token') ||
+    m.includes('session not found') ||
+    m.includes('token is expired')
+  );
+}
+
 /** Restore or refresh the Supabase session from secure storage. */
 export async function refreshSessionIfNeeded(): Promise<Session | null> {
   let session: Session | null = null;
@@ -55,7 +80,11 @@ export async function refreshSessionIfNeeded(): Promise<Session | null> {
       if (!error) session = data.session;
       else {
         log.warn('Auth', 'setSession from stored tokens failed', error.message);
-        await signOut();
+        if (isConfirmedInvalidJwt(error.message)) {
+          await signOut();
+          return null;
+        }
+        // Network blip — keep stored tokens; caller may retry later.
         return null;
       }
     }
@@ -67,9 +96,14 @@ export async function refreshSessionIfNeeded(): Promise<Session | null> {
     log.info('Auth', 'access token expired — refreshing');
     const { data, error } = await supabase.auth.refreshSession();
     if (error || !data.session) {
-      log.warn('Auth', 'refreshSession failed — signing out', error?.message);
-      await signOut();
-      return null;
+      const msg = error?.message ?? 'refresh failed';
+      log.warn('Auth', 'refreshSession failed', msg);
+      if (error && isConfirmedInvalidJwt(msg)) {
+        await signOut();
+        return null;
+      }
+      // Network or transient — keep the last known session for offline use.
+      return session;
     }
     session = data.session;
   }

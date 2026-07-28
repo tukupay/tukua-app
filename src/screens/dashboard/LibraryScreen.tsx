@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -11,6 +10,7 @@ import {
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
+import { ModuleTabPager } from '../../components/dashboard/ModuleTabPager';
 import { ModuleBackBar, ModuleEmpty, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import { useDeskAuth } from '../../context/DeskAuthContext';
@@ -105,15 +105,31 @@ export function LibraryScreen({ navigation }: Props) {
     void load();
   }, [load]);
 
-  const filteredLoans = useMemo(() => {
-    if (tab === 'current') return loans.filter((l) => isOpen(l.status) && !isOverdue(l));
-    if (tab === 'returned') return loans.filter((l) => isReturned(l.status));
-    if (tab === 'overdue') return loans.filter((l) => isOverdue(l));
-    return [];
-  }, [loans, tab]);
+  const loansForTab = useCallback(
+    (key: TabKey) => {
+      const list = Array.isArray(loans) ? loans : [];
+      if (key === 'current') return list.filter((l) => isOpen(l?.status) && !isOverdue(l));
+      if (key === 'returned') return list.filter((l) => isReturned(l?.status));
+      if (key === 'overdue') return list.filter((l) => isOverdue(l));
+      return [];
+    },
+    [loans],
+  );
+
+  const emptyBodyFor = (key: TabKey) =>
+    key === 'fines'
+      ? 'No open fines for this student.'
+      : key === 'returned'
+        ? 'No returned books yet.'
+        : key === 'overdue'
+          ? 'Nothing overdue — great.'
+          : 'When books are issued, they appear here.';
 
   const openFines = useMemo(
-    () => fines.filter((f) => !['paid', 'waived'].includes(String(f.status ?? '').toLowerCase())),
+    () =>
+      (Array.isArray(fines) ? fines : []).filter(
+        (f) => !['paid', 'waived'].includes(String(f?.status ?? '').toLowerCase()),
+      ),
     [fines],
   );
 
@@ -128,15 +144,6 @@ export function LibraryScreen({ navigation }: Props) {
       setSeeding(false);
     }
   };
-
-  const emptyBody =
-    tab === 'fines'
-      ? 'No open fines for this student.'
-      : tab === 'returned'
-        ? 'No returned books yet.'
-        : tab === 'overdue'
-          ? 'Nothing overdue — great.'
-          : 'When books are issued, they appear here.';
 
   return (
     <View style={styles.root}>
@@ -169,61 +176,66 @@ export function LibraryScreen({ navigation }: Props) {
             : 'Borrowed and returned by your child.'}
         </Text>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabs}>
-          {TABS.map((t) => (
-            <Pressable
-              key={t.key}
-              style={[styles.tab, tab === t.key && styles.tabActive]}
-              onPress={() => setTab(t.key)}>
-              <Text style={[styles.tabText, tab === t.key && styles.tabTextActive]}>{t.label}</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-
-        {loading ? (
-          <ActivityIndicator color={Colors.brandGreenMid} style={{ marginTop: 24 }} />
-        ) : error ? (
-          <ModuleEmpty title="Could not load library" body={error} onRetry={() => void load()} />
-        ) : tab === 'fines' ? (
-          openFines.length === 0 ? (
-            <ModuleEmpty title="No fines" body={emptyBody} onRetry={() => void seed()} />
-          ) : (
-            openFines.map((fine, i) => (
-              <ModuleGlassCard key={fine.id ?? `fine-${i}`}>
-                <Text style={styles.cardTitle}>
-                  KES {fine.amount != null ? String(fine.amount) : '—'}
-                </Text>
-                <Text style={styles.cardMeta}>
-                  {[fine.reason, fine.status].filter(Boolean).join(' · ')}
-                </Text>
-              </ModuleGlassCard>
-            ))
-          )
-        ) : filteredLoans.length === 0 ? (
-          <ModuleEmpty
-            title={tab === 'current' ? 'No books out' : 'Nothing here'}
-            body={emptyBody}
-            onRetry={seeding ? undefined : () => void seed()}
-          />
-        ) : (
-          filteredLoans.map((loan, i) => {
-            const who = [loan.student_first_name, loan.student_last_name].filter(Boolean).join(' ');
-            return (
-              <ModuleGlassCard key={loan.id ?? `loan-${i}`}>
-                <Text style={styles.cardTitle}>{loan.book_title || 'Book'}</Text>
-                <Text style={styles.cardMeta}>
-                  {[loan.status, who, loan.admission_number].filter(Boolean).join(' · ')}
-                </Text>
-                {loan.due_at ? (
-                  <Text style={styles.due}>Due {String(loan.due_at).slice(0, 10)}</Text>
-                ) : null}
-                {loan.returned_at ? (
-                  <Text style={styles.due}>Returned {String(loan.returned_at).slice(0, 10)}</Text>
-                ) : null}
-              </ModuleGlassCard>
+        <ModuleTabPager
+          tabs={TABS}
+          value={tab}
+          onChange={setTab}
+          minHeight={240}
+          renderPage={(key) => {
+            if (loading) {
+              return <ActivityIndicator color={Colors.brandGreenMid} style={{ marginTop: 24 }} />;
+            }
+            if (error) {
+              return <ModuleEmpty title="Could not load library" body={error} onRetry={() => void load()} />;
+            }
+            if (key === 'fines') {
+              return openFines.length === 0 ? (
+                <ModuleEmpty title="No fines" body={emptyBodyFor(key)} onRetry={() => void seed()} />
+              ) : (
+                <>
+                  {openFines.map((fine, i) => (
+                    <ModuleGlassCard key={fine.id ?? `fine-${i}`}>
+                      <Text style={styles.cardTitle}>
+                        KES {fine.amount != null ? String(fine.amount) : '—'}
+                      </Text>
+                      <Text style={styles.cardMeta}>
+                        {[fine.reason, fine.status].filter(Boolean).join(' · ')}
+                      </Text>
+                    </ModuleGlassCard>
+                  ))}
+                </>
+              );
+            }
+            const filteredLoans = loansForTab(key);
+            return filteredLoans.length === 0 ? (
+              <ModuleEmpty
+                title={key === 'current' ? 'No books out' : 'Nothing here'}
+                body={emptyBodyFor(key)}
+                onRetry={seeding ? undefined : () => void seed()}
+              />
+            ) : (
+              <>
+                {filteredLoans.map((loan, i) => {
+                  const who = [loan.student_first_name, loan.student_last_name].filter(Boolean).join(' ');
+                  return (
+                    <ModuleGlassCard key={loan.id ?? `loan-${i}`}>
+                      <Text style={styles.cardTitle}>{loan.book_title || 'Book'}</Text>
+                      <Text style={styles.cardMeta}>
+                        {[loan.status, who, loan.admission_number].filter(Boolean).join(' · ')}
+                      </Text>
+                      {loan.due_at ? (
+                        <Text style={styles.due}>Due {String(loan.due_at).slice(0, 10)}</Text>
+                      ) : null}
+                      {loan.returned_at ? (
+                        <Text style={styles.due}>Returned {String(loan.returned_at).slice(0, 10)}</Text>
+                      ) : null}
+                    </ModuleGlassCard>
+                  );
+                })}
+              </>
             );
-          })
-        )}
+          }}
+        />
       </ScrollView>
     </View>
   );
@@ -234,17 +246,6 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: 20, gap: 12 },
   title: { fontSize: 26, fontWeight: '800', color: Colors.ink, letterSpacing: -0.4 },
   sub: { fontSize: 14, color: Colors.mutedForeground, marginBottom: 4 },
-  tabs: { marginBottom: 4, flexGrow: 0 },
-  tab: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.05)',
-    marginRight: 8,
-  },
-  tabActive: { backgroundColor: Colors.brandGreenDark },
-  tabText: { fontSize: 13, fontWeight: '700', color: Colors.mutedForeground },
-  tabTextActive: { color: Colors.white },
   cardTitle: { fontSize: 17, fontWeight: '700', color: Colors.ink },
   cardMeta: { fontSize: 13, color: Colors.mutedForeground, marginTop: 4 },
   due: { fontSize: 13, color: Colors.primary, marginTop: 8 },

@@ -14,8 +14,11 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
+import { PaymentBottomSheet } from '../../components/dashboard/PaymentBottomSheet';
+import { PaymentProcessCard } from '../../components/dashboard/PaymentProcessCard';
 import { ModuleBackBar, ModuleEmpty, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
+import { useAuth } from '../../context/AuthContext';
 import { useDeskAuth } from '../../context/DeskAuthContext';
 import { useDialog } from '../../context/DialogContext';
 import { fetchChildTeachers, ParentTeacher } from '../../lib/parentPortalApi';
@@ -28,6 +31,15 @@ type Props = NativeStackScreenProps<DashboardStackParamList, 'Teachers'>;
 const HERO_GREEN = '#15411D';
 const AVATAR = 52;
 
+function defaultMpesaPhone(profilePhone?: string | null): string {
+  const raw = String(profilePhone ?? '').trim();
+  if (!raw) return '';
+  const digits = raw.replace(/\D/g, '');
+  if (digits.startsWith('254') && digits.length >= 12) return `0${digits.slice(3, 12)}`;
+  if (digits.length >= 9) return digits.startsWith('0') ? digits.slice(0, 10) : `0${digits.slice(-9)}`;
+  return raw;
+}
+
 function initials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return '?';
@@ -37,6 +49,7 @@ function initials(name: string) {
 
 export function TeachersScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
+  const { profile } = useAuth();
   const { selectedStudentId, selectedStudent } = useDeskAuth();
   const { showDialog } = useDialog();
   const [teachers, setTeachers] = useState<ParentTeacher[]>([]);
@@ -44,6 +57,7 @@ export function TeachersScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [tipTeacher, setTipTeacher] = useState<ParentTeacher | null>(null);
 
   const load = useCallback(
     async (soft = false) => {
@@ -76,17 +90,9 @@ export function TeachersScreen({ navigation }: Props) {
     void load();
   }, [load]);
 
-  const onTip = useCallback(
-    (teacher: ParentTeacher) => {
-      showDialog({
-        title: 'Tip teacher',
-        message: `Tipping ${teacher.full_name} will be available soon.`,
-        variant: 'info',
-        icon: 'heart-outline',
-      });
-    },
-    [showDialog],
-  );
+  const onTip = useCallback((teacher: ParentTeacher) => {
+    setTipTeacher(teacher);
+  }, []);
 
   const onEmail = useCallback(
     async (email: string) => {
@@ -222,6 +228,27 @@ export function TeachersScreen({ navigation }: Props) {
           ))
         )}
       </ScrollView>
+
+      <PaymentBottomSheet visible={tipTeacher != null} onClose={() => setTipTeacher(null)}>
+        {tipTeacher ? (
+          <PaymentProcessCard
+            key={`tip-${tipTeacher.teacher_id}`}
+            mode="teacher_tip"
+            title={`Tip ${tipTeacher.full_name}`}
+            subtitle={
+              tipTeacher.subject_name
+                ? `${tipTeacher.subject_name}${tipTeacher.class_name ? ` · ${tipTeacher.class_name}` : ''}`
+                : selectedStudent?.name
+                  ? `For ${selectedStudent.name}`
+                  : undefined
+            }
+            defaultPhone={defaultMpesaPhone(profile?.phone)}
+            studentId={selectedStudentId}
+            teacherId={tipTeacher.teacher_id}
+            onClose={() => setTipTeacher(null)}
+          />
+        ) : null}
+      </PaymentBottomSheet>
     </View>
   );
 }

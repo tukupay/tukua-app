@@ -85,7 +85,11 @@ function MainTabNavigator() {
   useEffect(() => {
     hideSystemStatusBar();
     if (Platform.OS !== 'android') return;
+    // Keep soft nav / gesture bar visible — only the top status bar is hidden.
+    void NavigationBar.setVisibilityAsync('visible').catch(() => {});
     void NavigationBar.setButtonStyleAsync('dark').catch(() => {});
+    const focusPoll = setInterval(() => hideSystemStatusBar(), 700);
+    return () => clearInterval(focusPoll);
   }, []);
 
   return (

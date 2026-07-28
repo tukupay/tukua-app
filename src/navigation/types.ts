@@ -22,7 +22,21 @@ export type DashboardStackParamList = {
   Teachers: undefined;
   Library: undefined;
   Accounts: undefined;
+  ReceiptView: {
+    receipt: Record<string, unknown>;
+    studentName?: string;
+    schoolName?: string;
+    admissionNumber?: string | null;
+    className?: string | null;
+  };
   Transport: undefined;
+  Attendance: undefined;
+  Bursary: undefined;
+  SecurityHome: undefined;
+  SecurityFaceEnroll: undefined;
+  FaceSelfEnroll: undefined;
+  GateQr: undefined;
+  GateCheckIn: undefined;
   FeaturePlaceholder: {
     title: string;
     description: string;

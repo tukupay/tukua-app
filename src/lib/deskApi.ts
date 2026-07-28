@@ -20,6 +20,7 @@ export type DeskUser = {
   id?: string;
   user_id?: string;
   email?: string;
+  full_name?: string;
   first_name?: string;
   last_name?: string;
   username?: string;
@@ -39,6 +40,8 @@ export type DeskLoginResult = {
 let memoryToken: string | null = null;
 let memoryUser: DeskUser | null = null;
 let memoryTokenSource: DeskTokenSource | null = null;
+/** Dedupe concurrent Nest password logins (connectDesk + ensureNestDeskSession). */
+let deskLoginInFlight: Promise<DeskLoginResult> | null = null;
 
 /** Active parent/staff school + student — attached to Desk API calls. */
 let activeSchoolId: string | null = null;
@@ -173,6 +176,16 @@ export async function ensureNestDeskSession(): Promise<boolean> {
   }
 }
 
+/** Await an in-flight Nest password login started elsewhere (e.g. connectDesk). */
+export async function awaitDeskLoginInFlight(): Promise<DeskLoginResult | null> {
+  if (!deskLoginInFlight) return null;
+  try {
+    return await deskLoginInFlight;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Desk Nest shares the same Supabase project — adopt the Supabase access token
  * as the desk Bearer so Dashboard modules work without a separate Nest password login.
@@ -287,54 +300,66 @@ export async function deskFetch<T = unknown>(
 }
 
 export async function deskLogin(email: string, password: string): Promise<DeskLoginResult> {
-  const base = getDeskApiBaseUrl();
-  log.info('DeskApi', 'attempting desk login', { email, baseUrl: base });
-
-  const data = await deskFetch<{
-    token?: string;
-    access_token?: string;
-    user?: DeskUser;
-    supabase_access_token?: string;
-    supabase_refresh_token?: string;
-    loginType?: 'offline' | 'online';
-  }>('/auth/login', {
-    method: 'POST',
-    body: { email: email.trim(), password },
-    token: null,
-  });
-
-  const token = data.token || data.access_token || '';
-  const user = data.user ?? (data as unknown as DeskUser);
-
-  if (!token) {
-    throw new Error('Desk login response missing token');
+  if (deskLoginInFlight) {
+    return deskLoginInFlight;
   }
 
-  const deskUser: DeskUser = {
-    ...user,
-    email: user?.email ?? email.trim(),
-  };
-  await persistDeskSession(token, deskUser, 'nest');
+  deskLoginInFlight = (async () => {
+    const base = getDeskApiBaseUrl();
+    log.info('DeskApi', 'attempting desk login', { email, baseUrl: base });
+
+    const data = await deskFetch<{
+      token?: string;
+      access_token?: string;
+      user?: DeskUser;
+      supabase_access_token?: string;
+      supabase_refresh_token?: string;
+      loginType?: 'offline' | 'online';
+    }>('/auth/login', {
+      method: 'POST',
+      body: { email: email.trim(), password },
+      token: null,
+    });
+
+    const token = data.token || data.access_token || '';
+    const user = data.user ?? (data as unknown as DeskUser);
+
+    if (!token) {
+      throw new Error('Desk login response missing token');
+    }
+
+    const deskUser: DeskUser = {
+      ...user,
+      email: user?.email ?? email.trim(),
+    };
+    await persistDeskSession(token, deskUser, 'nest');
+    try {
+      await saveDeskCredentials(email, password);
+    } catch (e) {
+      log.warn('DeskApi', 'could not persist desk credentials', String(e));
+    }
+    log.info('DeskApi', 'desk login ok', {
+      email: deskUser.email,
+      roles: deskUser.user_roles,
+      schoolId: deskUser.school_id,
+      hasSupabaseTokens: Boolean(data.supabase_access_token),
+      tokenSource: 'nest',
+    });
+
+    return {
+      token,
+      user: deskUser,
+      supabase_access_token: data.supabase_access_token,
+      supabase_refresh_token: data.supabase_refresh_token,
+      loginType: data.loginType,
+    };
+  })();
+
   try {
-    await saveDeskCredentials(email, password);
-  } catch (e) {
-    log.warn('DeskApi', 'could not persist desk credentials', String(e));
+    return await deskLoginInFlight;
+  } finally {
+    deskLoginInFlight = null;
   }
-  log.info('DeskApi', 'desk login ok', {
-    email: deskUser.email,
-    roles: deskUser.user_roles,
-    schoolId: deskUser.school_id,
-    hasSupabaseTokens: Boolean(data.supabase_access_token),
-    tokenSource: 'nest',
-  });
-
-  return {
-    token,
-    user: deskUser,
-    supabase_access_token: data.supabase_access_token,
-    supabase_refresh_token: data.supabase_refresh_token,
-    loginType: data.loginType,
-  };
 }
 
 export async function deskFetchMe(): Promise<DeskUser | null> {
