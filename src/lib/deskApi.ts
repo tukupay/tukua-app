@@ -254,7 +254,13 @@ function unwrapData<T>(json: unknown): T {
 
 export async function deskFetch<T = unknown>(
   path: string,
-  opts: { method?: string; body?: unknown; token?: string | null } = {},
+  opts: {
+    method?: string;
+    body?: unknown;
+    token?: string | null;
+    /** Internal: already tried Nest soft-reconnect after 401. */
+    _retriedNest?: boolean;
+  } = {},
 ): Promise<T> {
   const base = getDeskApiBaseUrl();
   const url = `${base}${path.startsWith('/') ? path : `/${path}`}`;
@@ -289,7 +295,10 @@ export async function deskFetch<T = unknown>(
       body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
     });
   } catch (error) {
-    const hint = `Cannot reach ${url}. Desk Electron must listen on LAN :3251 (not 127.0.0.1-only). Restart Desk after API_HOST=0.0.0.0.`;
+    const hosted = /^https:\/\//i.test(url);
+    const hint = hosted
+      ? `Cannot reach ${url}. Check network / VPN, or Railway API status (GET /api/health).`
+      : `Cannot reach ${url}. Desk Electron must listen on LAN :3251 (not 127.0.0.1-only). Restart Desk after API_HOST=0.0.0.0.`;
     log.warn('DeskApi', 'network error', String(error));
     throw new Error(hint);
   }
@@ -303,10 +312,26 @@ export async function deskFetch<T = unknown>(
   }
 
   if (!res.ok) {
+    const isLogin = path.includes('/auth/login');
+    // Soft-adopted Supabase JWT → 401 on /parents/*; reconnect Nest once if we have password.
+    if (
+      res.status === 401 &&
+      !isLogin &&
+      !opts._retriedNest &&
+      opts.token === undefined &&
+      !(await hasNestDeskToken())
+    ) {
+      const reconnected = await ensureNestDeskSession();
+      if (reconnected) {
+        return deskFetch<T>(path, { ...opts, _retriedNest: true });
+      }
+    }
     const msg =
-      (json as { message?: string; error?: string })?.message ||
-      (json as { error?: string })?.error ||
-      `Desk API ${res.status}`;
+      res.status === 401
+        ? 'Session expired. Please login to continue'
+        : (json as { message?: string; error?: string })?.message ||
+          (json as { error?: string })?.error ||
+          `Desk API ${res.status}`;
     log.warn('DeskApi', msg, { status: res.status, path });
     throw new Error(msg);
   }
