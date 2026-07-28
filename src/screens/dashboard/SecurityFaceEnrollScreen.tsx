@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  FlatList,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -21,10 +21,12 @@ import { Colors } from '../../theme/yana';
 import { useDialog } from '../../context/DialogContext';
 import {
   enrollTransportFaceImage,
+  getTransportFaceStatus,
   searchTransportPeople,
   searchTransportStudents,
   type TransportStudentMatch,
 } from '../../lib/transportApi';
+import { getDeskApiBaseUrl } from '../../lib/localHost';
 import { TUKUA_FACE_MODEL } from '../../lib/faceEmbedding';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'SecurityFaceEnroll'>;
@@ -53,6 +55,20 @@ function dedupeHits(list: PersonHit[]): PersonHit[] {
   return out;
 }
 
+type FaceStatus = {
+  enrolled: boolean;
+  embedding_status?: 'ready' | 'pending' | 'invalid' | null;
+  image_url?: string | null;
+  updated_at?: string | null;
+};
+
+function resolveDeskMediaUrl(pathOrUrl: string | null | undefined): string | null {
+  if (!pathOrUrl) return null;
+  if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl;
+  const base = getDeskApiBaseUrl().replace(/\/api\/?$/, '');
+  return `${base}${pathOrUrl.startsWith('/') ? pathOrUrl : `/${pathOrUrl}`}`;
+}
+
 /**
  * Save face embeddings for future boarding match (students / teachers / staff).
  * Separate from Trips & board — enroll only.
@@ -65,19 +81,55 @@ export function SecurityFaceEnrollScreen({ navigation }: Props) {
   const [hits, setHits] = useState<PersonHit[]>([]);
   const [searching, setSearching] = useState(false);
   const [selected, setSelected] = useState<PersonHit | null>(null);
+  const [faceStatus, setFaceStatus] = useState<FaceStatus | null>(null);
+  const [faceStatusLoading, setFaceStatusLoading] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [facing, setFacing] = useState<'front' | 'back'>('front');
   const [enrolling, setEnrolling] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const authDialogShown = useRef(false);
 
   useEffect(() => {
     setSelected(null);
     setHits([]);
     setQuery('');
     setCameraOpen(false);
+    setFaceStatus(null);
   }, [personType]);
+
+  useEffect(() => {
+    if (!selected?.id) {
+      setFaceStatus(null);
+      setFaceStatusLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setFaceStatusLoading(true);
+    void (async () => {
+      try {
+        const res = await getTransportFaceStatus({
+          person_id: selected.id,
+          person_type: personType,
+        });
+        if (cancelled) return;
+        setFaceStatus({
+          enrolled: Boolean(res?.enrolled),
+          embedding_status: res?.embedding_status ?? null,
+          image_url: res?.image_url ?? null,
+          updated_at: res?.updated_at ?? null,
+        });
+      } catch {
+        if (!cancelled) setFaceStatus({ enrolled: false });
+      } finally {
+        if (!cancelled) setFaceStatusLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selected?.id, personType]);
 
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
@@ -103,8 +155,20 @@ export function SecurityFaceEnrollScreen({ navigation }: Props) {
             const res = await searchTransportPeople(personType, q, 40);
             setHits(dedupeHits((res?.people ?? []) as PersonHit[]));
           }
-        } catch {
+        } catch (e) {
           setHits([]);
+          const msg = e instanceof Error ? e.message : String(e);
+          if (
+            !authDialogShown.current &&
+            /session expired|login to continue|401|unauthor/i.test(msg)
+          ) {
+            authDialogShown.current = true;
+            showDialog({
+              title: 'Desk session needed',
+              message: 'Sign out and sign in again with password so Face enroll can search.',
+              variant: 'warning',
+            });
+          }
         } finally {
           setSearching(false);
         }
@@ -241,20 +305,15 @@ export function SecurityFaceEnrollScreen({ navigation }: Props) {
                 {query.trim().length >= 2 && !searching && hits.length === 0 ? (
                   <Text style={styles.empty}>No matches — try another spelling or admission number.</Text>
                 ) : null}
-                <FlatList
-                  data={hits}
-                  keyExtractor={(p) => p.id}
-                  style={styles.hitList}
-                  nestedScrollEnabled
-                  keyboardShouldPersistTaps="handled"
-                  onEndReachedThreshold={0.4}
-                  renderItem={({ item: p }) => (
-                    <Pressable style={styles.hit} onPress={() => pickPerson(p)}>
+                {/* Plain map — FlatList inside ScrollView triggers RN VirtualizedLists error */}
+                <View>
+                  {hits.map((p) => (
+                    <Pressable key={p.id} style={styles.hit} onPress={() => pickPerson(p)}>
                       <Text style={styles.hitName}>{p.name}</Text>
                       <Text style={styles.hitMeta}>{metaFor(p)}</Text>
                     </Pressable>
-                  )}
-                />
+                  ))}
+                </View>
               </ModuleGlassCard>
             ) : (
               <ModuleGlassCard>
@@ -268,9 +327,41 @@ export function SecurityFaceEnrollScreen({ navigation }: Props) {
                     <Text style={styles.changeLink}>Change</Text>
                   </Pressable>
                 </View>
+
+                {faceStatusLoading ? (
+                  <ActivityIndicator color={Colors.brandGreenDark} style={{ marginVertical: 8 }} />
+                ) : faceStatus?.enrolled ? (
+                  <View style={styles.existingFace}>
+                    {resolveDeskMediaUrl(faceStatus.image_url) ? (
+                      <Image
+                        source={{ uri: resolveDeskMediaUrl(faceStatus.image_url)! }}
+                        style={styles.existingThumb}
+                      />
+                    ) : (
+                      <View style={[styles.existingThumb, styles.existingThumbPlaceholder]}>
+                        <Ionicons name="person" size={28} color="#94a3b8" />
+                      </View>
+                    )}
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.existingTitle}>Face already enrolled</Text>
+                      <Text style={styles.existingMeta}>
+                        {faceStatus.embedding_status === 'ready'
+                          ? 'Ready for boarding match'
+                          : faceStatus.embedding_status === 'pending'
+                            ? 'Processing match vector…'
+                            : 'Saved — you can re-enroll to replace it'}
+                      </Text>
+                    </View>
+                  </View>
+                ) : (
+                  <Text style={styles.empty}>No face on file yet — enroll one below.</Text>
+                )}
+
                 <Pressable style={styles.scanBtn} onPress={() => void openCamera()}>
                   <Ionicons name="camera" size={18} color="#fff" />
-                  <Text style={styles.scanBtnText}>Enroll face</Text>
+                  <Text style={styles.scanBtnText}>
+                    {faceStatus?.enrolled ? 'Re-enroll face (overwrite)' : 'Enroll face'}
+                  </Text>
                 </Pressable>
               </ModuleGlassCard>
             )}
@@ -354,14 +445,24 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     color: Colors.ink,
   },
-  hitList: { maxHeight: 280 },
+  empty: { fontSize: 13, color: '#64748b', paddingVertical: 8 },
   hit: { paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#e2e8f0' },
   hitName: { fontWeight: '700', color: Colors.ink },
   hitMeta: { fontSize: 12, color: '#64748b', marginTop: 2 },
-  empty: { fontSize: 13, color: '#64748b', paddingVertical: 8 },
   selectedCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 4 },
   selectedLabel: { fontSize: 11, fontWeight: '700', color: '#64748b', textTransform: 'uppercase' },
   changeLink: { fontSize: 13, fontWeight: '700', color: Colors.brandGreenDark },
+  existingFace: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 8,
+    marginBottom: 4,
+  },
+  existingThumb: { width: 64, height: 64, borderRadius: 12, backgroundColor: '#e2e8f0' },
+  existingThumbPlaceholder: { alignItems: 'center', justifyContent: 'center' },
+  existingTitle: { fontWeight: '800', color: Colors.ink, fontSize: 14 },
+  existingMeta: { fontSize: 12, color: '#64748b', marginTop: 2 },
   scanBtn: {
     marginTop: 8,
     backgroundColor: Colors.brandGreenDark,

@@ -363,13 +363,22 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
     );
   }, [linkedStudents, selectedStudentId, selectedSchoolId, studentSnapshot]);
 
-  /** Push school + student into deskFetch for every Nest call. */
+  /** Push school + student + roles into deskFetch for every Nest call. */
   useEffect(() => {
+    const fromUser = deskUser?.user_roles;
+    const roles = selectedRole
+      ? [selectedRole]
+      : Array.isArray(fromUser)
+        ? fromUser.map(String)
+        : typeof fromUser === 'string' && fromUser
+          ? [fromUser]
+          : [];
     setDeskActiveContext({
       schoolId: selectedSchoolId ?? deskUser?.school_id ?? null,
       studentId: selectedStudentId,
+      roles,
     });
-  }, [selectedSchoolId, selectedStudentId, deskUser?.school_id]);
+  }, [selectedSchoolId, selectedStudentId, selectedRole, deskUser?.school_id, deskUser?.user_roles]);
 
   /** Enrich selected student name/class/photo from Nest (source of truth for ERP). */
   useEffect(() => {

@@ -200,6 +200,26 @@ export async function analyzeTransportFace(body: {
   });
 }
 
+/** Check if person already has a face enrolled (enroll still overwrites). */
+export async function getTransportFaceStatus(opts: {
+  person_id: string;
+  person_type?: 'student' | 'teacher' | 'staff' | 'parent';
+}) {
+  const params = new URLSearchParams({
+    person_id: opts.person_id,
+    person_type: opts.person_type ?? 'student',
+  });
+  return deskFetch<{
+    enrolled?: boolean;
+    person_id?: string;
+    person_type?: string;
+    embedding_status?: 'ready' | 'pending' | 'invalid' | null;
+    image_url?: string | null;
+    updated_at?: string | null;
+    model_version?: string | null;
+  }>(`/transport/face/status?${params.toString()}`);
+}
+
 /** Fast enroll — Nest saves image immediately; embedding runs in background. */
 export async function enrollTransportFaceImage(body: {
   student_id?: string;

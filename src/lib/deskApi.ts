@@ -46,17 +46,28 @@ let deskLoginInFlight: Promise<DeskLoginResult> | null = null;
 /** Active parent/staff school + student — attached to Desk API calls. */
 let activeSchoolId: string | null = null;
 let activeStudentId: string | null = null;
+let activeRoles: string[] = [];
 
 export function setDeskActiveContext(ctx: {
   schoolId?: string | null;
   studentId?: string | null;
+  roles?: string[] | string | null;
 }) {
   if (ctx.schoolId !== undefined) activeSchoolId = ctx.schoolId;
   if (ctx.studentId !== undefined) activeStudentId = ctx.studentId;
+  if (ctx.roles !== undefined) {
+    if (Array.isArray(ctx.roles)) {
+      activeRoles = ctx.roles.map(String).filter(Boolean);
+    } else if (typeof ctx.roles === 'string' && ctx.roles.trim()) {
+      activeRoles = ctx.roles.split(',').map((r) => r.trim()).filter(Boolean);
+    } else {
+      activeRoles = [];
+    }
+  }
 }
 
 export function getDeskActiveContext() {
-  return { schoolId: activeSchoolId, studentId: activeStudentId };
+  return { schoolId: activeSchoolId, studentId: activeStudentId, roles: activeRoles };
 }
 
 
@@ -255,6 +266,15 @@ export async function deskFetch<T = unknown>(
   if (token) headers.Authorization = `Bearer ${token}`;
   if (activeSchoolId) headers['X-Desk-School-Id'] = activeSchoolId;
   if (activeStudentId) headers['X-Desk-Student-Id'] = activeStudentId;
+  const roleHeader =
+    activeRoles.length > 0
+      ? activeRoles
+      : memoryUser?.user_roles
+        ? Array.isArray(memoryUser.user_roles)
+          ? memoryUser.user_roles.map(String)
+          : [String(memoryUser.user_roles)]
+        : [];
+  if (roleHeader.length) headers['X-Desk-Roles'] = roleHeader.join(',');
 
   log.info('DeskApi', `${opts.method ?? 'GET'} ${url}`, {
     schoolId: activeSchoolId,
