@@ -34,6 +34,8 @@ export type DashboardAction = {
 
     | 'Events'
 
+    | 'Meetings'
+
     | 'Assessments'
 
     | 'Transport'
@@ -153,6 +155,8 @@ export const PARENT_DASHBOARD_ACTIONS: DashboardAction[] = [
   { id: 'assessments', title: 'Exams & assessments', description: 'Exams, report cards & slips', icon: 'book-open', nativeScreen: 'Assessments', accent: '#7C3AED' },
 
   { id: 'events', title: 'Events', description: 'RSVP, pay & scan check-in', icon: 'calendar', nativeScreen: 'Events', accent: '#EA580C' },
+
+  { id: 'meetings', title: 'Meetings', description: 'Join school video meetings', icon: 'video', nativeScreen: 'Meetings', accent: '#0284C7' },
 
   { id: 'discipline', title: 'Discipline', description: 'Conduct records', icon: 'shield', nativeScreen: 'Discipline', accent: '#DC2626' },
 
@@ -292,6 +296,8 @@ export const STUDENT_DASHBOARD_ACTIONS: DashboardAction[] = [
 
   { id: 'school-events', title: 'School Events', description: 'Upcoming activities', icon: 'calendar', nativeScreen: 'Events', accent: '#EA580C' },
 
+  { id: 'meetings', title: 'Meetings', description: 'Join school video meetings', icon: 'video', nativeScreen: 'Meetings', accent: '#0284C7' },
+
   { id: 'school-info', title: 'School Info', description: 'About your school', icon: 'info', nativeScreen: 'SchoolInfo', accent: '#0A3D2E' },
 
 ];
@@ -364,6 +370,7 @@ export const TEACHER_DASHBOARD_ACTIONS: DashboardAction[] = [
   { id: 'class-lists', title: 'Class Lists', description: 'View class rosters', icon: 'users', deskPath: '/teacher/classes', accent: '#2563EB' },
   { id: 'my-timetable', title: 'My Timetable', description: 'Teaching periods', icon: 'calendar', deskPath: '/teacher/calendar/timetable?scope=mine', accent: '#D97706' },
   { id: 'events', title: 'Events', description: 'School activities', icon: 'calendar', nativeScreen: 'Events', accent: '#EA580C' },
+  { id: 'meetings', title: 'Meetings', description: 'Join school video meetings', icon: 'video', nativeScreen: 'Meetings', accent: '#0284C7' },
   { id: 'elearning', title: 'E-Learning', description: 'Instructor studio', icon: 'monitor', tukuaPath: '/courses', tukuaTab: 'Courses', accent: '#0D9488' },
   { id: 'library', title: 'Library', description: 'Digital books', icon: 'book', deskPath: '/teacher/library', accent: '#4F46E5' },
   { id: 'discipline', title: 'Discipline', description: 'My cases', icon: 'shield', nativeScreen: 'Discipline', accent: '#DC2626' },
@@ -453,6 +460,7 @@ export const SECURITY_DASHBOARD_ACTIONS: DashboardAction[] = [
 
 export const SCHOOL_ADMIN_DASHBOARD_ACTIONS: DashboardAction[] = [
   { id: 'attendance-scanner', title: 'My gate check-in', description: 'Scan gate QR for yourself (staff)', icon: 'camera', nativeScreen: 'GateCheckIn', accent: '#0891B2' },
+  { id: 'meetings', title: 'Meetings', description: 'Schedule & host video meetings', icon: 'video', deskPath: '/meetings', accent: '#0284C7' },
   { id: 'face-enroll', title: 'Face enroll', description: 'Students · teachers · staff', icon: 'user', deskPath: '/transport/face-enroll', accent: '#0E7490' },
   { id: 'admin', title: 'Admin', description: 'Settings & users', icon: 'settings', deskPath: '/admin', accent: '#0A3D2E' },
   { id: 'students', title: 'Students', description: 'Student records', icon: 'book', deskPath: '/admin/students', accent: '#1F8B4C' },
@@ -472,6 +480,8 @@ export const SCHOOL_ADMIN_DASHBOARD_ACTIONS: DashboardAction[] = [
 export const SUPER_ADMIN_DASHBOARD_ACTIONS: DashboardAction[] = [
 
   { id: 'hub', title: 'Company hub', description: 'Overview', icon: 'grid', deskPath: '/superadmin', accent: '#0A3D2E' },
+
+  { id: 'meetings', title: 'Meetings', description: 'All school meetings', icon: 'video', deskPath: '/superadmin/meetings', accent: '#0284C7' },
 
   { id: 'schools', title: 'Schools', description: 'Registry', icon: 'home', deskPath: '/superadmin/schools', accent: '#1F8B4C' },
 

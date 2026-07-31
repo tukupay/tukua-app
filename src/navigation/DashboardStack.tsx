@@ -8,6 +8,7 @@ import { FeaturePlaceholderScreen } from '../screens/dashboard/FeaturePlaceholde
 import { SchoolInfoScreen } from '../screens/dashboard/SchoolInfoScreen';
 import { DisciplineScreen } from '../screens/dashboard/DisciplineScreen';
 import { EventsScreen } from '../screens/dashboard/EventsScreen';
+import { MeetingsScreen } from '../screens/dashboard/MeetingsScreen';
 import { AssessmentsScreen } from '../screens/dashboard/AssessmentsScreen';
 import { TeachersScreen } from '../screens/dashboard/TeachersScreen';
 import { LibraryScreen } from '../screens/dashboard/LibraryScreen';
@@ -78,6 +79,11 @@ export function DashboardStack() {
         name="Events"
         component={EventsScreen}
         options={{ title: 'Events', headerShown: false }}
+      />
+      <Stack.Screen
+        name="Meetings"
+        component={MeetingsScreen}
+        options={{ title: 'Meetings', headerShown: false }}
       />
       <Stack.Screen
         name="Assessments"

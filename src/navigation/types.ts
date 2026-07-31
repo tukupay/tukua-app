@@ -18,6 +18,7 @@ export type DashboardStackParamList = {
   SchoolInfo: undefined;
   Discipline: undefined;
   Events: undefined;
+  Meetings: undefined;
   Assessments: undefined;
   Teachers: undefined;
   Library: undefined;
