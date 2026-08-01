@@ -1,8 +1,8 @@
 /**
- * Native Courses tab — Nest API only (no WebView).
- * Loads enrolled courses first, then catalog browse.
+ * Native Courses tab — Nest catalog + enrolled list.
+ * Course detail / learn / exam / pay stay in-app via WebView (full web feature set).
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -11,6 +11,7 @@ import {
   RefreshControl,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -41,7 +42,19 @@ type CatalogCourse = {
   short_description?: string | null;
   is_free?: boolean;
   price?: number | null;
+  category?: string | null;
+  is_featured?: boolean;
+  is_certified?: boolean;
 };
+
+type FilterKey = 'all' | 'featured' | 'free' | 'certified';
+
+const FILTERS: { key: FilterKey; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'featured', label: 'Featured' },
+  { key: 'free', label: 'Free' },
+  { key: 'certified', label: 'Certified' },
+];
 
 export function CoursesScreen() {
   const insets = useSafeAreaInsets();
@@ -51,12 +64,14 @@ export function CoursesScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<FilterKey>('all');
 
   const load = useCallback(async () => {
     setError(null);
     try {
       const [mine, page] = await Promise.all([
-        deskFetch<{ items: Enrolled[] }>('/platform/courses/mine?limit=40'),
+        deskFetch<{ items: Enrolled[] }>('/platform/courses/mine?limit=40').catch(() => ({ items: [] })),
         deskFetch<{ items: CatalogCourse[] }>('/platform/courses/catalog-page'),
       ]);
       setEnrolled(mine?.items || []);
@@ -75,16 +90,33 @@ export function CoursesScreen() {
     void load();
   }, [load]);
 
-  const openCourse = (courseId: string, title?: string) => {
-    // Stay in-app: native list + WebView keeps lessons, pay, quizzes.
+  const openCourse = (courseId: string, title?: string, tab?: string) => {
+    const path = tab ? `/courses/${courseId}/${tab}` : `/courses/${courseId}`;
     navigation.navigate('CourseWeb', {
-      path: `/courses/${courseId}`,
+      path,
       title: title || 'Course',
     });
   };
 
-  const enrolledIds = new Set(enrolled.map((e) => e.course_id));
-  const browse = catalog.filter((c) => c.id && !enrolledIds.has(c.id)).slice(0, 40);
+  const enrolledIds = useMemo(() => new Set(enrolled.map((e) => e.course_id)), [enrolled]);
+
+  const browse = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return catalog
+      .filter((c) => c.id && !enrolledIds.has(c.id))
+      .filter((c) => {
+        if (filter === 'free') return Boolean(c.is_free) || Number(c.price || 0) <= 0;
+        if (filter === 'featured') return Boolean(c.is_featured);
+        if (filter === 'certified') return Boolean(c.is_certified);
+        return true;
+      })
+      .filter((c) => {
+        if (!q) return true;
+        const hay = `${c.title || ''} ${c.short_description || ''} ${c.category || ''}`.toLowerCase();
+        return hay.includes(q);
+      })
+      .slice(0, 60);
+  }, [catalog, enrolledIds, filter, query]);
 
   const headerPad = floatingHeaderInset(insets.top);
 
@@ -92,7 +124,7 @@ export function CoursesScreen() {
     return (
       <View style={[styles.root, styles.center]}>
         <ActivityIndicator color={Colors.primary} size="large" />
-        <Text style={styles.muted}>Loading your courses…</Text>
+        <Text style={styles.muted}>Loading courses…</Text>
       </View>
     );
   }
@@ -121,7 +153,7 @@ export function CoursesScreen() {
         ListHeaderComponent={
           <View>
             <Text style={styles.h1}>Courses and eLearning</Text>
-            <Text style={styles.sub}>Your enrollments first — then browse more.</Text>
+            <Text style={styles.sub}>Browse, enroll, learn, and get certificates — same as web.</Text>
             {error ? (
               <View style={styles.errBox}>
                 <Ionicons name="warning-outline" size={18} color="#B45309" />
@@ -129,37 +161,67 @@ export function CoursesScreen() {
               </View>
             ) : null}
 
-            <Text style={styles.section}>Enrolled</Text>
-            {enrolled.length === 0 ? (
-              <Text style={styles.empty}>No enrollments yet — pick a course below.</Text>
-            ) : (
-              enrolled.map((item) => (
-                <Pressable
-                  key={item.enrollment_id}
-                  style={styles.card}
-                  onPress={() => openCourse(item.course_id, item.title)}
-                >
-                  {item.thumbnail_url ? (
-                    <Image source={{ uri: item.thumbnail_url }} style={styles.thumb} />
-                  ) : (
-                    <View style={[styles.thumb, styles.thumbPh]}>
-                      <Ionicons name="book" size={22} color={Colors.primary} />
+            {/* Only show enrolled when there are enrollments */}
+            {enrolled.length > 0 ? (
+              <View style={{ marginBottom: 8 }}>
+                <Text style={styles.section}>Continue learning</Text>
+                {enrolled.map((item) => (
+                  <Pressable
+                    key={item.enrollment_id}
+                    style={styles.card}
+                    onPress={() => openCourse(item.course_id, item.title, 'learn')}
+                  >
+                    {item.thumbnail_url ? (
+                      <Image source={{ uri: item.thumbnail_url }} style={styles.thumb} />
+                    ) : (
+                      <View style={[styles.thumb, styles.thumbPh]}>
+                        <Ionicons name="book" size={22} color={Colors.primary} />
+                      </View>
+                    )}
+                    <View style={styles.cardBody}>
+                      <Text style={styles.cardTitle} numberOfLines={2}>
+                        {item.title}
+                      </Text>
+                      <Text style={styles.meta}>
+                        {Math.round(Number(item.progress_percent || 0))}% · Continue
+                      </Text>
                     </View>
-                  )}
-                  <View style={styles.cardBody}>
-                    <Text style={styles.cardTitle} numberOfLines={2}>
-                      {item.title}
-                    </Text>
-                    <Text style={styles.meta}>
-                      {Math.round(Number(item.progress_percent || 0))}% · {item.status || 'enrolled'}
-                    </Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={18} color={Colors.mutedForeground} />
-                </Pressable>
-              ))
-            )}
+                    <Ionicons name="play-circle" size={22} color={Colors.primary} />
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
 
-            <Text style={[styles.section, { marginTop: 20 }]}>Browse</Text>
+            <View style={styles.searchWrap}>
+              <Ionicons name="search" size={18} color={Colors.mutedForeground} />
+              <TextInput
+                value={query}
+                onChangeText={setQuery}
+                placeholder="Search courses"
+                placeholderTextColor={Colors.mutedForeground}
+                style={styles.searchInput}
+                autoCapitalize="none"
+                autoCorrect={false}
+                clearButtonMode="while-editing"
+              />
+            </View>
+
+            <View style={styles.filters}>
+              {FILTERS.map((f) => {
+                const on = filter === f.key;
+                return (
+                  <Pressable
+                    key={f.key}
+                    onPress={() => setFilter(f.key)}
+                    style={[styles.chip, on && styles.chipOn]}
+                  >
+                    <Text style={[styles.chipText, on && styles.chipTextOn]}>{f.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <Text style={[styles.section, { marginTop: 12 }]}>Browse</Text>
           </View>
         }
         renderItem={({ item }) => (
@@ -176,14 +238,23 @@ export function CoursesScreen() {
                 {item.title || 'Course'}
               </Text>
               <Text style={styles.meta} numberOfLines={2}>
-                {item.is_free ? 'Free' : item.price != null ? `KES ${item.price}` : item.short_description || 'Open'}
+                {item.is_free || Number(item.price || 0) <= 0
+                  ? 'Free'
+                  : item.price != null
+                    ? `KES ${item.price}`
+                    : item.short_description || 'Open'}
+                {item.is_certified ? ' · Certified' : ''}
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={Colors.mutedForeground} />
           </Pressable>
         )}
         ListEmptyComponent={
-          !error ? <Text style={styles.empty}>No catalog courses right now.</Text> : null
+          !error ? (
+            <Text style={styles.empty}>
+              {query || filter !== 'all' ? 'No courses match your filters.' : 'No catalog courses right now.'}
+            </Text>
+          ) : null
         }
       />
     </View>
@@ -198,6 +269,31 @@ const styles = StyleSheet.create({
   section: { fontSize: 16, fontWeight: '700', color: Colors.foreground, marginBottom: 10, marginTop: 8 },
   empty: { color: Colors.mutedForeground, marginBottom: 12, fontSize: 14 },
   muted: { color: Colors.mutedForeground },
+  searchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Colors.border,
+  },
+  searchInput: { flex: 1, fontSize: 15, color: Colors.foreground, padding: 0 },
+  filters: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 4 },
+  chip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.85)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Colors.border,
+  },
+  chipOn: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  chipText: { fontSize: 13, fontWeight: '600', color: Colors.foreground },
+  chipTextOn: { color: '#fff' },
   card: {
     flexDirection: 'row',
     alignItems: 'center',
