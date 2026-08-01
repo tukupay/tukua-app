@@ -11,6 +11,7 @@ export type AboutStackParamList = {
 
 export type DashboardStackParamList = {
   DashboardHome: undefined;
+  Notifications: undefined;
   DeskModule: {
     title: string;
     deskPath: string;

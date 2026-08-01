@@ -2,7 +2,7 @@
   "expo": {
     "name": "Tukua",
     "slug": "tukua",
-    "version": "1.0.5",
+    "version": "1.0.6",
     "orientation": "portrait",
     "icon": "./assets/images/icons/app-icon-1024.png",
     "userInterfaceStyle": "light",
@@ -36,22 +36,9 @@
         "backgroundColor": "#FFFFFF"
       },
       "package": "com.app.tukua",
-      "versionCode": 5,
+      "googleServicesFile": "./google-services.json",
+      "versionCode": 7,
       "softwareKeyboardLayoutMode": "pan",
-      "usesCleartextTraffic": true,
-      "statusBar": {
-        "hidden": true,
-        "translucent": true,
-        "backgroundColor": "#00000000"
-      },
-      "manifestQueries": {
-        "intent": [
-          { "action": "android.media.action.IMAGE_CAPTURE" },
-          { "action": "android.media.action.VIDEO_CAPTURE" },
-          { "action": "android.intent.action.GET_CONTENT" },
-          { "action": "android.intent.action.PICK" }
-        ]
-      },
       "permissions": [
         "CAMERA",
         "READ_EXTERNAL_STORAGE",
@@ -77,6 +64,11 @@
         "android.permission.USE_BIOMETRIC",
         "android.permission.USE_FINGERPRINT"
       ]
+    },
+    "androidStatusBar": {
+      "hidden": true,
+      "translucent": true,
+      "backgroundColor": "#00000000"
     },
     "web": {
       "favicon": "./assets/images/icons/favicon-48.png"
@@ -134,6 +126,14 @@
           "backgroundColor": "#FFFFFF",
           "barStyle": "dark"
         }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
       ]
     ],
     "extra": {
@@ -142,9 +142,9 @@
         "barStyle": "dark"
       },
       "eas": {
-        "projectId": "5352967a-7a63-49ed-98ba-4c5321bc24e0"
+        "projectId": "475551d8-da81-4a53-a13b-0146ced9d650"
       }
     },
-    "owner": "kanyoroh"
+    "owner": "kanyoro2"
   }
 }

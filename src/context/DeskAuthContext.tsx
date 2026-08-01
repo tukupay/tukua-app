@@ -28,6 +28,7 @@ import {
   hasNestDeskToken,
   ensureNestDeskSession,
   onDeskSessionCleared,
+  saveDeskCredentials,
   setDeskActiveContext,
   awaitDeskLoginInFlight,
 } from '../lib/deskApi';
@@ -972,6 +973,12 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
         return result;
       } catch (e) {
         preferNestDeskTokenRef.current = false;
+        // Keep password so ensureNestDeskSession can soft-reconnect when Desk/proxy is back.
+        try {
+          await saveDeskCredentials(email, password);
+        } catch {
+          // ignore
+        }
         log.warn('DeskAuth', 'Nest password login failed; using supabase token', String(e));
         const { data } = await supabase.auth.getSession();
         if (data.session?.access_token) {

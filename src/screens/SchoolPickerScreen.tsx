@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  BackHandler,
   FlatList,
   Pressable,
   StyleSheet,
@@ -216,6 +217,36 @@ export function SchoolPickerScreen() {
   const canGoBack =
     (pickerMode === 'role' && schools.length > 1) ||
     (pickerMode === 'student' && (schools.length > 1 || schoolRoleOptions.length > 1));
+
+  // Android / system back — same as on-screen Back (add-student steps + picker).
+  useEffect(() => {
+    const onHardwareBack = () => {
+      if (addOpen) {
+        if (addStep === 2) {
+          setAddStep(1);
+          setJoinedSchool(null);
+          setStudentQuery('');
+          setStudentHits([]);
+          return true;
+        }
+        setAddOpen(false);
+        setAddStep(1);
+        setJoinedSchool(null);
+        setSchoolQuery('');
+        setSchoolHits([]);
+        setStudentQuery('');
+        setStudentHits([]);
+        return true;
+      }
+      if (canGoBack) {
+        void backInPicker();
+        return true;
+      }
+      return false;
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onHardwareBack);
+    return () => sub.remove();
+  }, [addOpen, addStep, canGoBack, backInPicker]);
 
   useEffect(() => {
     if (!showStudentMode || !deskToken) {
@@ -521,7 +552,7 @@ export function SchoolPickerScreen() {
                 <Text style={styles.subtitle}>
                   {addStep === 1
                     ? 'Search by school name or code, then tap Join.'
-                    : `At ${joinedSchool?.name ?? 'school'} — search by name or admission number. Details are masked until approved.`}
+                    : `At ${joinedSchool?.name ?? 'school'} — search by name or admission. Second name is partially hidden until approved.`}
                 </Text>
                 {addStep === 1 ? (
                   <TextInput
@@ -620,9 +651,8 @@ export function SchoolPickerScreen() {
                 );
               }
               const student = item as JoinStudentHit;
-              const meta = [student.class_name, student.admission_masked ? `Adm ${student.admission_masked}` : null]
-                .filter(Boolean)
-                .join(' · ');
+              const adm = student.admission_number || student.admission_masked || null;
+              const meta = [student.class_name, adm ? `Adm ${adm}` : null].filter(Boolean).join(' · ');
               return (
                 <GlassPanel tone="frost" radius={16} shine={false} style={styles.card}>
                   <View style={styles.cardInner}>

@@ -47,7 +47,7 @@ import { captureUserLocation } from '../lib/location';
 import { registerForPushNotifications } from '../lib/notifications';
 
 import { log } from '../lib/logger';
-import { getDeskApiDebugInfo } from '../lib/deskApi';
+import { getDeskApiDebugInfo, saveDeskCredentials } from '../lib/deskApi';
 
 import { Images } from '../constants/images';
 
@@ -134,6 +134,12 @@ export function LoginScreen({ navigation }: Props) {
   const finishLogin = async (loginEmail: string, loginPass: string) => {
     // Nest JWT first — Supabase JWT gets 401 on /parents/me/* (names/class).
     // Must finish before SIGNED_IN soft-adopt, and nest token is overwrite-locked in deskApi.
+    // Always stash password so soft-reconnect works if Desk/proxy was down at login time.
+    try {
+      await saveDeskCredentials(loginEmail.trim(), loginPass);
+    } catch {
+      // ignore SecureStore failures
+    }
     log.info('DeskConnection', 'Nest desk login starting', {
       email: loginEmail.trim(),
       deskApi: getDeskApiDebugInfo().deskResolved,

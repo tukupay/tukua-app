@@ -506,30 +506,39 @@ export function DashboardHomeScreen() {
                 </Text>
               ) : null}
             </View>
-            {showSwitch ? (
-              <View style={styles.headerActions}>
-                <Pressable
-                  style={styles.headerIconBtn}
-                  onPress={() => void requestSchoolChange()}
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    linkedStudents.length > 0 ? 'Change student' : 'Change school'
-                  }>
-                  <Ionicons
-                    name={linkedStudents.length > 0 ? 'people-outline' : 'school-outline'}
-                    size={18}
-                    color={HERO_GREEN}
-                  />
-                </Pressable>
-                <Pressable
-                  style={styles.headerIconBtn}
-                  onPress={() => void requestSchoolChange()}
-                  accessibilityRole="button"
-                  accessibilityLabel="Switch context">
-                  <Ionicons name="swap-horizontal" size={18} color={HERO_GREEN} />
-                </Pressable>
-              </View>
-            ) : null}
+            <View style={styles.headerActions}>
+              <Pressable
+                style={styles.headerIconBtn}
+                onPress={() => navigation.navigate('Notifications')}
+                accessibilityRole="button"
+                accessibilityLabel="Notifications">
+                <Ionicons name="notifications-outline" size={18} color={HERO_GREEN} />
+              </Pressable>
+              {showSwitch ? (
+                <>
+                  <Pressable
+                    style={styles.headerIconBtn}
+                    onPress={() => void requestSchoolChange()}
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                      linkedStudents.length > 0 ? 'Change student' : 'Change school'
+                    }>
+                    <Ionicons
+                      name={linkedStudents.length > 0 ? 'people-outline' : 'school-outline'}
+                      size={18}
+                      color={HERO_GREEN}
+                    />
+                  </Pressable>
+                  <Pressable
+                    style={styles.headerIconBtn}
+                    onPress={() => void requestSchoolChange()}
+                    accessibilityRole="button"
+                    accessibilityLabel="Switch context">
+                    <Ionicons name="swap-horizontal" size={18} color={HERO_GREEN} />
+                  </Pressable>
+                </>
+              ) : null}
+            </View>
           </View>
 
           {/* Role chip + signed-in user */}

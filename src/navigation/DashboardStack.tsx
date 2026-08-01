@@ -3,6 +3,7 @@ import { StyleSheet, TouchableOpacity } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { DashboardHomeScreen } from '../screens/dashboard/DashboardHomeScreen';
+import { NotificationsScreen } from '../screens/dashboard/NotificationsScreen';
 import { DeskModuleWebScreen } from '../screens/dashboard/DeskModuleWebScreen';
 import { FeaturePlaceholderScreen } from '../screens/dashboard/FeaturePlaceholderScreen';
 import { SchoolInfoScreen } from '../screens/dashboard/SchoolInfoScreen';
@@ -60,6 +61,11 @@ export function DashboardStack() {
         name="DashboardHome"
         component={DashboardHomeScreen}
         options={{ title: 'Dashboard', headerShown: false }}
+      />
+      <Stack.Screen
+        name="Notifications"
+        component={NotificationsScreen}
+        options={{ title: 'Notifications', headerShown: false }}
       />
       <Stack.Screen
         name="DeskModule"

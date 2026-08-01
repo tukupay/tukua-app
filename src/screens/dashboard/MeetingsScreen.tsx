@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Linking,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -52,8 +51,8 @@ export function MeetingsScreen({ navigation }: Props) {
   const [joiningId, setJoiningId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  /** Logged-in parents stay in-app; everyone else uses the branded external Tukua Meet page. */
-  const inAppJoin = persona === 'parent';
+  /** Any signed-in Desk user joins in-app via profile name/phone (guest links are for non-users). */
+  const inAppJoin = Boolean(persona);
 
   const load = useCallback(async (soft = false) => {
     if (!soft) setLoading(true);
@@ -78,11 +77,10 @@ export function MeetingsScreen({ navigation }: Props) {
 
   const onJoin = useCallback(
     async (m: SchoolMeeting) => {
-      const url = m.short_url || m.join_url;
       if (!canJoin(m)) return;
 
       if (!inAppJoin) {
-        if (url) void Linking.openURL(url);
+        setError('Complete your profile name and phone to join meetings in the app.');
         return;
       }
 
@@ -101,8 +99,6 @@ export function MeetingsScreen({ navigation }: Props) {
         const msg = e instanceof Error ? e.message : String(e);
         log.warn('Meetings', 'member-enter', msg);
         setError(msg);
-        // Fallback: external Tukua Meet gate if profile name/phone missing
-        if (url) void Linking.openURL(url);
       } finally {
         setJoiningId(null);
       }
@@ -133,9 +129,7 @@ export function MeetingsScreen({ navigation }: Props) {
         <ModuleKicker>Tukua Meet</ModuleKicker>
         <Text style={styles.title}>Meetings</Text>
         <Text style={styles.sub}>
-          {inAppJoin
-            ? 'Join school meetings in the app. Your full name and phone come from your profile.'
-            : 'Join opens Tukua Meet in your browser. Enter your full name and phone on the gate page.'}
+          Join in the app with your profile name and phone. Guests without an account use the public Tukua Meet link.
         </Text>
 
         {loading ? (

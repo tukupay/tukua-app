@@ -22,6 +22,7 @@ import { ProfileAvatar } from './ProfileAvatar';
 import { TokenBalancePill } from './TokenBalancePill';
 import { Colors } from '../../theme/yana';
 import { FLOATING_HEADER_BODY as NATIVE_HEADER_BODY_HEIGHT } from '../../constants/layout';
+import { navigateDashboard } from '../../navigation/AppNavigator';
 
 const SAVAGE_ON_OPACITY = 1;
 const SAVAGE_OFF_OPACITY = 0.22;
@@ -162,6 +163,12 @@ export function NativeAppHeader() {
       {
         title: 'Account',
         items: [
+          {
+            id: 'notifications',
+            label: 'Notifications',
+            icon: 'notifications-outline' as const,
+            onPress: () => navigateDashboard('Notifications'),
+          },
           {
             id: 'profile',
             label: 'Profile',
