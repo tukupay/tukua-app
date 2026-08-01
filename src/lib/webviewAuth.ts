@@ -1,7 +1,7 @@
 import { Session } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 import { TukuaWeb } from '../theme/yana';
-import { getDeskApiBaseUrl, isAppWebHost } from './localHost';
+import { getNestApiBaseUrl, isAppWebHost } from './localHost';
 import { log } from './logger';
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
@@ -24,9 +24,9 @@ const TUKUA_APP_SOURCE_KEY = 'tukua_app_source';
 const CHAT_BOOT_KEY = 'tukua_mobile_chat_boot';
 /**
  * Nest REST base for SPA inside WebView (chat/courses/register → Nest, not PostgREST).
- * Shares getDeskApiBaseUrl so native screens and WebViews always hit one environment.
+ * Uses getNestApiBaseUrl (api-host / Railway) — not Electron Desk ERP.
  */
-const NEST_API_BASE = getDeskApiBaseUrl().replace(/\/$/, '');
+const NEST_API_BASE = getNestApiBaseUrl().replace(/\/$/, '');
 
 const SPA_CLIENT_ROUTES = [
   '/chat',

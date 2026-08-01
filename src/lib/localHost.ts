@@ -60,13 +60,19 @@ export type TukuaEnv = 'local' | 'staging' | 'production';
 const STAGING_API = 'https://tukua-api-staging-production.up.railway.app/api';
 const PRODUCTION_API = 'https://tukua.up.railway.app/api';
 
-type EnvProfile = { web: string; deskWeb: string; api: string };
+type EnvProfile = { web: string; deskWeb: string; nestApi: string; deskApi: string };
 
 const ENV_PROFILES: Record<TukuaEnv, EnvProfile> = {
   // Loopback hosts are rewritten to the Metro LAN IP by resolveLocalUrl.
-  local: { web: 'http://localhost:8080', deskWeb: 'http://localhost:3250', api: 'http://localhost:3251/api' },
-  staging: { web: DEFAULT_WEB, deskWeb: DEFAULT_WEB, api: STAGING_API },
-  production: { web: DEFAULT_WEB, deskWeb: DEFAULT_WEB, api: PRODUCTION_API },
+  // nestApi = chat/courses (api-host :3253). deskApi = Electron SQLite ERP (:3251).
+  local: {
+    web: 'http://localhost:8080',
+    deskWeb: 'http://localhost:3250',
+    nestApi: 'http://localhost:3253/api',
+    deskApi: 'http://localhost:3251/api',
+  },
+  staging: { web: DEFAULT_WEB, deskWeb: DEFAULT_WEB, nestApi: STAGING_API, deskApi: STAGING_API },
+  production: { web: DEFAULT_WEB, deskWeb: DEFAULT_WEB, nestApi: PRODUCTION_API, deskApi: PRODUCTION_API },
 };
 
 export function getTukuaEnv(): TukuaEnv {
@@ -84,11 +90,17 @@ export function getWebBaseUrl(): string {
   return resolveLocalUrl(process.env.EXPO_PUBLIC_WEB_URL || profile().web);
 }
 
-/** Nest desk API base (dashboard / school data). */
+/**
+ * Nest REST for chat / courses / platform (WebView inject).
+ * Local → api-host :3253 (cloud chats). Not Electron :3251.
+ */
+export function getNestApiBaseUrl(): string {
+  return resolveLocalUrl(process.env.EXPO_PUBLIC_NEST_API_URL || profile().nestApi);
+}
+
+/** Desk ERP Nest (native school screens → Electron SQLite when local). */
 export function getDeskApiBaseUrl(): string {
-  return resolveLocalUrl(
-    process.env.EXPO_PUBLIC_DESK_API_URL || process.env.EXPO_PUBLIC_NEST_API_URL || profile().api,
-  );
+  return resolveLocalUrl(process.env.EXPO_PUBLIC_DESK_API_URL || profile().deskApi);
 }
 
 /** Desk frontend SPA (admin / parent / superadmin module pages). */
@@ -116,8 +128,9 @@ export function getLocalUrlDebugInfo() {
     env: getTukuaEnv(),
     webConfigured: process.env.EXPO_PUBLIC_WEB_URL || profile().web,
     webResolved: getWebBaseUrl(),
-    deskConfigured:
-      process.env.EXPO_PUBLIC_DESK_API_URL || process.env.EXPO_PUBLIC_NEST_API_URL || profile().api,
+    nestConfigured: process.env.EXPO_PUBLIC_NEST_API_URL || profile().nestApi,
+    nestResolved: getNestApiBaseUrl(),
+    deskConfigured: process.env.EXPO_PUBLIC_DESK_API_URL || profile().deskApi,
     deskResolved: getDeskApiBaseUrl(),
     deskWebConfigured: process.env.EXPO_PUBLIC_DESK_WEB_URL || profile().deskWeb,
     deskWebResolved: getDeskWebBaseUrl(),
