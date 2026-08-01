@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as NavigationBar from 'expo-navigation-bar';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebAppScreen } from '../screens/WebAppScreen';
+import { CoursesScreen } from '../screens/CoursesScreen';
 import { BiometricSetupModal } from '../components/auth/BiometricSetupModal';
 import { NativeAppHeader } from '../components/navigation/NativeAppHeader';
 import { AiTabIcon } from '../components/navigation/AiTabIcon';
@@ -21,6 +22,7 @@ import { useDeskAuth } from '../context/DeskAuthContext';
 import { biometricEnableMessage, enableBiometrics, setupBiometricsAfterLogin } from '../lib/biometrics';
 import { getBiometricCredentials } from '../lib/biometricStorage';
 import { SchoolPickerScreen, ContextPickLoader } from '../screens/SchoolPickerScreen';
+import { PushNotificationBootstrap } from '../components/notifications/PushNotificationBootstrap';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
@@ -149,9 +151,7 @@ function MainTabNavigator() {
           </>
         )}
       </Tab.Screen>
-      <Tab.Screen name="Courses" options={{ title: 'Courses' }}>
-        {() => <WebAppScreen path="/courses" label="Courses" />}
-      </Tab.Screen>
+      <Tab.Screen name="Courses" options={{ title: 'Courses' }} component={CoursesScreen} />
       <Tab.Screen name="Dashboard" options={{ title: 'Dashboard' }} component={DashboardStack} />
       <Tab.Screen name="Profile" options={{ title: 'Profile' }}>
         {() => <WebAppScreen path={profileWebPath} label="Profile" key={profileWebPath} />}
@@ -172,6 +172,7 @@ export function MainTabs() {
           <View style={styles.shell}>
             <MainTabNavigator />
             <NativeAppHeader />
+            <PushNotificationBootstrap />
             {gating ? (
               <ContextPickLoader />
             ) : needsSchoolPick ? (
