@@ -14,7 +14,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
 import { ModuleBackBar, ModuleEmpty, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
-import { fetchJoinableMeetings, SchoolMeeting } from '../../lib/meetingsApi';
+import { fetchJoinableMeetings, memberEnterMeeting, SchoolMeeting } from '../../lib/meetingsApi';
+import { useDeskAuth } from '../../context/DeskAuthContext';
 import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
 import { log } from '../../lib/logger';
@@ -44,10 +45,15 @@ function canJoin(m: SchoolMeeting) {
 
 export function MeetingsScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
+  const { persona } = useDeskAuth();
   const [items, setItems] = useState<SchoolMeeting[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [joiningId, setJoiningId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  /** Logged-in parents stay in-app; everyone else uses the branded external Tukua Meet page. */
+  const inAppJoin = persona === 'parent';
 
   const load = useCallback(async (soft = false) => {
     if (!soft) setLoading(true);
@@ -70,6 +76,40 @@ export function MeetingsScreen({ navigation }: Props) {
     void load();
   }, [load]);
 
+  const onJoin = useCallback(
+    async (m: SchoolMeeting) => {
+      const url = m.short_url || m.join_url;
+      if (!canJoin(m)) return;
+
+      if (!inAppJoin) {
+        if (url) void Linking.openURL(url);
+        return;
+      }
+
+      setJoiningId(m.id);
+      try {
+        const entered = await memberEnterMeeting(m.id);
+        const roomUrl = entered?.room_url;
+        if (!roomUrl) {
+          throw new Error('Could not open the meeting room. Try again.');
+        }
+        navigation.navigate('MeetingRoom', {
+          title: m.title || 'Tukua Meet',
+          roomUrl,
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        log.warn('Meetings', 'member-enter', msg);
+        setError(msg);
+        // Fallback: external Tukua Meet gate if profile name/phone missing
+        if (url) void Linking.openURL(url);
+      } finally {
+        setJoiningId(null);
+      }
+    },
+    [inAppJoin, navigation],
+  );
+
   return (
     <View style={styles.root}>
       <DashboardBackground />
@@ -90,16 +130,17 @@ export function MeetingsScreen({ navigation }: Props) {
           />
         }>
         <ModuleBackBar onBack={() => navigation.goBack()} />
-        <ModuleKicker>Video meetings</ModuleKicker>
+        <ModuleKicker>Tukua Meet</ModuleKicker>
         <Text style={styles.title}>Meetings</Text>
         <Text style={styles.sub}>
-          Join school meetings. You will enter your display name and phone before the room opens.
-          Links only work in the join window (opens shortly before start).
+          {inAppJoin
+            ? 'Join school meetings in the app. Your full name and phone come from your profile.'
+            : 'Join opens Tukua Meet in your browser. Enter your full name and phone on the gate page.'}
         </Text>
 
         {loading ? (
           <ActivityIndicator color={Colors.primary} style={{ marginTop: 40 }} />
-        ) : error ? (
+        ) : error && items.length === 0 ? (
           <ModuleEmpty title="Could not load meetings" body={error} onRetry={() => void load()} />
         ) : items.length === 0 ? (
           <ModuleEmpty
@@ -110,7 +151,7 @@ export function MeetingsScreen({ navigation }: Props) {
         ) : (
           items.map((m) => {
             const open = canJoin(m);
-            const url = m.short_url || m.join_url;
+            const busy = joiningId === m.id;
             return (
               <ModuleGlassCard key={m.id}>
                 <View style={styles.row}>
@@ -123,18 +164,21 @@ export function MeetingsScreen({ navigation }: Props) {
                     </Text>
                   </View>
                   <Pressable
-                    disabled={!open || !url}
-                    style={[styles.joinBtn, (!open || !url) && styles.joinBtnDisabled]}
-                    onPress={() => {
-                      if (url) void Linking.openURL(url);
-                    }}>
-                    <Text style={styles.joinText}>{open ? 'Join' : 'Not open'}</Text>
+                    disabled={!open || busy}
+                    style={[styles.joinBtn, (!open || busy) && styles.joinBtnDisabled]}
+                    onPress={() => void onJoin(m)}>
+                    {busy ? (
+                      <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                      <Text style={styles.joinText}>{open ? 'Join' : 'Not open'}</Text>
+                    )}
                   </Pressable>
                 </View>
               </ModuleGlassCard>
             );
           })
         )}
+        {error && items.length > 0 ? <Text style={styles.inlineErr}>{error}</Text> : null}
       </ScrollView>
     </View>
   );
@@ -164,7 +208,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 12,
+    minWidth: 72,
+    alignItems: 'center',
   },
   joinBtnDisabled: { opacity: 0.45 },
   joinText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  inlineErr: { marginTop: 12, color: '#b42318', fontSize: 13 },
 });

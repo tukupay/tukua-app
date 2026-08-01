@@ -53,3 +53,11 @@ export async function hostEnterMeeting(meetingId: string, displayName?: string) 
     { method: 'POST', body: { display_name: displayName } },
   );
 }
+
+/** Logged-in parent/teacher/student — Nest fills name+phone from profile; returns room_url. */
+export async function memberEnterMeeting(meetingId: string) {
+  return deskFetch<SchoolMeeting & { room_url?: string; room_path?: string }>(
+    `/meetings/${encodeURIComponent(meetingId)}/member-enter`,
+    { method: 'POST', body: {} },
+  );
+}
