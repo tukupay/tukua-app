@@ -368,40 +368,49 @@ export function PaymentProcessCard({
 
       );
 
-      await sleep(4500);
+      // Give the parent time to enter PIN; then poll Daraja status before posting receipts.
+      await sleep(6000);
 
       if (cancelled.current) return;
 
       setPhase('syncing');
 
-      setStatusLine('Syncing school balances and receipts…');
-
-      // Ensure votehead allocations + Desk SQLite dual-write once M-Pesa completes.
-      if (checkoutId) {
-        try {
-          const { deskFetch } = await import('../../lib/deskApi');
-          await deskFetch('/accounts/collections/apply-completed', {
-            method: 'POST',
-            body: { checkout_request_id: checkoutId },
-          });
-        } catch {
-          /* still pending or Nest offline — refresh loop below */
-        }
-      }
+      setStatusLine('Confirming M-Pesa payment…');
 
       let found = false;
 
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < 12; i++) {
 
         if (cancelled.current) return;
 
-        if (checkoutId && i > 0) {
+        if (checkoutId) {
           try {
             const { deskFetch } = await import('../../lib/deskApi');
-            await deskFetch('/accounts/collections/apply-completed', {
+            // Force Daraja/BankGPT reconcile when bill-done webhook is slow/missing.
+            const st = await deskFetch<{ status?: string }>('/payments/mpesa/status', {
               method: 'POST',
               body: { checkout_request_id: checkoutId },
             });
+            const status = String(st?.status || '').toLowerCase();
+            if (status === 'completed') {
+              try {
+                await deskFetch('/accounts/collections/apply-completed', {
+                  method: 'POST',
+                  body: { checkout_request_id: checkoutId },
+                });
+              } catch {
+                /* receipt may already exist */
+              }
+            } else if (status === 'failed' || status === 'cancelled' || status === 'reversed') {
+              setPhase('done');
+              setReceiptFound(false);
+              setStatusLine(
+                status === 'cancelled'
+                  ? 'Payment cancelled on the phone.'
+                  : 'Payment did not complete. Try again.',
+              );
+              return;
+            }
           } catch {
             /* keep polling */
           }
@@ -414,16 +423,12 @@ export function PaymentProcessCard({
         if (found) break;
 
         setStatusLine(
-
-          i < 4
-
-            ? `Refreshing balances & receipts (${i + 1}/5)…`
-
+          i < 11
+            ? `Waiting for M-Pesa confirmation (${i + 1}/12)…`
             : 'Finishing up…',
-
         );
 
-        await sleep(2800);
+        await sleep(3500);
 
       }
 
