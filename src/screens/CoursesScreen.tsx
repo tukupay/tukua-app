@@ -7,7 +7,6 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
-  Linking,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -17,11 +16,13 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { deskFetch } from '../lib/deskApi';
 import { Colors } from '../theme/yana';
 import { floatingHeaderInset } from '../constants/layout';
-import { getWebBaseUrl } from '../lib/localHost';
 import { log } from '../lib/logger';
+import type { CoursesStackParamList } from '../navigation/CoursesStack';
 
 type Enrolled = {
   enrollment_id: string;
@@ -44,6 +45,7 @@ type CatalogCourse = {
 
 export function CoursesScreen() {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation<NativeStackNavigationProp<CoursesStackParamList>>();
   const [enrolled, setEnrolled] = useState<Enrolled[]>([]);
   const [catalog, setCatalog] = useState<CatalogCourse[]>([]);
   const [loading, setLoading] = useState(true);
@@ -73,9 +75,12 @@ export function CoursesScreen() {
     void load();
   }, [load]);
 
-  const openCourse = (courseId: string) => {
-    const base = getWebBaseUrl().replace(/\/$/, '');
-    void Linking.openURL(`${base}/courses/${courseId}`);
+  const openCourse = (courseId: string, title?: string) => {
+    // Stay in-app: native list + WebView keeps lessons, pay, quizzes.
+    navigation.navigate('CourseWeb', {
+      path: `/courses/${courseId}`,
+      title: title || 'Course',
+    });
   };
 
   const enrolledIds = new Set(enrolled.map((e) => e.course_id));
@@ -115,7 +120,7 @@ export function CoursesScreen() {
         }
         ListHeaderComponent={
           <View>
-            <Text style={styles.h1}>Courses</Text>
+            <Text style={styles.h1}>Courses and eLearning</Text>
             <Text style={styles.sub}>Your enrollments first — then browse more.</Text>
             {error ? (
               <View style={styles.errBox}>
@@ -129,7 +134,11 @@ export function CoursesScreen() {
               <Text style={styles.empty}>No enrollments yet — pick a course below.</Text>
             ) : (
               enrolled.map((item) => (
-                <Pressable key={item.enrollment_id} style={styles.card} onPress={() => openCourse(item.course_id)}>
+                <Pressable
+                  key={item.enrollment_id}
+                  style={styles.card}
+                  onPress={() => openCourse(item.course_id, item.title)}
+                >
                   {item.thumbnail_url ? (
                     <Image source={{ uri: item.thumbnail_url }} style={styles.thumb} />
                   ) : (
@@ -154,7 +163,7 @@ export function CoursesScreen() {
           </View>
         }
         renderItem={({ item }) => (
-          <Pressable style={styles.card} onPress={() => openCourse(item.id)}>
+          <Pressable style={styles.card} onPress={() => openCourse(item.id, item.title)}>
             {item.thumbnail_url ? (
               <Image source={{ uri: item.thumbnail_url }} style={styles.thumb} />
             ) : (

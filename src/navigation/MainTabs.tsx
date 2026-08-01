@@ -5,13 +5,13 @@ import { Ionicons } from '@expo/vector-icons';
 import * as NavigationBar from 'expo-navigation-bar';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebAppScreen } from '../screens/WebAppScreen';
-import { CoursesScreen } from '../screens/CoursesScreen';
 import { BiometricSetupModal } from '../components/auth/BiometricSetupModal';
 import { NativeAppHeader } from '../components/navigation/NativeAppHeader';
 import { AiTabIcon } from '../components/navigation/AiTabIcon';
 import { hideSystemStatusBar } from '../components/ImmersiveSystemBars';
 import { WebViewTabBridge } from '../components/WebViewTabBridge';
 import { DashboardStack } from './DashboardStack';
+import { CoursesStack } from './CoursesStack';
 import { TAB_BAR_BODY_HEIGHT } from '../constants/layout';
 import { TAB_PATHS, WebViewControlProvider, useWebViewControl } from '../context/WebViewControlContext';
 import { useDialog } from '../context/DialogContext';
@@ -151,7 +151,7 @@ function MainTabNavigator() {
           </>
         )}
       </Tab.Screen>
-      <Tab.Screen name="Courses" options={{ title: 'Courses' }} component={CoursesScreen} />
+      <Tab.Screen name="Courses" options={{ title: 'Courses' }} component={CoursesStack} />
       <Tab.Screen name="Dashboard" options={{ title: 'Dashboard' }} component={DashboardStack} />
       <Tab.Screen name="Profile" options={{ title: 'Profile' }}>
         {() => <WebAppScreen path={profileWebPath} label="Profile" key={profileWebPath} />}

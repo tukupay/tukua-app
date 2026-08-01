@@ -377,29 +377,33 @@ export function PaymentProcessCard({
 
       setStatusLine('Confirming M-Pesa payment…');
 
-      let found = false;
+            let found = false;
+      const POLL_MAX = 24;
 
-      for (let i = 0; i < 12; i++) {
-
+      for (let i = 0; i < POLL_MAX; i++) {
         if (cancelled.current) return;
 
         if (checkoutId) {
           try {
             const { deskFetch } = await import('../../lib/deskApi');
             // Force Daraja/BankGPT reconcile when bill-done webhook is slow/missing.
-            const st = await deskFetch<{ status?: string }>('/payments/mpesa/status', {
-              method: 'POST',
-              body: { checkout_request_id: checkoutId },
-            });
-            const status = String(st?.status || '').toLowerCase();
+            const st = await deskFetch<{ status?: string; data?: { status?: string } }>(
+              '/payments/mpesa/status',
+              {
+                method: 'POST',
+                body: { checkout_request_id: checkoutId },
+              },
+            );
+            const status = String(st?.status || st?.data?.status || '').toLowerCase();
             if (status === 'completed') {
               try {
                 await deskFetch('/accounts/collections/apply-completed', {
                   method: 'POST',
                   body: { checkout_request_id: checkoutId },
                 });
-              } catch {
-                /* receipt may already exist */
+              } catch (applyErr) {
+                // Keep polling — bill-done may still write the receipt.
+                console.warn('[Payment] apply-completed', applyErr);
               }
             } else if (status === 'failed' || status === 'cancelled' || status === 'reversed') {
               setPhase('done');
@@ -417,19 +421,15 @@ export function PaymentProcessCard({
         }
 
         if (onRefresh) await onRefresh();
-
         found = hasNewReceipt();
-
         if (found) break;
 
         setStatusLine(
-          i < 11
-            ? `Waiting for M-Pesa confirmation (${i + 1}/12)…`
+          i < POLL_MAX - 1
+            ? `Waiting for M-Pesa confirmation (${i + 1}/${POLL_MAX})…`
             : 'Finishing up…',
         );
-
-        await sleep(3500);
-
+        await sleep(4000);
       }
 
       if (cancelled.current) return;

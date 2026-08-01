@@ -94,8 +94,11 @@ export function FaceSelfEnrollScreen({ navigation }: Props) {
         ]}
       >
         <ModuleKicker>Boarding</ModuleKicker>
-        <Text style={styles.h1}>Enroll your face</Text>
-        <Text style={styles.sub}>For {displayName}. Used when security boards you on the bus.</Text>
+        <Text style={styles.h1}>Enroll face</Text>
+        <Text style={styles.sub}>
+          For {displayName}
+          {adm ? ` (${adm})` : ''}. Used when security boards the student on the bus.
+        </Text>
         <ModuleGlassCard>
           {!permission?.granted ? (
             <Pressable style={styles.btn} onPress={() => void requestPermission()}>
