@@ -49,7 +49,14 @@ function isAtTabRoot(pathname: string, tabPath: string) {
 
 function matchesTabPath(pathname: string, tabPath: string) {
   if (tabPath === '/chat') {
-    return pathname === '/' || pathname === '/chat' || pathname.startsWith('/chat/');
+    // Chat shell also hosts platform superadmin (same SPA, Overview-style nav from Dashboard).
+    return (
+      pathname === '/' ||
+      pathname === '/chat' ||
+      pathname.startsWith('/chat/') ||
+      pathname === '/superadmin' ||
+      pathname.startsWith('/superadmin/')
+    );
   }
   if (tabPath === '/courses') {
     return pathname === '/courses' || pathname.startsWith('/courses/');

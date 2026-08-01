@@ -1,7 +1,7 @@
 import { Session } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 import { TukuaWeb } from '../theme/yana';
-import { isAppWebHost } from './localHost';
+import { getDeskApiBaseUrl, isAppWebHost } from './localHost';
 import { log } from './logger';
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
@@ -22,12 +22,11 @@ const TUKUA_APP_SOURCE_MOBILE = 'mobile_app';
 const TUKUA_APP_SOURCE_WEB = 'web';
 const TUKUA_APP_SOURCE_KEY = 'tukua_app_source';
 const CHAT_BOOT_KEY = 'tukua_mobile_chat_boot';
-/** Nest REST base for SPA inside WebView (chat/courses/register → Nest, not PostgREST). */
-const NEST_API_BASE = (
-  process.env.EXPO_PUBLIC_NEST_API_URL ||
-  process.env.EXPO_PUBLIC_DESK_API_URL ||
-  'https://tukua-api-staging-production.up.railway.app/api'
-).replace(/\/$/, '');
+/**
+ * Nest REST base for SPA inside WebView (chat/courses/register → Nest, not PostgREST).
+ * Shares getDeskApiBaseUrl so native screens and WebViews always hit one environment.
+ */
+const NEST_API_BASE = getDeskApiBaseUrl().replace(/\/$/, '');
 
 const SPA_CLIENT_ROUTES = [
   '/chat',
@@ -35,6 +34,7 @@ const SPA_CLIENT_ROUTES = [
   '/register',
   '/courses',
   '/profile',
+  '/superadmin',
   '/support',
   '/partners',
   '/certifying-agencies',
@@ -270,6 +270,7 @@ export function buildSessionStorageScript(session: Session) {
         localStorage.setItem('${SUPABASE_STORAGE_KEY}', ${JSON.stringify(supabasePayload)});
         localStorage.setItem('${TUKUA_SESSION_KEY}', ${JSON.stringify(webSession)});
         localStorage.setItem('tukua_nest_api_base', ${JSON.stringify(NEST_API_BASE)});
+        localStorage.setItem('tukua_nest_access_token', ${JSON.stringify(session.access_token)});
         ${compatLine}
         ${notifyAppSourceEvent()}
         ${notifySpaRouteSyncScript()}
@@ -328,6 +329,7 @@ export function buildFastTabNavigateScript(session: Session, targetPath: string)
         localStorage.setItem('${SUPABASE_STORAGE_KEY}', ${JSON.stringify(supabasePayload)});
         localStorage.setItem('${TUKUA_SESSION_KEY}', ${JSON.stringify(webSession)});
         localStorage.setItem('tukua_nest_api_base', ${JSON.stringify(NEST_API_BASE)});
+        localStorage.setItem('tukua_nest_access_token', ${JSON.stringify(session.access_token)});
         ${compatLine}
         ${notifyAppSourceEvent()}
         ${notifyMobileSessionEvent()}
@@ -432,6 +434,7 @@ export function buildPublicPagePreloadScript(session: Session) {
         localStorage.setItem('${SUPABASE_STORAGE_KEY}', ${JSON.stringify(supabasePayload)});
         localStorage.setItem('${TUKUA_SESSION_KEY}', ${JSON.stringify(webSession)});
         localStorage.setItem('tukua_nest_api_base', ${JSON.stringify(NEST_API_BASE)});
+        localStorage.setItem('tukua_nest_access_token', ${JSON.stringify(session.access_token)});
         ${compatLine}
         ${dispatchStorageSync(SUPABASE_STORAGE_KEY)}
         window.dispatchEvent(new CustomEvent('TUKUA_APP_SOURCE'));
@@ -498,6 +501,7 @@ export function buildSupabaseRefreshAndNavigateScript(session: Session, targetPa
         localStorage.setItem(storageKey, ${JSON.stringify(supabasePayload)});
         localStorage.setItem('${TUKUA_SESSION_KEY}', ${JSON.stringify(webSession)});
         localStorage.setItem('tukua_nest_api_base', ${JSON.stringify(NEST_API_BASE)});
+        localStorage.setItem('tukua_nest_access_token', ${JSON.stringify(session.access_token)});
         ${compatLine}
         ${notifyAppSourceEvent()}
         ${dispatchStorageSync(SUPABASE_STORAGE_KEY)}
@@ -535,7 +539,8 @@ export function buildSupabaseRefreshAndNavigateScript(session: Session, targetPa
             });
             localStorage.setItem(storageKey, stored);
             localStorage.setItem('${TUKUA_SESSION_KEY}', ${JSON.stringify(webSession)});
-        localStorage.setItem('tukua_nest_api_base', ${JSON.stringify(NEST_API_BASE)});
+            localStorage.setItem('tukua_nest_api_base', ${JSON.stringify(NEST_API_BASE)});
+            localStorage.setItem('tukua_nest_access_token', data.access_token);
             ${compatLine}
             ${dispatchStorageSync(SUPABASE_STORAGE_KEY)}
             ${notifyMobileSessionEvent()}

@@ -94,6 +94,11 @@ const BOLD_ICON: Partial<Record<FeatherIconName, keyof typeof Ionicons.glyphMap>
   upload: 'cloud-upload',
   camera: 'camera',
   map: 'map',
+  gift: 'gift',
+  cpu: 'hardware-chip',
+  globe: 'globe',
+  video: 'videocam',
+  heart: 'heart',
 };
 
 function BoldIcon({

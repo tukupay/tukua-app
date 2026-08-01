@@ -14,7 +14,6 @@ import Constants from 'expo-constants';
 
 const DEFAULT_WEB = 'https://tukua.ai';
 /** Nest desk API base — LAN proxy :3255 → Electron :3251 (SQLite with parent names). */
-const DEFAULT_DESK_API = 'http://localhost:3255/api';
 /** Desk SPA UI (modules) — production tukua.ai. */
 const DEFAULT_DESK_WEB = 'https://tukua.ai';
 
@@ -51,19 +50,50 @@ export function resolveLocalUrl(url: string): string {
   return raw;
 }
 
+/**
+ * One switch for every host. `EXPO_PUBLIC_TUKUA_ENV` picks the profile so web,
+ * Desk UI and the API can never straddle two environments; individual
+ * `EXPO_PUBLIC_*` vars still win when set (escape hatch for one-off testing).
+ */
+export type TukuaEnv = 'local' | 'staging' | 'production';
+
+const STAGING_API = 'https://tukua-api-staging-production.up.railway.app/api';
+const PRODUCTION_API = 'https://tukua.up.railway.app/api';
+
+type EnvProfile = { web: string; deskWeb: string; api: string };
+
+const ENV_PROFILES: Record<TukuaEnv, EnvProfile> = {
+  // Loopback hosts are rewritten to the Metro LAN IP by resolveLocalUrl.
+  local: { web: 'http://localhost:8080', deskWeb: 'http://localhost:3250', api: 'http://localhost:3251/api' },
+  staging: { web: DEFAULT_WEB, deskWeb: DEFAULT_WEB, api: STAGING_API },
+  production: { web: DEFAULT_WEB, deskWeb: DEFAULT_WEB, api: PRODUCTION_API },
+};
+
+export function getTukuaEnv(): TukuaEnv {
+  const raw = String(process.env.EXPO_PUBLIC_TUKUA_ENV ?? '').trim().toLowerCase();
+  if (raw === 'local' || raw === 'staging' || raw === 'production') return raw;
+  return 'staging';
+}
+
+function profile(): EnvProfile {
+  return ENV_PROFILES[getTukuaEnv()];
+}
+
 /** Yana web SPA base (Chat, Register, Courses, Profile WebViews). */
 export function getWebBaseUrl(): string {
-  return resolveLocalUrl(process.env.EXPO_PUBLIC_WEB_URL ?? DEFAULT_WEB);
+  return resolveLocalUrl(process.env.EXPO_PUBLIC_WEB_URL || profile().web);
 }
 
 /** Nest desk API base (dashboard / school data). */
 export function getDeskApiBaseUrl(): string {
-  return resolveLocalUrl(process.env.EXPO_PUBLIC_DESK_API_URL ?? DEFAULT_DESK_API);
+  return resolveLocalUrl(
+    process.env.EXPO_PUBLIC_DESK_API_URL || process.env.EXPO_PUBLIC_NEST_API_URL || profile().api,
+  );
 }
 
 /** Desk frontend SPA (admin / parent / superadmin module pages). */
 export function getDeskWebBaseUrl(): string {
-  return resolveLocalUrl(process.env.EXPO_PUBLIC_DESK_WEB_URL ?? DEFAULT_DESK_WEB);
+  return resolveLocalUrl(process.env.EXPO_PUBLIC_DESK_WEB_URL || profile().deskWeb);
 }
 
 /** True if URL belongs to our configured web SPA (production or local). */
@@ -83,11 +113,13 @@ export function isAppWebHost(hostname: string): boolean {
 
 export function getLocalUrlDebugInfo() {
   return {
-    webConfigured: process.env.EXPO_PUBLIC_WEB_URL ?? DEFAULT_WEB,
+    env: getTukuaEnv(),
+    webConfigured: process.env.EXPO_PUBLIC_WEB_URL || profile().web,
     webResolved: getWebBaseUrl(),
-    deskConfigured: process.env.EXPO_PUBLIC_DESK_API_URL ?? DEFAULT_DESK_API,
+    deskConfigured:
+      process.env.EXPO_PUBLIC_DESK_API_URL || process.env.EXPO_PUBLIC_NEST_API_URL || profile().api,
     deskResolved: getDeskApiBaseUrl(),
-    deskWebConfigured: process.env.EXPO_PUBLIC_DESK_WEB_URL ?? DEFAULT_DESK_WEB,
+    deskWebConfigured: process.env.EXPO_PUBLIC_DESK_WEB_URL || profile().deskWeb,
     deskWebResolved: getDeskWebBaseUrl(),
     devHost: getDevHostIp(),
     platform: Platform.OS,

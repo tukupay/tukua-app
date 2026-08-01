@@ -460,7 +460,7 @@ export const SECURITY_DASHBOARD_ACTIONS: DashboardAction[] = [
 
 export const SCHOOL_ADMIN_DASHBOARD_ACTIONS: DashboardAction[] = [
   { id: 'attendance-scanner', title: 'My gate check-in', description: 'Scan gate QR for yourself (staff)', icon: 'camera', nativeScreen: 'GateCheckIn', accent: '#0891B2' },
-  { id: 'meetings', title: 'Meetings', description: 'Schedule & host video meetings', icon: 'video', deskPath: '/meetings', accent: '#0284C7' },
+  { id: 'meetings', title: 'Meetings', description: 'Schedule & host video meetings', icon: 'video', nativeScreen: 'Meetings', accent: '#0284C7' },
   { id: 'face-enroll', title: 'Face enroll', description: 'Students · teachers · staff', icon: 'user', deskPath: '/transport/face-enroll', accent: '#0E7490' },
   { id: 'admin', title: 'Admin', description: 'Settings & users', icon: 'settings', deskPath: '/admin', accent: '#0A3D2E' },
   { id: 'students', title: 'Students', description: 'Student records', icon: 'book', deskPath: '/admin/students', accent: '#1F8B4C' },
@@ -477,22 +477,39 @@ export const SCHOOL_ADMIN_DASHBOARD_ACTIONS: DashboardAction[] = [
 
 
 
+/** Platform superadmin — mirrors web AdminLayout categories (Tukua SPA routes). */
 export const SUPER_ADMIN_DASHBOARD_ACTIONS: DashboardAction[] = [
-
-  { id: 'hub', title: 'Company hub', description: 'Overview', icon: 'grid', deskPath: '/superadmin', accent: '#0A3D2E' },
-
-  { id: 'meetings', title: 'Meetings', description: 'All school meetings', icon: 'video', deskPath: '/superadmin/meetings', accent: '#0284C7' },
-
-  { id: 'schools', title: 'Schools', description: 'Registry', icon: 'home', deskPath: '/superadmin/schools', accent: '#1F8B4C' },
-
-  { id: 'subscriptions', title: 'Subscriptions', description: 'Plans & seats', icon: 'credit-card', deskPath: '/superadmin/subscriptions', accent: '#2563EB' },
-
-  { id: 'comms', title: 'Communication', description: 'Bulk SMS', icon: 'mail', deskPath: '/superadmin/bulksms', accent: '#7C3AED' },
-
-  { id: 'elearning', title: 'E-Learning', description: 'Company courses', icon: 'book-open', deskPath: '/superadmin/elearning', accent: '#0D9488' },
-
-  { id: 'accounts', title: 'Accounts', description: 'Finance', icon: 'dollar-sign', deskPath: '/superadmin/accounts', accent: '#059669' },
-
+  // Overview
+  { id: 'hub', title: 'Dashboard', description: 'Company overview', icon: 'grid', tukuaPath: '/superadmin', accent: '#0A3D2E' },
+  { id: 'analytics', title: 'Analytics', description: 'Platform metrics', icon: 'trending-up', tukuaPath: '/superadmin/analytics', accent: '#2563EB' },
+  { id: 'registration', title: 'Registration', description: 'Signup monitor', icon: 'shield', tukuaPath: '/superadmin/registration-monitor', accent: '#DC2626' },
+  // People
+  { id: 'users', title: 'Users', description: 'Accounts & roles', icon: 'users', tukuaPath: '/superadmin/users', accent: '#D97706' },
+  { id: 'course-staff', title: 'Course mentors', description: 'Instructors & guests', icon: 'user', tukuaPath: '/superadmin/course-staff', accent: '#7C3AED' },
+  { id: 'feedback', title: 'Feedback', description: 'User feedback', icon: 'message-circle', tukuaPath: '/superadmin/feedback', accent: '#0284C7' },
+  // Money
+  { id: 'revenue', title: 'Revenue', description: 'Token topups & pricing', icon: 'dollar-sign', tukuaPath: '/superadmin/revenue', accent: '#059669' },
+  { id: 'referrals', title: 'Course referrals', description: 'Promo & share links', icon: 'gift', tukuaPath: '/superadmin/course-referrals', accent: '#EA580C' },
+  // Platform
+  { id: 'apps', title: 'Apps', description: 'Connected apps', icon: 'layers', tukuaPath: '/superadmin/apps', accent: '#4F46E5' },
+  { id: 'releases', title: 'Releases', description: 'Desk builds', icon: 'upload', tukuaPath: '/superadmin/releases', accent: '#0E7490' },
+  { id: 'storage', title: 'Storage', description: 'Media & files', icon: 'monitor', tukuaPath: '/superadmin/storage', accent: '#0891B2' },
+  { id: 'knowledge', title: 'Knowledge', description: 'RAG docs', icon: 'book', tukuaPath: '/superadmin/knowledge', accent: '#1F8B4C' },
+  { id: 'ai-engine', title: 'Tukua AI', description: 'Providers & models', icon: 'cpu', tukuaPath: '/superadmin/ai-providers', accent: '#7C3AED' },
+  // Content & access
+  { id: 'content', title: 'Content sources', description: 'Scraping & ops', icon: 'globe', tukuaPath: '/superadmin/content', accent: '#0D9488' },
+  { id: 'org-access', title: 'Org roles', description: 'Roles & modules', icon: 'settings', tukuaPath: '/superadmin/org-access', accent: '#0A3D2E' },
+  { id: 'meetings', title: 'Meetings', description: 'All school meetings', icon: 'video', nativeScreen: 'Meetings', accent: '#0284C7' },
+  { id: 'emails', title: 'Emails', description: 'Bulk email', icon: 'mail', tukuaPath: '/superadmin/emails', accent: '#4F46E5' },
+  { id: 'sms', title: 'SMS', description: 'Bulk SMS', icon: 'message-circle', tukuaPath: '/superadmin/sms', accent: '#7C3AED' },
+  // Schools & learning
+  { id: 'schools', title: 'Schools', description: 'Registry', icon: 'home', tukuaPath: '/superadmin/schools/list', accent: '#1F8B4C' },
+  { id: 'schools-overview', title: 'Schools overview', description: 'Tenant overview', icon: 'grid', tukuaPath: '/superadmin/schools', accent: '#0A3D2E' },
+  { id: 'curriculum', title: 'Curriculum', description: 'Levels & learning areas', icon: 'layers', tukuaPath: '/superadmin/curriculum', accent: '#D97706' },
+  { id: 'elearning', title: 'Courses', description: 'Browse & manage catalog', icon: 'book-open', tukuaPath: '/courses', tukuaTab: 'Courses', accent: '#0D9488' },
+  { id: 'admin-courses', title: 'Course admin', description: 'Publish & pricing', icon: 'edit-3', tukuaPath: '/superadmin/courses', accent: '#0891B2' },
+  // Settings
+  { id: 'settings', title: 'Settings', description: 'Platform settings', icon: 'settings', tukuaPath: '/superadmin/settings', accent: '#64748B' },
 ];
 
 
