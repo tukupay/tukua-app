@@ -83,8 +83,16 @@ export async function verifyOtp(opts: {
   return nestPost<{ verified: boolean }>('/platform/auth/otp/verify', opts);
 }
 
-export async function forgotPassword(email: string, redirect_to?: string) {
-  return nestPost<{ email: string }>('/platform/auth/password/forgot', { email, redirect_to });
+export async function forgotPassword(opts: {
+  email?: string;
+  phone?: string;
+  redirect_to?: string;
+}) {
+  return nestPost<{ email?: string }>('/platform/auth/password/forgot', {
+    email: opts.email,
+    phone: opts.phone,
+    redirect_to: opts.redirect_to,
+  });
 }
 
 export async function resetPassword(token: string, password: string) {

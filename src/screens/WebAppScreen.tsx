@@ -26,6 +26,7 @@ import { useAuth } from '../context/AuthContext';
 import { useWebViewControl } from '../context/WebViewControlContext';
 import { log } from '../lib/logger';
 import { getWebViewMediaProps, WEBVIEW_MEDIA_INJECT_JS } from '../lib/webViewMedia';
+import { resolveNestAccessTokenForWebView } from '../lib/platformNestAuth';
 import { ensureWebViewUploadPermissions, getWebViewUploadProps } from '../lib/webViewUploads';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -58,7 +59,9 @@ function matchesTabPath(pathname: string, tabPath: string) {
       pathname.startsWith('/superadmin/')
     );
   }
-  if (tabPath === '/courses') {
+  // Course detail opens as CourseWeb with path `/courses/:id` — treat the whole
+  // courses tree as in-tab so SPA sub-nav does not thrash bootstrap.
+  if (tabPath === '/courses' || tabPath.startsWith('/courses/')) {
     return pathname === '/courses' || pathname.startsWith('/courses/');
   }
   if (tabPath === '/profile') {
@@ -69,11 +72,25 @@ function matchesTabPath(pathname: string, tabPath: string) {
 
 export function WebAppScreen({ path, label }: Props) {
   const webRef = useRef<WebView>(null);
+  const nestTokRef = useRef<string | null>(null);
   const isFocused = useIsFocused();
   useRegisterTabJumper();
   const { register, registerTabFocusHandler, consumePendingRoute, navigate: navigateWeb } =
     useWebViewControl();
   const { session, ensureFreshSession, logout } = useAuth();
+
+  useEffect(() => {
+    let cancelled = false;
+    nestTokRef.current = null;
+    if (!session) return;
+    void resolveNestAccessTokenForWebView().then((tok) => {
+      if (!cancelled) nestTokRef.current = tok;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.user?.id, session?.access_token]);
+
   const [booting, setBooting] = useState(true);
   const [pageLoading, setPageLoading] = useState(true);
   const [canGoBack, setCanGoBack] = useState(false);
@@ -111,7 +128,7 @@ export function WebAppScreen({ path, label }: Props) {
   const sessionInjectKey = session ? `${session.user.id}:${session.access_token}` : null;
   const preInject = useMemo(() => {
     if (!session) return null;
-    return buildPreloadSessionScript(session);
+    return buildPreloadSessionScript(session, nestTokRef.current);
   }, [sessionInjectKey, session]);
 
   useEffect(() => {
@@ -167,13 +184,22 @@ export function WebAppScreen({ path, label }: Props) {
       if (!session || !webRef.current || bootstrapPendingRef.current) return;
       bootstrapPendingRef.current = true;
       log.info('WebApp', reason, { path, chatMode });
-      const script = chatMode
-        ? buildSupabaseRefreshAndNavigateScript(session, path)
-        : buildFastTabNavigateScript(session, path);
-      webRef.current.injectJavaScript(`${script}\ntrue;`);
-      setTimeout(() => {
-        bootstrapPendingRef.current = false;
-      }, chatMode ? 4000 : 400);
+      void (async () => {
+        try {
+          const nestTok =
+            nestTokRef.current ?? (await resolveNestAccessTokenForWebView());
+          nestTokRef.current = nestTok;
+          if (!webRef.current) return;
+          const script = chatMode
+            ? buildSupabaseRefreshAndNavigateScript(session, path, nestTok)
+            : buildFastTabNavigateScript(session, path, nestTok);
+          webRef.current.injectJavaScript(`${script}\ntrue;`);
+        } finally {
+          setTimeout(() => {
+            bootstrapPendingRef.current = false;
+          }, chatMode ? 4000 : 400);
+        }
+      })();
     },
     [session, path, chatMode],
   );
@@ -213,7 +239,7 @@ export function WebAppScreen({ path, label }: Props) {
         const target = pending ?? path;
 
         log.info('WebApp', 'sync tab route', { path, target, currentPathname: spaPath, reason });
-        webRef.current.injectJavaScript(`${buildFastTabNavigateScript(session, target)}\ntrue;`);
+        webRef.current.injectJavaScript(`${buildFastTabNavigateScript(session, target, nestTokRef.current)}\ntrue;`);
         injectChatComposerInsets();
         setCurrentPathname(target);
         setPageLoading(false);
@@ -261,7 +287,7 @@ export function WebAppScreen({ path, label }: Props) {
 
   useEffect(() => {
     if (!session || !isFocused || !bootstrappedRef.current || !webRef.current) return;
-    webRef.current.injectJavaScript(buildSessionResyncScript(session));
+    webRef.current.injectJavaScript(buildSessionResyncScript(session, nestTokRef.current));
   }, [session?.access_token, isFocused, session]);
 
   useEffect(() => {
@@ -344,7 +370,7 @@ export function WebAppScreen({ path, label }: Props) {
         log.warn('WebApp', 'chat sign-in bounce — re-inject session (no full reload)', {
           attempt: recoverCountRef.current,
         });
-        webRef.current?.injectJavaScript(buildPreloadSessionScript(active));
+        webRef.current?.injectJavaScript(buildPreloadSessionScript(active, nestTokRef.current));
         webRef.current?.injectJavaScript(
           `${buildSpaNavigateScript(path, { force: true })}\ntrue;`,
         );
@@ -358,7 +384,7 @@ export function WebAppScreen({ path, label }: Props) {
       bootstrappedRef.current = false;
       const target = currentPathnameRef.current || path;
       webRef.current?.injectJavaScript(
-        `${buildFastTabNavigateScript(active, target)}\ntrue;`,
+        `${buildFastTabNavigateScript(active, target, nestTokRef.current)}\ntrue;`,
       );
     })();
   }, [chatMode, ensureFreshSession, logout, path, session]);
@@ -407,7 +433,7 @@ export function WebAppScreen({ path, label }: Props) {
         // Blocked SPA server loads bounce the shell to `/` — keep the in-app route.
         if (!nav.loading && webRef.current && session) {
           webRef.current.injectJavaScript(
-            `${buildFastTabNavigateScript(session, currentPathnameRef.current)}\ntrue;`,
+            `${buildFastTabNavigateScript(session, currentPathnameRef.current, nestTokRef.current)}\ntrue;`,
           );
         }
         return;
@@ -443,7 +469,7 @@ export function WebAppScreen({ path, label }: Props) {
         log.info('WebApp', 'client navigate blocked route', { pathname, path });
         const script = bootstrappedRef.current
           ? buildSpaNavigateScript(pathname, { force: true, push: true })
-          : buildFastTabNavigateScript(session, pathname);
+          : buildFastTabNavigateScript(session, pathname, nestTokRef.current);
         webRef.current.injectJavaScript(`${script}\ntrue;`);
         setCurrentPathname(pathname);
         recordHistory(url, false);
@@ -483,7 +509,7 @@ export function WebAppScreen({ path, label }: Props) {
         if (pending && pending !== msg.path && session && webRef.current) {
           log.info('WebApp', 'pending route inject', { path, pending });
           webRef.current.injectJavaScript(
-            `${buildFastTabNavigateScript(session, pending)}\ntrue;`,
+            `${buildFastTabNavigateScript(session, pending, nestTokRef.current)}\ntrue;`,
           );
           setCurrentPathname(pending);
         }
@@ -492,19 +518,19 @@ export function WebAppScreen({ path, label }: Props) {
         // Soft re-hydrate — keep chat visible; avoid a long opaque loader
         bootstrapPendingRef.current = false;
         if (session && webRef.current) {
-          webRef.current.injectJavaScript(buildPreloadSessionScript(session));
+          webRef.current.injectJavaScript(buildPreloadSessionScript(session, nestTokRef.current));
         }
       } else if (msg.type === 'TUKUA_SHELL_BLANK') {
         const target = typeof msg.path === 'string' ? msg.path : path;
         log.warn('WebApp', 'shell blank after blocked nav — recovering', { path, target });
         bootstrappedRef.current = false;
-        webRef.current?.injectJavaScript(buildPreloadSessionScript(session!));
+        webRef.current?.injectJavaScript(buildPreloadSessionScript(session!, nestTokRef.current));
         setTimeout(() => {
           webRef.current?.reload();
           setTimeout(() => {
             if (session && webRef.current) {
               webRef.current.injectJavaScript(
-                `${buildSupabaseRefreshAndNavigateScript(session, target)}\ntrue;`,
+                `${buildSupabaseRefreshAndNavigateScript(session, target, nestTokRef.current)}\ntrue;`,
               );
               setCurrentPathname(target);
             }
@@ -551,8 +577,13 @@ export function WebAppScreen({ path, label }: Props) {
         if (chatMode) {
           bootstrappedRef.current = true;
           bootstrapPendingRef.current = false;
-          setPageLoading(false);
+          // Keep pageLoading until TUKUA_CHAT_READY so user sees a loader, not a blank pane.
         }
+      } else if (msg.type === 'TUKUA_CHAT_READY') {
+        log.info('WebApp', 'chat ready');
+        bootstrappedRef.current = true;
+        bootstrapPendingRef.current = false;
+        setPageLoading(false);
       } else if (msg.type === 'TUKUA_SESSION_UPDATED') {
         if (typeof msg.access_token === 'string' && typeof msg.refresh_token === 'string') {
           void applyWebSessionTokens(msg.access_token, msg.refresh_token);
@@ -584,11 +615,8 @@ export function WebAppScreen({ path, label }: Props) {
     !bootstrappedRef.current &&
     !webOnlyTab;
 
-  // Keep chat loader short — hide as soon as shell has painted / bootstrapped
-  const showChatLoader =
-    chatMode &&
-    isFocused &&
-    (booting || (!bootstrappedRef.current && pageLoading && !shellReadyRef.current));
+  // Show until SPA posts TUKUA_CHAT_READY (or bootstrap timeout clears pageLoading).
+  const showChatLoader = chatMode && isFocused && (booting || pageLoading);
 
   return (
     <View style={[styles.container, { paddingTop: webTopClearance }]}>
@@ -623,13 +651,13 @@ export function WebAppScreen({ path, label }: Props) {
             setPageLoading(false);
             if (isFocused) syncTabRoute('shell reload');
           }
-          // Don't leave an opaque overlay over a painted shell
+          // Chat: wait for TUKUA_CHAT_READY. Fallback so loader never sticks forever.
           if (chatMode) {
             setTimeout(() => {
-              if (shellReadyRef.current && !bootstrapPendingRef.current) {
+              if (shellReadyRef.current && bootstrappedRef.current) {
                 setPageLoading(false);
               }
-            }, 900);
+            }, 12_000);
           }
         }}
         onError={(e) => {

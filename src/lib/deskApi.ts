@@ -233,6 +233,8 @@ export async function clearDeskSession() {
     await SecureStore.deleteItemAsync(DESK_USER_KEY);
     await SecureStore.deleteItemAsync(DESK_TOKEN_SOURCE_KEY);
     await SecureStore.deleteItemAsync(DESK_CREDS_KEY);
+    const { clearPlatformNestToken } = await import('./platformNestAuth');
+    await clearPlatformNestToken();
   } catch {
     // ignore
   }

@@ -269,55 +269,34 @@ export function LoginScreen({ navigation }: Props) {
   handleBiometricRef.current = handleBiometric;
 
   const handleForgot = async () => {
-
-    if (!email.trim()) {
-
+    const raw = email.trim();
+    if (!raw) {
       showDialog({
-
-        title: 'Email required',
-
-        message: 'Enter your email address first, then tap Forgotten Password.',
-
+        title: 'Email or phone required',
+        message: 'Enter your email or phone first, then tap Forgotten Password.',
         variant: 'info',
-
         icon: 'mail-unread-outline',
-
       });
-
       return;
-
     }
 
     try {
-
-      await sendPasswordReset(email.trim());
-
+      const looksPhone = /^\+?[\d\s()-]{7,}$/.test(raw) && !raw.includes('@');
+      await sendPasswordReset(looksPhone ? undefined : raw, looksPhone ? raw : undefined);
       showDialog({
-
-        title: 'Check your email',
-
-        message: 'If an account exists, a password reset link has been sent.',
-
+        title: 'Check email or SMS',
+        message:
+          'If an account exists, a password reset link has been sent by email and/or SMS. Open the link on this device to set a new password.',
         variant: 'success',
-
         icon: 'mail-open-outline',
-
       });
-
     } catch {
-
       showDialog({
-
-        title: 'Could not send email',
-
+        title: 'Could not send reset link',
         message: 'Please try again in a moment.',
-
         variant: 'danger',
-
       });
-
     }
-
   };
 
   return (

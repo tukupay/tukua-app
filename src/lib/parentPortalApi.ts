@@ -165,8 +165,14 @@ export async function fetchRegisterScanTodayStatus() {
   }>('/registers/scan/today-status');
 }
 
+export type SchoolCollectionPurpose =
+  | 'school_fees'
+  | 'school_pocket'
+  | 'teacher_tip'
+  | 'bursary';
+
 export async function quoteSchoolCollection(body: {
-  purpose: 'school_fees' | 'school_pocket' | 'teacher_tip';
+  purpose: SchoolCollectionPurpose;
   amount: number;
 }) {
   return deskFetch<{
@@ -178,7 +184,7 @@ export async function quoteSchoolCollection(body: {
 }
 
 export async function promptSchoolCollectionStk(body: {
-  purpose: 'school_fees' | 'school_pocket' | 'teacher_tip';
+  purpose: SchoolCollectionPurpose;
   amount: number;
   phone: string;
   student_id?: string;

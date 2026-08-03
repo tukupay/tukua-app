@@ -278,23 +278,25 @@ export function NativeAppHeader() {
               <Ionicons name="chevron-down" size={16} color={Colors.white} />
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.signOutBtn}
-              onPress={handleLogout}
-              accessibilityLabel="Sign out">
-              <Ionicons name="log-out-outline" size={18} color={Colors.white} />
-            </TouchableOpacity>
+            <View style={styles.rightCol}>
+              <TouchableOpacity
+                style={styles.signOutBtn}
+                onPress={handleLogout}
+                accessibilityLabel="Sign out">
+                <Ionicons name="log-out-outline" size={18} color={Colors.white} />
+              </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.newChatFab}
-              onPress={() => {
-                jumpToTab('Chat');
-                sendChatCommand('new_chat');
-              }}
-              accessibilityLabel="New chat"
-              activeOpacity={0.85}>
-              <Ionicons name="add" size={18} color={Colors.white} />
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.newChatFab}
+                onPress={() => {
+                  jumpToTab('Chat');
+                  sendChatCommand('new_chat');
+                }}
+                accessibilityLabel="New chat"
+                activeOpacity={0.85}>
+                <Ionicons name="add" size={18} color={Colors.white} />
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </View>
@@ -391,6 +393,13 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     minWidth: 0,
   },
+  rightCol: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 4,
+    flexShrink: 0,
+    marginLeft: 2,
+  },
   newChatFab: {
     width: 32,
     height: 32,
@@ -398,9 +407,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.55)',
-    backgroundColor: 'rgba(21,128,61,0.72)',
-    marginLeft: 2,
+    borderColor: 'rgba(255,255,255,0.45)',
+    backgroundColor: 'transparent',
   },
   savageBtn: {
     width: 30,

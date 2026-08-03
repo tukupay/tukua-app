@@ -4,6 +4,7 @@ import { createNavigationContainerRef, NavigationContainer } from '@react-naviga
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { LoginScreen } from '../screens/LoginScreen';
 import { RegisterScreen } from '../screens/RegisterScreen';
+import { ResetPasswordScreen } from '../screens/ResetPasswordScreen';
 import { MainTabs } from './MainTabs';
 import { RootStackParamList } from './types';
 import { useAuth } from '../context/AuthContext';
@@ -14,6 +15,28 @@ import { DashboardBackground } from '../components/dashboard/DashboardBackground
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export const rootNavigationRef = createNavigationContainerRef<RootStackParamList>();
+
+const linking = {
+  prefixes: ['tukua://', 'https://tukua.ai', 'https://www.tukua.ai'],
+  config: {
+    screens: {
+      ResetPassword: {
+        path: 'reset-password',
+        parse: {
+          token: (v: string) => v,
+          type: (v: string) => v,
+          expires_at: (v: string) => v,
+          email: (v: string) => v,
+        },
+      },
+      Login: 'sign-in',
+      Register: 'register',
+      Main: {
+        path: '',
+      },
+    },
+  },
+};
 
 /** Nested navigate into Dashboard stack from headers / push handlers. */
 export function navigateDashboard(
@@ -61,13 +84,15 @@ function RootNavigator() {
           <Stack.Screen name="Register" component={RegisterScreen} />
         </>
       )}
+      {/* Always reachable via App Links / tukua:// whether logged in or out */}
+      <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
     </Stack.Navigator>
   );
 }
 
 export function AppNavigator() {
   return (
-    <NavigationContainer ref={rootNavigationRef}>
+    <NavigationContainer ref={rootNavigationRef} linking={linking}>
       <MobileErrorBoundary>
         <RootNavigator />
       </MobileErrorBoundary>

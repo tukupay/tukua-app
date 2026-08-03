@@ -388,12 +388,16 @@ export async function isBiometricEnabled() {
   return (await SecureStore.getItemAsync(BIOMETRIC_KEY)) === '1';
 }
 
-export async function sendPasswordReset(email: string) {
-  const url = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/send-password-reset`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email }),
+/** Request Nest password reset (email and/or SMS) with App Links redirect. */
+export async function sendPasswordReset(email?: string, phone?: string) {
+  const { forgotPassword } = await import('./platformAuthApi');
+  const result = await forgotPassword({
+    email: email?.trim() || undefined,
+    phone: phone?.trim() || undefined,
+    redirect_to: 'https://tukua.ai/reset-password',
   });
-  if (!res.ok) throw new Error('Failed to send reset email');
+  if (!result.ok) {
+    throw new Error(result.message || 'Failed to send reset link');
+  }
+  return result;
 }

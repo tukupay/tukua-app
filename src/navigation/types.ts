@@ -5,6 +5,13 @@ export type RootStackParamList = {
   Login: undefined;
   Register: undefined;
   Main: undefined;
+  /** Always available (logged in or out) — opened via App Links / tukua:// */
+  ResetPassword: {
+    token?: string;
+    type?: string;
+    expires_at?: string;
+    email?: string;
+  } | undefined;
 };
 
 export type AboutStackParamList = {

@@ -18,12 +18,35 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { deskFetch } from '../lib/deskApi';
+import { getNestApiBaseUrl } from '../lib/localHost';
+import { resolveNestAccessTokenForWebView } from '../lib/platformNestAuth';
+import { humanizeError } from '../lib/humanizeError';
 import { Colors } from '../theme/yana';
 import { floatingHeaderInset } from '../constants/layout';
 import { log } from '../lib/logger';
 import type { CoursesStackParamList } from '../navigation/CoursesStack';
 import { GreenPattern } from '../components/dashboard/DashboardBackground';
+
+async function nestAuthGet<T>(path: string): Promise<T> {
+  const token = await resolveNestAccessTokenForWebView();
+  if (!token) throw new Error('Sign in again to load courses.');
+  const res = await fetch(`${getNestApiBaseUrl().replace(/\/$/, '')}${path}`, {
+    headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+  });
+  const json = await res.json().catch(() => null);
+  if (!res.ok) {
+    const raw =
+      (typeof json?.message === 'string' && json.message) ||
+      (typeof json?.error === 'string' && json.error) ||
+      `Request failed (${res.status})`;
+    throw new Error(humanizeError(raw));
+  }
+  const data =
+    json && typeof json === 'object' && 'data' in json
+      ? (json as { data: T }).data
+      : (json as T);
+  return data;
+}
 
 type Enrolled = {
   enrollment_id: string;
@@ -74,8 +97,8 @@ export function CoursesScreen() {
     setError(null);
     try {
       const [mine, page] = await Promise.all([
-        deskFetch<{ items: Enrolled[] }>('/platform/courses/mine?limit=40').catch(() => ({ items: [] })),
-        deskFetch<{ items: CatalogCourse[] }>('/platform/courses/catalog-page'),
+        nestAuthGet<{ items: Enrolled[] }>('/platform/courses/mine?limit=40'),
+        nestAuthGet<{ items: CatalogCourse[] }>('/platform/courses/catalog-page'),
       ]);
       setEnrolled(mine?.items || []);
       setCatalog(page?.items || []);

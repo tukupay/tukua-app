@@ -293,7 +293,7 @@ const styles = StyleSheet.create({
   panel: {
     width: '86%',
     maxWidth: 360,
-    backgroundColor: 'transparent',
+    backgroundColor: '#F4F7F5',
     borderTopRightRadius: 20,
     borderBottomRightRadius: 20,
     overflow: 'hidden',
