@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   Image,
   ImageBackground,
+  Keyboard,
   KeyboardAvoidingView,
   Linking,
   Platform,
@@ -154,6 +155,22 @@ export function RegisterScreen({ navigation }: Props) {
     organization_id: string;
     admission_number?: string;
   } | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  const [keyboardPad, setKeyboardPad] = useState(0);
+
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvt, (e) => {
+      setKeyboardPad(e.endCoordinates?.height || 280);
+      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
+    });
+    const hideSub = Keyboard.addListener(hideEvt, () => setKeyboardPad(0));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   const isOrg = accountType === 'organization';
   const isSchoolAccount = accountType === 'school';
@@ -533,16 +550,18 @@ export function RegisterScreen({ navigation }: Props) {
       <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
         <KeyboardAvoidingView
           style={styles.flex}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}>
           <ScrollView
+            ref={scrollRef}
             style={styles.scrollView}
             contentContainerStyle={{
               paddingHorizontal: Math.max(16, width * 0.04),
               paddingTop: 8,
-              paddingBottom: layout.bottomPad + 24,
+              paddingBottom: layout.bottomPad + 24 + keyboardPad,
             }}
             keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
             showsVerticalScrollIndicator={false}
             bounces
             overScrollMode="always"

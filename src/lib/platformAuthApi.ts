@@ -112,7 +112,14 @@ export async function platformLogin(identifier: string, password: string) {
   );
 }
 
+export async function mpesaStk(body: Record<string, unknown>) {
+  return nestPost<Record<string, unknown>>('/payments/mpesa/stk', body);
+}
+
 export async function mpesaGwInit(body: Record<string, unknown>) {
+  // Prefer Nest STK (Daraja in Nest / OPS callbacks). Fall back to gw-init only if STK path fails shape.
+  const stk = await mpesaStk(body);
+  if (stk.ok) return stk;
   return nestPost<Record<string, unknown>>('/payments/mpesa/gw-init', body);
 }
 

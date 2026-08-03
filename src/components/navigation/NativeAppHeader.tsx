@@ -20,6 +20,7 @@ import { biometricEnableMessage, enableBiometrics } from '../../lib/biometrics';
 import { hideSystemStatusBar } from '../ImmersiveSystemBars';
 import { ProfileAvatar } from './ProfileAvatar';
 import { TokenBalancePill } from './TokenBalancePill';
+import { NativeChatDrawer } from './NativeChatDrawer';
 import { Colors } from '../../theme/yana';
 import { FLOATING_HEADER_BODY as NATIVE_HEADER_BODY_HEIGHT } from '../../constants/layout';
 import { navigateDashboard } from '../../navigation/AppNavigator';
@@ -35,6 +36,7 @@ export function NativeAppHeader() {
   const { showDialog } = useDialog();
   const { navigate, sendChatCommand, jumpToTab } = useWebViewControl();
   const [open, setOpen] = useState(false);
+  const [chatsOpen, setChatsOpen] = useState(false);
   const savageOpacity = useRef(new Animated.Value(SAVAGE_OFF_OPACITY)).current;
 
   const displayName = profile?.fullName?.trim() || profile?.email?.split('@')[0] || 'Account';
@@ -239,6 +241,13 @@ export function NativeAppHeader() {
           style={[styles.fade, { height: insets.top + NATIVE_HEADER_BODY_HEIGHT + 28 }]}
         />
         <View style={[styles.bar, { paddingTop: insets.top + 4 }]}>
+          <TouchableOpacity
+            style={styles.chatsBtn}
+            onPress={() => setChatsOpen(true)}
+            accessibilityLabel="Open chats">
+            <Ionicons name="menu" size={20} color={Colors.white} />
+          </TouchableOpacity>
+
           <TokenBalancePill />
 
           <View style={styles.actions}>
@@ -313,6 +322,8 @@ export function NativeAppHeader() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      <NativeChatDrawer visible={chatsOpen} onClose={() => setChatsOpen(false)} />
     </>
   );
 }
@@ -341,6 +352,17 @@ const styles = StyleSheet.create({
     minHeight: NATIVE_HEADER_BODY_HEIGHT,
     backgroundColor: 'transparent',
     gap: 10,
+  },
+  chatsBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.28)',
+    backgroundColor: 'rgba(4,31,24,0.4)',
+    flexShrink: 0,
   },
   actions: {
     flexDirection: 'row',
