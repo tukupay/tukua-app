@@ -3,24 +3,56 @@
  * No Deno / Supabase Auth for these flows.
  */
 import { getNestApiBaseUrl } from './localHost';
+import { humanizeError } from './humanizeError';
+import { log } from './logger';
 
 function nestBase(): string {
   return getNestApiBaseUrl().replace(/\/$/, '');
 }
 
+function pickMessage(json: any, status: number): string | undefined {
+  if (!json || typeof json !== 'object') {
+    if (status === 401 || status === 403) return humanizeError('Authentication required');
+    if (status >= 500) return humanizeError('service unavailable');
+    return undefined;
+  }
+  const raw =
+    (typeof json.message === 'string' && json.message) ||
+    (typeof json.error === 'string' && json.error) ||
+    (typeof json.error?.message === 'string' && json.error.message) ||
+    (typeof json.error?.code === 'string' && json.error.code) ||
+    '';
+  return raw ? humanizeError(raw) : undefined;
+}
+
 async function nestPost<T>(path: string, body: unknown): Promise<{ ok: boolean; data?: T; message?: string; error?: string; status: number }> {
-  const res = await fetch(`${nestBase()}${path}`, {
-    method: 'POST',
-    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-    body: JSON.stringify(body ?? {}),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${nestBase()}${path}`, {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify(body ?? {}),
+    });
+  } catch (e) {
+    log.warn('NestAuth', `POST ${path} network`, String(e));
+    return {
+      ok: false,
+      message: humanizeError(e),
+      error: 'network_error',
+      status: 0,
+    };
+  }
   const json = await res.json().catch(() => null);
   const data =
     json && typeof json === 'object' && 'data' in json ? (json as { data: T }).data : (json as T);
+  const ok = res.ok && (json?.success !== false);
+  if (!ok) {
+    log.warn('NestAuth', `POST ${path} ${res.status}`, JSON.stringify(json).slice(0, 220));
+  }
   return {
-    ok: res.ok && (json?.success !== false),
+    ok,
     data,
-    message: json?.message,
+    message: pickMessage(json, res.status) || (ok ? json?.message : humanizeError('request failed')),
     error: typeof json?.error === 'string' ? json.error : json?.error?.code,
     status: res.status,
   };
@@ -120,10 +152,21 @@ export async function getPeaConfig(role?: string) {
 }
 
 export async function listRegistrationOrgTypes() {
-  const res = await fetch(`${nestBase()}/platform/registration/org-types`, {
-    method: 'GET',
-    headers: { Accept: 'application/json' },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${nestBase()}/platform/registration/org-types`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+  } catch (e) {
+    log.warn('NestAuth', 'org-types network', String(e));
+    return {
+      ok: false,
+      data: [] as Array<{ id: string; slug: string; label: string; description: string | null }>,
+      message: humanizeError(e),
+      status: 0,
+    };
+  }
   const json = await res.json().catch(() => null);
   const raw =
     json && typeof json === 'object' && 'data' in json
@@ -134,9 +177,90 @@ export async function listRegistrationOrgTypes() {
     : Array.isArray((raw as { items?: unknown[] })?.items)
       ? (raw as { items: unknown[] }).items
       : [];
+  if (!res.ok) {
+    log.warn('NestAuth', `org-types ${res.status}`, JSON.stringify(json).slice(0, 200));
+  }
   return {
     ok: res.ok && (json?.success !== false),
     data: items as Array<{ id: string; slug: string; label: string; description: string | null }>,
+    message: pickMessage(json, res.status),
+    status: res.status,
+  };
+}
+
+export type RegistrationSchoolHit = {
+  id: string;
+  name: string;
+  code?: string | null;
+  logo_url?: string | null;
+  county?: string | null;
+};
+
+export async function searchRegistrationSchools(q: string) {
+  const term = q.trim();
+  if (term.length < 2) {
+    return { ok: true, data: [] as RegistrationSchoolHit[], status: 200 };
+  }
+  let res: Response;
+  try {
+    res = await fetch(
+      `${nestBase()}/platform/registration/schools?q=${encodeURIComponent(term)}`,
+      { method: 'GET', headers: { Accept: 'application/json' } },
+    );
+  } catch (e) {
+    return {
+      ok: false,
+      data: [] as RegistrationSchoolHit[],
+      message: humanizeError(e),
+      status: 0,
+    };
+  }
+  const json = await res.json().catch(() => null);
+  const data =
+    json && typeof json === 'object' && 'data' in json
+      ? (json as { data: { schools?: RegistrationSchoolHit[] } }).data
+      : json;
+  const schools = Array.isArray((data as any)?.schools)
+    ? (data as { schools: RegistrationSchoolHit[] }).schools
+    : Array.isArray(data)
+      ? (data as RegistrationSchoolHit[])
+      : [];
+  return {
+    ok: res.ok && (json?.success !== false),
+    data: schools,
+    message: pickMessage(json, res.status),
+    status: res.status,
+  };
+}
+
+export async function joinSchoolAfterRegister(
+  accessToken: string,
+  body: {
+    organization_id: string;
+    role?: string;
+    notes?: string | null;
+    admission_number?: string | null;
+  },
+) {
+  let res: Response;
+  try {
+    res = await fetch(`${nestBase()}/platform/registration/school-join`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    return { ok: false, message: humanizeError(e), status: 0 };
+  }
+  const json = await res.json().catch(() => null);
+  return {
+    ok: res.ok && (json?.success !== false),
+    data: json?.data,
+    message: pickMessage(json, res.status),
     status: res.status,
   };
 }
