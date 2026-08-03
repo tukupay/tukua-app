@@ -55,7 +55,8 @@ export function CoursesStack() {
         component={CourseWebScreen}
         options={({ route }) => ({
           title: route.params?.title || 'Course',
-          headerShown: true,
+          // Floating NativeAppHeader already clears the top — no second stack header (was a big gap).
+          headerShown: false,
         })}
       />
     </Stack.Navigator>

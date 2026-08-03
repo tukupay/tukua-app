@@ -23,7 +23,7 @@ import { TokenBalancePill } from './TokenBalancePill';
 import { NativeChatDrawer } from './NativeChatDrawer';
 import { Colors } from '../../theme/yana';
 import { FLOATING_HEADER_BODY as NATIVE_HEADER_BODY_HEIGHT } from '../../constants/layout';
-import { navigateDashboard } from '../../navigation/AppNavigator';
+import { navigateDashboard, navigateProfile } from '../../navigation/AppNavigator';
 
 const SAVAGE_ON_OPACITY = 1;
 const SAVAGE_OFF_OPACITY = 0.22;
@@ -65,6 +65,14 @@ export function NativeAppHeader() {
     setOpen(false);
     fn();
   };
+
+  const openProfileScreen = useCallback(
+    (screen: 'ProfileHome' | 'Balances' | 'Preferences') => {
+      jumpToTab('Profile');
+      setTimeout(() => navigateProfile(screen), 0);
+    },
+    [jumpToTab],
+  );
 
   const handleSavageToggle = async () => {
     try {
@@ -175,19 +183,19 @@ export function NativeAppHeader() {
             id: 'profile',
             label: 'Profile',
             icon: 'person-outline' as const,
-            onPress: () => navigate('/profile', '/profile'),
+            onPress: () => openProfileScreen('ProfileHome'),
           },
           {
             id: 'balances',
             label: 'Balances & tokens',
             icon: 'wallet-outline' as const,
-            onPress: () => navigate('/profile/balances', '/profile'),
+            onPress: () => openProfileScreen('Balances'),
           },
           {
             id: 'settings',
             label: 'Settings',
             icon: 'settings-outline' as const,
-            onPress: () => navigate('/profile/preferences', '/profile'),
+            onPress: () => openProfileScreen('Preferences'),
           },
           {
             id: 'biometrics',
@@ -222,7 +230,7 @@ export function NativeAppHeader() {
         ],
       },
     ],
-    [handleEnableBiometrics, handleLogout, jumpToTab, navigate, sendChatCommand],
+    [handleEnableBiometrics, handleLogout, jumpToTab, navigate, openProfileScreen, sendChatCommand],
   );
 
   return (
@@ -275,6 +283,17 @@ export function NativeAppHeader() {
               onPress={handleLogout}
               accessibilityLabel="Sign out">
               <Ionicons name="log-out-outline" size={18} color={Colors.white} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.newChatFab}
+              onPress={() => {
+                jumpToTab('Chat');
+                sendChatCommand('new_chat');
+              }}
+              accessibilityLabel="New chat"
+              activeOpacity={0.85}>
+              <Ionicons name="add" size={18} color={Colors.white} />
             </TouchableOpacity>
           </View>
         </View>
@@ -371,6 +390,17 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'flex-end',
     minWidth: 0,
+  },
+  newChatFab: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.55)',
+    backgroundColor: 'rgba(21,128,61,0.72)',
+    marginLeft: 2,
   },
   savageBtn: {
     width: 30,

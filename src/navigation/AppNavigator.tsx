@@ -22,9 +22,17 @@ export function navigateDashboard(
 ) {
   if (!rootNavigationRef.isReady()) return;
   rootNavigationRef.navigate('Main', {
-    // @ts-expect-error nested tab → stack
     screen: 'Dashboard',
     params: { screen, params },
+  } as never);
+}
+
+/** Nested navigate into the native Profile stack from the floating app header. */
+export function navigateProfile(screen: string) {
+  if (!rootNavigationRef.isReady()) return;
+  rootNavigationRef.navigate('Main', {
+    screen: 'Profile',
+    params: { screen },
   } as never);
 }
 

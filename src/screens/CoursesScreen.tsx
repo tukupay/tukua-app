@@ -4,7 +4,6 @@
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   FlatList,
   Image,
   Pressable,
@@ -24,6 +23,7 @@ import { Colors } from '../theme/yana';
 import { floatingHeaderInset } from '../constants/layout';
 import { log } from '../lib/logger';
 import type { CoursesStackParamList } from '../navigation/CoursesStack';
+import { GreenPattern } from '../components/dashboard/DashboardBackground';
 
 type Enrolled = {
   enrollment_id: string;
@@ -67,6 +67,9 @@ export function CoursesScreen() {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<FilterKey>('all');
 
+  const [pageSize] = useState(20);
+  const [visibleCount, setVisibleCount] = useState(20);
+
   const load = useCallback(async () => {
     setError(null);
     try {
@@ -76,6 +79,7 @@ export function CoursesScreen() {
       ]);
       setEnrolled(mine?.items || []);
       setCatalog(page?.items || []);
+      setVisibleCount(20);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Could not load courses';
       setError(msg);
@@ -100,7 +104,7 @@ export function CoursesScreen() {
 
   const enrolledIds = useMemo(() => new Set(enrolled.map((e) => e.course_id)), [enrolled]);
 
-  const browse = useMemo(() => {
+  const browseAll = useMemo(() => {
     const q = query.trim().toLowerCase();
     return catalog
       .filter((c) => c.id && !enrolledIds.has(c.id))
@@ -114,20 +118,12 @@ export function CoursesScreen() {
         if (!q) return true;
         const hay = `${c.title || ''} ${c.short_description || ''} ${c.category || ''}`.toLowerCase();
         return hay.includes(q);
-      })
-      .slice(0, 60);
+      });
   }, [catalog, enrolledIds, filter, query]);
 
-  const headerPad = floatingHeaderInset(insets.top);
+  const browse = useMemo(() => browseAll.slice(0, visibleCount), [browseAll, visibleCount]);
 
-  if (loading) {
-    return (
-      <View style={[styles.root, styles.center]}>
-        <ActivityIndicator color={Colors.primary} size="large" />
-        <Text style={styles.muted}>Loading courses…</Text>
-      </View>
-    );
-  }
+  const headerPad = floatingHeaderInset(insets.top);
 
   return (
     <View style={styles.root}>
@@ -136,8 +132,9 @@ export function CoursesScreen() {
         locations={[0, 0.22, 0.48]}
         style={StyleSheet.absoluteFill}
       />
+      <GreenPattern style={{ height: headerPad + 120 }} darker />
       <FlatList
-        data={browse}
+        data={loading ? ([{ id: '__sk1' }, { id: '__sk2' }, { id: '__sk3' }] as CatalogCourse[]) : browse}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ paddingTop: headerPad, paddingBottom: 100, paddingHorizontal: 16 }}
         refreshControl={
@@ -150,6 +147,11 @@ export function CoursesScreen() {
             tintColor={Colors.primary}
           />
         }
+        onEndReached={() => {
+          if (loading) return;
+          if (visibleCount < browseAll.length) setVisibleCount((n) => n + pageSize);
+        }}
+        onEndReachedThreshold={0.35}
         ListHeaderComponent={
           <View>
             <Text style={styles.h1}>Courses and eLearning</Text>
@@ -161,7 +163,6 @@ export function CoursesScreen() {
               </View>
             ) : null}
 
-            {/* Only show enrolled when there are enrollments */}
             {enrolled.length > 0 ? (
               <View style={{ marginBottom: 8 }}>
                 <Text style={styles.section}>Continue learning</Text>
@@ -196,7 +197,10 @@ export function CoursesScreen() {
               <Ionicons name="search" size={18} color={Colors.mutedForeground} />
               <TextInput
                 value={query}
-                onChangeText={setQuery}
+                onChangeText={(t) => {
+                  setQuery(t);
+                  setVisibleCount(20);
+                }}
                 placeholder="Search courses"
                 placeholderTextColor={Colors.mutedForeground}
                 style={styles.searchInput}
@@ -212,7 +216,10 @@ export function CoursesScreen() {
                 return (
                   <Pressable
                     key={f.key}
-                    onPress={() => setFilter(f.key)}
+                    onPress={() => {
+                      setFilter(f.key);
+                      setVisibleCount(20);
+                    }}
                     style={[styles.chip, on && styles.chipOn]}
                   >
                     <Text style={[styles.chipText, on && styles.chipTextOn]}>{f.label}</Text>
@@ -224,35 +231,56 @@ export function CoursesScreen() {
             <Text style={[styles.section, { marginTop: 12 }]}>Browse</Text>
           </View>
         }
-        renderItem={({ item }) => (
-          <Pressable style={styles.card} onPress={() => openCourse(item.id, item.title)}>
-            {item.thumbnail_url ? (
-              <Image source={{ uri: item.thumbnail_url }} style={styles.thumb} />
-            ) : (
-              <View style={[styles.thumb, styles.thumbPh]}>
-                <Ionicons name="book-outline" size={22} color={Colors.primary} />
+        renderItem={({ item }) =>
+          loading || item.id.startsWith('__sk') ? (
+            <View style={[styles.card, styles.skeletonCard]}>
+              <View style={[styles.thumb, styles.thumbPh]} />
+              <View style={styles.cardBody}>
+                <View style={styles.skLine} />
+                <View style={[styles.skLine, { width: '55%', marginTop: 8 }]} />
               </View>
-            )}
-            <View style={styles.cardBody}>
-              <Text style={styles.cardTitle} numberOfLines={2}>
-                {item.title || 'Course'}
-              </Text>
-              <Text style={styles.meta} numberOfLines={2}>
-                {item.is_free || Number(item.price || 0) <= 0
-                  ? 'Free'
-                  : item.price != null
-                    ? `KES ${item.price}`
-                    : item.short_description || 'Open'}
-                {item.is_certified ? ' · Certified' : ''}
-              </Text>
             </View>
-            <Ionicons name="chevron-forward" size={18} color={Colors.mutedForeground} />
-          </Pressable>
-        )}
+          ) : (
+            <Pressable style={styles.card} onPress={() => openCourse(item.id, item.title)}>
+              {item.thumbnail_url ? (
+                <Image source={{ uri: item.thumbnail_url }} style={styles.thumb} />
+              ) : (
+                <View style={[styles.thumb, styles.thumbPh]}>
+                  <Ionicons name="book-outline" size={22} color={Colors.primary} />
+                </View>
+              )}
+              <View style={styles.cardBody}>
+                <Text style={styles.cardTitle} numberOfLines={2}>
+                  {item.title || 'Course'}
+                </Text>
+                <Text style={styles.meta} numberOfLines={2}>
+                  {item.is_free || Number(item.price || 0) <= 0
+                    ? 'Free'
+                    : item.price != null
+                      ? `KES ${item.price}`
+                      : item.short_description || 'Open'}
+                  {item.is_certified ? ' · Certified' : ''}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={Colors.mutedForeground} />
+            </Pressable>
+          )
+        }
         ListEmptyComponent={
-          !error ? (
+          !error && !loading ? (
             <Text style={styles.empty}>
               {query || filter !== 'all' ? 'No courses match your filters.' : 'No catalog courses right now.'}
+            </Text>
+          ) : null
+        }
+        ListFooterComponent={
+          loading ? (
+            <Text style={[styles.muted, { textAlign: 'center', paddingVertical: 12 }]}>
+              Loading courses…
+            </Text>
+          ) : !loading && visibleCount < browseAll.length ? (
+            <Text style={[styles.muted, { textAlign: 'center', paddingVertical: 8 }]}>
+              Scroll for more…
             </Text>
           ) : null
         }
@@ -320,4 +348,11 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   errText: { flex: 1, color: '#92400E', fontSize: 13 },
+  skeletonCard: { opacity: 0.7 },
+  skLine: {
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#E2EBE6',
+    width: '80%',
+  },
 });

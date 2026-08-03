@@ -1,10 +1,33 @@
 import { supabase } from './supabase';
 import { log } from './logger';
+import { getNestApiBaseUrl } from './localHost';
+import { resolveNestAccessTokenForWebView } from './platformNestAuth';
 
 type UserPreferences = Record<string, unknown> & {
   sarcasm_mode?: boolean;
   preferred_model?: string;
 };
+
+async function nestSavageToggle(): Promise<boolean | null> {
+  const token = await resolveNestAccessTokenForWebView();
+  if (!token) return null;
+  const res = await fetch(`${getNestApiBaseUrl().replace(/\/$/, '')}/platform/preferences/savage/toggle`, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: '{}',
+  });
+  const json = await res.json().catch(() => null);
+  if (!res.ok) {
+    log.warn('Preferences', 'nest savage failed', res.status, json?.message);
+    return null;
+  }
+  const data = json?.data ?? json;
+  return Boolean(data?.sarcasm_mode ?? data?.enabled);
+}
 
 async function getCurrentPreferences(userId: string): Promise<UserPreferences> {
   const { data, error } = await supabase
@@ -20,8 +43,18 @@ async function getCurrentPreferences(userId: string): Promise<UserPreferences> {
   return (data?.user_preferences as UserPreferences) || {};
 }
 
-/** Toggle savage/sarcasm mode — same API as yana ChatNavbar (`users.user_preferences`). */
+/** Toggle savage/sarcasm — Nest first, Supabase fallback. */
 export async function toggleSavageMode(): Promise<boolean | null> {
+  try {
+    const viaNest = await nestSavageToggle();
+    if (viaNest !== null) {
+      log.info('Preferences', 'savage mode (nest)', { enabled: viaNest });
+      return viaNest;
+    }
+  } catch (e) {
+    log.warn('Preferences', 'nest savage error', String(e));
+  }
+
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -45,6 +78,21 @@ export async function toggleSavageMode(): Promise<boolean | null> {
 }
 
 export async function getSavageModeEnabled(): Promise<boolean> {
+  try {
+    const token = await resolveNestAccessTokenForWebView();
+    if (token) {
+      const res = await fetch(`${getNestApiBaseUrl().replace(/\/$/, '')}/platform/preferences`, {
+        headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json().catch(() => null);
+      if (res.ok) {
+        const data = json?.data ?? json;
+        return Boolean(data?.sarcasm_mode);
+      }
+    }
+  } catch {
+    /* fall through */
+  }
   const {
     data: { user },
   } = await supabase.auth.getUser();

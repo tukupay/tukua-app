@@ -1,3 +1,6 @@
+import type { NavigatorScreenParams } from '@react-navigation/native';
+import type { ProfileStackParamList } from './ProfileStack';
+
 export type RootStackParamList = {
   Login: undefined;
   Register: undefined;
@@ -52,5 +55,5 @@ export type MainTabParamList = {
   Chat: undefined;
   Courses: undefined;
   Dashboard: undefined;
-  Profile: undefined;
+  Profile: NavigatorScreenParams<ProfileStackParamList> | undefined;
 };

@@ -12,6 +12,7 @@ import { hideSystemStatusBar } from '../components/ImmersiveSystemBars';
 import { WebViewTabBridge } from '../components/WebViewTabBridge';
 import { DashboardStack } from './DashboardStack';
 import { CoursesStack } from './CoursesStack';
+import { ProfileStack } from './ProfileStack';
 import { TAB_BAR_BODY_HEIGHT } from '../constants/layout';
 import { TAB_PATHS, WebViewControlProvider, useWebViewControl } from '../context/WebViewControlContext';
 import { useDialog } from '../context/DialogContext';
@@ -80,8 +81,6 @@ function BiometricGate({ children }: { children: React.ReactNode }) {
 function MainTabNavigator() {
   const insets = useSafeAreaInsets();
   const { setActiveTabPath, notifyTabFocused } = useWebViewControl();
-  const { profile } = useAuth();
-  const profileWebPath = profile?.activationStatus === 'pending_payment' ? '/activate' : '/profile';
   const tabBarHeight = TAB_BAR_BODY_HEIGHT + insets.bottom;
 
   useEffect(() => {
@@ -153,9 +152,7 @@ function MainTabNavigator() {
       </Tab.Screen>
       <Tab.Screen name="Courses" options={{ title: 'Courses' }} component={CoursesStack} />
       <Tab.Screen name="Dashboard" options={{ title: 'Dashboard' }} component={DashboardStack} />
-      <Tab.Screen name="Profile" options={{ title: 'Profile' }}>
-        {() => <WebAppScreen path={profileWebPath} label="Profile" key={profileWebPath} />}
-      </Tab.Screen>
+      <Tab.Screen name="Profile" options={{ title: 'Profile' }} component={ProfileStack} />
     </Tab.Navigator>
   );
 }
