@@ -7,6 +7,7 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 import { WebAppScreen } from '../screens/WebAppScreen';
 import { BiometricSetupModal } from '../components/auth/BiometricSetupModal';
 import { NativeAppHeader } from '../components/navigation/NativeAppHeader';
+import { ChatTabChrome } from '../components/navigation/ChatTabChrome';
 import { AiTabIcon } from '../components/navigation/AiTabIcon';
 import { hideSystemStatusBar } from '../components/ImmersiveSystemBars';
 import { WebViewTabBridge } from '../components/WebViewTabBridge';
@@ -169,6 +170,7 @@ export function MainTabs() {
           <View style={styles.shell}>
             <MainTabNavigator />
             <NativeAppHeader />
+            <ChatTabChrome />
             <PushNotificationBootstrap />
             {gating ? (
               <ContextPickLoader />

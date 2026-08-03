@@ -9,6 +9,7 @@ import { MainTabs } from './MainTabs';
 import { RootStackParamList } from './types';
 import { useAuth } from '../context/AuthContext';
 import { useDeskAuth } from '../context/DeskAuthContext';
+import { useAppTheme } from '../context/AppThemeContext';
 import { MobileErrorBoundary } from '../components/MobileErrorBoundary';
 import { DashboardBackground } from '../components/dashboard/DashboardBackground';
 
@@ -91,8 +92,9 @@ function RootNavigator() {
 }
 
 export function AppNavigator() {
+  const { navigationTheme } = useAppTheme();
   return (
-    <NavigationContainer ref={rootNavigationRef} linking={linking}>
+    <NavigationContainer ref={rootNavigationRef} linking={linking} theme={navigationTheme}>
       <MobileErrorBoundary>
         <RootNavigator />
       </MobileErrorBoundary>

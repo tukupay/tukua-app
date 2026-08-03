@@ -44,6 +44,7 @@ import { AppNavigator } from './src/navigation/AppNavigator';
 import { AuthProvider } from './src/context/AuthContext';
 import { DeskAuthProvider } from './src/context/DeskAuthContext';
 import { DialogProvider } from './src/context/DialogContext';
+import { AppThemeProvider } from './src/context/AppThemeContext';
 import { SplashLoadingScreen } from './src/components/SplashLoadingScreen';
 import { configureWebViewAudioSession } from './src/lib/webViewMedia';
 
@@ -89,14 +90,16 @@ export default function App() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <DialogProvider>
-        <AuthProvider>
-          <DeskAuthProvider>
-            <ImmersiveSystemBars />
-            <AppNavigator />
-          </DeskAuthProvider>
-        </AuthProvider>
-      </DialogProvider>
+      <AppThemeProvider>
+        <DialogProvider>
+          <AuthProvider>
+            <DeskAuthProvider>
+              <ImmersiveSystemBars />
+              <AppNavigator />
+            </DeskAuthProvider>
+          </AuthProvider>
+        </DialogProvider>
+      </AppThemeProvider>
     </GestureHandlerRootView>
   );
 }

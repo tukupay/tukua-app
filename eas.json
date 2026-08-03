@@ -20,7 +20,9 @@
         "EXPO_PUBLIC_TUKUPAY_API": "https://test.api.tuku.money",
         "EXPO_PUBLIC_WEB_URL": "https://tukua.ai",
         "EXPO_PUBLIC_TUKUA_WEB_URL": "https://tukua.ai",
-        "EXPO_PUBLIC_DESK_API_URL": "https://tukua.up.railway.app/api",
+        "EXPO_PUBLIC_TUKUA_ENV": "staging",
+        "EXPO_PUBLIC_DESK_API_URL": "https://tukua-api-staging-production.up.railway.app/api",
+        "EXPO_PUBLIC_NEST_API_URL": "https://tukua-api-staging-production.up.railway.app/api",
         "EXPO_PUBLIC_DESK_WEB_URL": "https://tukua.ai",
         "EAS_BUILD_NO_EXPO_GO_WARNING": "true"
       },
@@ -37,7 +39,9 @@
         "EXPO_PUBLIC_TUKUPAY_API": "https://test.api.tuku.money",
         "EXPO_PUBLIC_WEB_URL": "https://tukua.ai",
         "EXPO_PUBLIC_TUKUA_WEB_URL": "https://tukua.ai",
-        "EXPO_PUBLIC_DESK_API_URL": "https://tukua.up.railway.app/api",
+        "EXPO_PUBLIC_TUKUA_ENV": "staging",
+        "EXPO_PUBLIC_DESK_API_URL": "https://tukua-api-staging-production.up.railway.app/api",
+        "EXPO_PUBLIC_NEST_API_URL": "https://tukua-api-staging-production.up.railway.app/api",
         "EXPO_PUBLIC_DESK_WEB_URL": "https://tukua.ai",
         "EAS_BUILD_NO_EXPO_GO_WARNING": "true"
       },

@@ -45,7 +45,17 @@ import {
   type PortfolioSettings,
 } from '../../lib/profileApi';
 import type { ProfileStackParamList } from '../../navigation/ProfileStack';
+import { useAppTheme } from '../../context/AppThemeContext';
 import { Colors } from '../../theme/yana';
+import {
+  CHAT_BG_PATTERN_IDS,
+  CHAT_BG_PATTERN_LABELS,
+  SCHOOL_THEME_CONFIGS,
+  SCHOOL_THEME_IDS,
+  SCHOOL_THEME_LABELS,
+  type ChatBgPatternId,
+  type SchoolThemeId,
+} from '../../theme/schoolThemes';
 
 type HomeProps = NativeStackScreenProps<ProfileStackParamList, 'ProfileHome'>;
 type EditProps = NativeStackScreenProps<ProfileStackParamList, 'ProfileEdit'>;
@@ -61,6 +71,7 @@ const HOME_LINKS: Array<{
   { screen: 'Portfolio', title: 'Portfolio', subtitle: 'Public page and visibility', icon: 'briefcase-outline' },
   { screen: 'Memory', title: 'Memory', subtitle: 'What Tukua remembers', icon: 'sparkles-outline' },
   { screen: 'Preferences', title: 'Preferences', subtitle: 'AI model and response style', icon: 'options-outline' },
+  { screen: 'ProfileThemes', title: 'Themes', subtitle: 'App colors and chat background', icon: 'color-palette-outline' },
   { screen: 'Balances', title: 'Balances', subtitle: 'Tokens and recent activity', icon: 'wallet-outline' },
 ];
 
@@ -684,7 +695,7 @@ const MODELS = [
   { id: 'openai', name: 'Tukua Balanced', note: 'Balanced performance' },
 ];
 
-export function PreferencesScreen() {
+export function PreferencesScreen({ navigation }: NativeStackScreenProps<ProfileStackParamList, 'Preferences'>) {
   const { showDialog } = useDialog();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -745,7 +756,74 @@ export function PreferencesScreen() {
           <Switch value={sarcasm} onValueChange={setSarcasm} trackColor={{ true: Colors.orange }} />
         </View>
       </Card>
+      <Card title="Appearance" subtitle="School themes and chat background pattern.">
+        <Pressable
+          style={styles.modelRow}
+          onPress={() => navigation.navigate('ProfileThemes')}
+        >
+          <Ionicons name="color-palette-outline" size={20} color={Colors.primary} />
+          <View style={styles.rowBody}>
+            <Text style={styles.rowTitle}>Themes</Text>
+            <Text style={styles.rowMeta}>Open theme picker</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={Colors.mutedForeground} />
+        </Pressable>
+      </Card>
       <PrimaryButton label="Save preferences" onPress={() => void save()} busy={saving} />
+    </ScreenShell>
+  );
+}
+
+export function ThemesScreen() {
+  const { themeId, setThemeId, chatBgPattern, setChatBgPattern, palette } = useAppTheme();
+
+  return (
+    <ScreenShell>
+      <Card title="School theme" subtitle="Colors apply to native chrome and Navigation where possible.">
+        <View style={styles.themeGrid}>
+          {SCHOOL_THEME_IDS.map((id: SchoolThemeId) => {
+            const swatch = SCHOOL_THEME_CONFIGS[id];
+            const selected = themeId === id;
+            return (
+              <Pressable
+                key={id}
+                onPress={() => setThemeId(id)}
+                style={[styles.themeCard, selected && styles.themeCardSelected]}
+              >
+                <View style={styles.themeSwatches}>
+                  <View style={[styles.themeDot, { backgroundColor: swatch.primary }]} />
+                  <View style={[styles.themeDot, { backgroundColor: swatch.secondary }]} />
+                  <View style={[styles.themeDot, { backgroundColor: swatch.tertiary }]} />
+                </View>
+                <Text style={styles.themeLabel} numberOfLines={2}>
+                  {SCHOOL_THEME_LABELS[id]}
+                </Text>
+                {selected ? (
+                  <Ionicons name="checkmark-circle" size={18} color={palette.primary} style={styles.themeCheck} />
+                ) : null}
+              </Pressable>
+            );
+          })}
+        </View>
+      </Card>
+      <Card title="Chat background" subtitle="Stored as tukua_chat_bg_pattern and injected into the chat WebView.">
+        <View style={styles.chips}>
+          {CHAT_BG_PATTERN_IDS.map((id: ChatBgPatternId) => {
+            const on = chatBgPattern === id;
+            return (
+              <Pressable
+                key={id}
+                onPress={() => setChatBgPattern(id)}
+                style={[styles.chip, on && styles.chipActive]}
+              >
+                <Text style={[styles.chipText, on && styles.chipTextActive]}>
+                  {CHAT_BG_PATTERN_LABELS[id]}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </Card>
     </ScreenShell>
   );
 }
@@ -876,4 +954,19 @@ const styles = StyleSheet.create({
   transactionAmount: { fontSize: 15, fontWeight: '700' },
   creditText: { color: Colors.primary },
   debitText: { color: Colors.orange },
+  themeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 4 },
+  themeCard: {
+    width: '47%',
+    minHeight: 88,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.background,
+    padding: 12,
+  },
+  themeCardSelected: { borderColor: Colors.primary, borderWidth: 2, backgroundColor: Colors.primaryLight },
+  themeSwatches: { flexDirection: 'row', gap: 6, marginBottom: 8 },
+  themeDot: { width: 18, height: 18, borderRadius: 9 },
+  themeLabel: { fontSize: 12, fontWeight: '600', color: Colors.foreground, fontFamily: 'Inter_600SemiBold' },
+  themeCheck: { position: 'absolute', top: 8, right: 8 },
 });

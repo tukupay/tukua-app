@@ -13,6 +13,7 @@ import {
   buildSessionResyncScript,
   buildSpaNavigateScript,
   buildSupabaseRefreshAndNavigateScript,
+  buildThemeChromeInjectScript,
   applyWebSessionTokens,
   getActiveSessionScript,
   isMainFrameWebViewRequest,
@@ -23,12 +24,14 @@ import { useRegisterTabJumper } from '../hooks/useRegisterTabJumper';
 import { historyKeyFromUrl, TabHistoryStack } from '../lib/webviewHistory';
 import { isAppWebHost } from '../lib/localHost';
 import { useAuth } from '../context/AuthContext';
+import { useAppTheme } from '../context/AppThemeContext';
 import { useWebViewControl } from '../context/WebViewControlContext';
 import { log } from '../lib/logger';
 import { getWebViewMediaProps, WEBVIEW_MEDIA_INJECT_JS } from '../lib/webViewMedia';
 import { resolveNestAccessTokenForWebView } from '../lib/platformNestAuth';
 import { ensureWebViewUploadPermissions, getWebViewUploadProps } from '../lib/webViewUploads';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { hslToCssVar, SCHOOL_THEME_HSL } from '../theme/schoolThemes';
 
 const TAB_FOCUS_AUTH_CHECK_MS = 60_000;
 let lastTabFocusAuthCheckAt = 0;
@@ -78,6 +81,7 @@ export function WebAppScreen({ path, label }: Props) {
   const { register, registerTabFocusHandler, consumePendingRoute, navigate: navigateWeb } =
     useWebViewControl();
   const { session, ensureFreshSession, logout } = useAuth();
+  const { themeId, chatBgPattern } = useAppTheme();
 
   useEffect(() => {
     let cancelled = false;
@@ -289,6 +293,23 @@ export function WebAppScreen({ path, label }: Props) {
     if (!session || !isFocused || !bootstrappedRef.current || !webRef.current) return;
     webRef.current.injectJavaScript(buildSessionResyncScript(session, nestTokRef.current));
   }, [session?.access_token, isFocused, session]);
+
+  useEffect(() => {
+    if (!webRef.current || !isFocused) return;
+    const hsl = SCHOOL_THEME_HSL[themeId];
+    const vars = hsl
+      ? {
+          primary: hslToCssVar(hsl.primary),
+          secondary: hslToCssVar(hsl.secondary),
+          tertiary: hslToCssVar(hsl.tertiary),
+          muted: hslToCssVar(hsl.muted),
+          primaryForeground: hslToCssVar(hsl.primaryForeground),
+          secondaryForeground: hslToCssVar(hsl.secondaryForeground),
+          tertiaryForeground: hslToCssVar(hsl.tertiaryForeground),
+        }
+      : undefined;
+    webRef.current.injectJavaScript(buildThemeChromeInjectScript(themeId, chatBgPattern, vars));
+  }, [themeId, chatBgPattern, isFocused, path]);
 
   useEffect(() => {
     if (!pageLoading || !isFocused) return;

@@ -1,6 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
-  Animated,
   Modal,
   Pressable,
   ScrollView,
@@ -15,7 +14,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { useDialog } from '../../context/DialogContext';
 import { useWebViewControl } from '../../context/WebViewControlContext';
-import { toggleSavageMode } from '../../lib/userPreferences';
 import { biometricEnableMessage, enableBiometrics } from '../../lib/biometrics';
 import { hideSystemStatusBar } from '../ImmersiveSystemBars';
 import { ProfileAvatar } from './ProfileAvatar';
@@ -25,19 +23,15 @@ import { Colors } from '../../theme/yana';
 import { FLOATING_HEADER_BODY as NATIVE_HEADER_BODY_HEIGHT } from '../../constants/layout';
 import { navigateDashboard, navigateProfile } from '../../navigation/AppNavigator';
 
-const SAVAGE_ON_OPACITY = 1;
-const SAVAGE_OFF_OPACITY = 0.22;
-
 export { NATIVE_HEADER_BODY_HEIGHT };
 
 export function NativeAppHeader() {
   const insets = useSafeAreaInsets();
-  const { profile, logout, session, savageMode, setSavageMode } = useAuth();
+  const { profile, logout, session } = useAuth();
   const { showDialog } = useDialog();
   const { navigate, sendChatCommand, jumpToTab } = useWebViewControl();
   const [open, setOpen] = useState(false);
   const [chatsOpen, setChatsOpen] = useState(false);
-  const savageOpacity = useRef(new Animated.Value(SAVAGE_OFF_OPACITY)).current;
 
   const displayName = profile?.fullName?.trim() || profile?.email?.split('@')[0] || 'Account';
   const avatarUrl = useMemo(() => {
@@ -53,62 +47,18 @@ export function NativeAppHeader() {
     return null;
   }, [profile?.avatarUrl, session?.user?.user_metadata]);
 
-  useEffect(() => {
-    if (!session?.user) {
-      savageOpacity.setValue(SAVAGE_OFF_OPACITY);
-      return;
-    }
-    savageOpacity.setValue(savageMode ? SAVAGE_ON_OPACITY : SAVAGE_OFF_OPACITY);
-  }, [session?.user?.id, savageMode, savageOpacity]);
-
   const closeAnd = (fn: () => void) => {
     setOpen(false);
     fn();
   };
 
   const openProfileScreen = useCallback(
-    (screen: 'ProfileHome' | 'Balances' | 'Preferences') => {
+    (screen: 'ProfileHome' | 'Balances' | 'Preferences' | 'ProfileThemes') => {
       jumpToTab('Profile');
       setTimeout(() => navigateProfile(screen), 0);
     },
     [jumpToTab],
   );
-
-  const handleSavageToggle = async () => {
-    try {
-      const enabled = await toggleSavageMode();
-      if (enabled === null) {
-        showDialog({
-          title: 'Sign in required',
-          message: 'Sign in to toggle savage mode.',
-          variant: 'warning',
-          icon: 'flame-outline',
-        });
-        return;
-      }
-      setSavageMode(enabled);
-      Animated.timing(savageOpacity, {
-        toValue: enabled ? SAVAGE_ON_OPACITY : SAVAGE_OFF_OPACITY,
-        duration: 220,
-        useNativeDriver: true,
-      }).start();
-      showDialog({
-        title: enabled ? 'Savage mode ON 😏' : 'Savage mode off',
-        message: enabled
-          ? 'Tukua will respond with extra wit. Enjoy responsibly.'
-          : 'Back to the regular Tukua tone.',
-        variant: 'success',
-        icon: 'flame-outline',
-      });
-    } catch {
-      showDialog({
-        title: 'Could not update',
-        message: 'Savage mode failed to save. Try again.',
-        variant: 'danger',
-        icon: 'flame-outline',
-      });
-    }
-  };
 
   const handleEnableBiometrics = useCallback(() => {
     const email = session?.user?.email;
@@ -260,14 +210,6 @@ export function NativeAppHeader() {
 
           <View style={styles.actions}>
             <TouchableOpacity
-              style={[styles.savageBtn, savageMode && styles.savageBtnActive]}
-              onPress={() => void handleSavageToggle()}
-              accessibilityLabel={savageMode ? 'Savage mode on' : 'Savage mode off'}
-              accessibilityRole="button">
-              <Animated.Text style={[styles.savageEmoji, { opacity: savageOpacity }]}>😏</Animated.Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
               style={styles.menuTrigger}
               onPress={() => setOpen(true)}
               accessibilityLabel="Open menu">
@@ -278,25 +220,12 @@ export function NativeAppHeader() {
               <Ionicons name="chevron-down" size={16} color={Colors.white} />
             </TouchableOpacity>
 
-            <View style={styles.rightCol}>
-              <TouchableOpacity
-                style={styles.signOutBtn}
-                onPress={handleLogout}
-                accessibilityLabel="Sign out">
-                <Ionicons name="log-out-outline" size={18} color={Colors.white} />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.newChatFab}
-                onPress={() => {
-                  jumpToTab('Chat');
-                  sendChatCommand('new_chat');
-                }}
-                accessibilityLabel="New chat"
-                activeOpacity={0.85}>
-                <Ionicons name="add" size={18} color={Colors.white} />
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity
+              style={styles.signOutBtn}
+              onPress={handleLogout}
+              accessibilityLabel="Sign out">
+              <Ionicons name="log-out-outline" size={18} color={Colors.white} />
+            </TouchableOpacity>
           </View>
         </View>
       </View>
@@ -392,41 +321,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'flex-end',
     minWidth: 0,
-  },
-  rightCol: {
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: 4,
-    flexShrink: 0,
-    marginLeft: 2,
-  },
-  newChatFab: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.45)',
-    backgroundColor: 'transparent',
-  },
-  savageBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.35)',
-    backgroundColor: 'rgba(4,31,24,0.35)',
-  },
-  savageBtnActive: {
-    borderColor: 'rgba(244,140,6,0.7)',
-    backgroundColor: 'rgba(232,93,4,0.4)',
-  },
-  savageEmoji: {
-    fontSize: 15,
-    lineHeight: 17,
   },
   menuTrigger: {
     flexShrink: 1,

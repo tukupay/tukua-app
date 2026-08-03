@@ -633,6 +633,44 @@ export function buildWebViewSessionScript(
   return buildWebViewBootstrapScript(session, targetPath, nestAccessToken);
 }
 
+/** Push theme + chat background prefs into the SPA (CSS vars + localStorage). */
+export function buildThemeChromeInjectScript(
+  themeId: string,
+  chatBgPattern: string,
+  hslVars?: Partial<Record<string, string>>,
+) {
+  const primary = hslVars?.primary ?? '';
+  const secondary = hslVars?.secondary ?? '';
+  const tertiary = hslVars?.tertiary ?? '';
+  const muted = hslVars?.muted ?? '';
+  const primaryFg = hslVars?.primaryForeground ?? '';
+  const secondaryFg = hslVars?.secondaryForeground ?? '';
+  const tertiaryFg = hslVars?.tertiaryForeground ?? '';
+  return `
+    (function() {
+      try {
+        localStorage.setItem('tukua_app_theme', ${JSON.stringify(themeId)});
+        localStorage.setItem('tukua_chat_bg_pattern', ${JSON.stringify(chatBgPattern)});
+        document.documentElement.dataset.tukuaTheme = ${JSON.stringify(themeId)};
+        document.documentElement.dataset.tukuaChatBg = ${JSON.stringify(chatBgPattern)};
+        var root = document.documentElement;
+        ${primary ? `root.style.setProperty('--primary', ${JSON.stringify(primary)});` : ''}
+        ${primaryFg ? `root.style.setProperty('--primary-foreground', ${JSON.stringify(primaryFg)});` : ''}
+        ${secondary ? `root.style.setProperty('--secondary', ${JSON.stringify(secondary)});` : ''}
+        ${secondaryFg ? `root.style.setProperty('--secondary-foreground', ${JSON.stringify(secondaryFg)});` : ''}
+        ${tertiary ? `root.style.setProperty('--tertiary', ${JSON.stringify(tertiary)});` : ''}
+        ${tertiaryFg ? `root.style.setProperty('--tertiary-foreground', ${JSON.stringify(tertiaryFg)});` : ''}
+        ${muted ? `root.style.setProperty('--muted', ${JSON.stringify(muted)});` : ''}
+        ${primary ? `root.style.setProperty('--chat-bubble-user', ${JSON.stringify(primary)});` : ''}
+        window.dispatchEvent(new CustomEvent('TUKUA_APP_THEME', {
+          detail: { theme: ${JSON.stringify(themeId)}, chatBg: ${JSON.stringify(chatBgPattern)} }
+        }));
+      } catch (e) {}
+      true;
+    })();
+  `;
+}
+
 /** Push the latest native session into an already-loaded WebView (no navigation). */
 export function buildSessionResyncScript(session: Session, nestAccessToken?: string | null) {
   return `${buildPreloadSessionScript(session, nestAccessToken)}\ntrue;`;

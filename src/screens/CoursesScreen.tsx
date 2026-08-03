@@ -53,9 +53,13 @@ type Enrolled = {
   course_id: string;
   title: string;
   thumbnail_url?: string | null;
+  short_description?: string | null;
   progress_percent?: number;
   status?: string;
   payment_status?: string;
+  organization_name?: string | null;
+  school_name?: string | null;
+  org_name?: string | null;
 };
 
 type CatalogCourse = {
@@ -63,11 +67,20 @@ type CatalogCourse = {
   title?: string;
   thumbnail_url?: string | null;
   short_description?: string | null;
+  description?: string | null;
   is_free?: boolean;
   price?: number | null;
+  list_price?: number | null;
+  original_price?: number | null;
+  discount_percent?: number | null;
+  discount_percentage?: number | null;
   category?: string | null;
   is_featured?: boolean;
   is_certified?: boolean;
+  organization_name?: string | null;
+  school_name?: string | null;
+  org_name?: string | null;
+  certifying_agency_name?: string | null;
 };
 
 type FilterKey = 'all' | 'featured' | 'free' | 'certified';
@@ -78,6 +91,57 @@ const FILTERS: { key: FilterKey; label: string }[] = [
   { key: 'free', label: 'Free' },
   { key: 'certified', label: 'Certified' },
 ];
+
+function offeringLabel(c: {
+  organization_name?: string | null;
+  school_name?: string | null;
+  org_name?: string | null;
+  certifying_agency_name?: string | null;
+}): string | null {
+  const label =
+    c.organization_name || c.school_name || c.org_name || c.certifying_agency_name || null;
+  return label ? String(label).trim() || null : null;
+}
+
+function formatPrice(c: CatalogCourse): {
+  label: string;
+  discount?: string | null;
+  strike?: string | null;
+} {
+  const free = Boolean(c.is_free) || Number(c.price || 0) <= 0;
+  if (free) return { label: 'Free' };
+
+  const price = Number(c.price || 0);
+  const list =
+    c.list_price != null
+      ? Number(c.list_price)
+      : c.original_price != null
+        ? Number(c.original_price)
+        : null;
+  let discountPct =
+    c.discount_percent != null
+      ? Number(c.discount_percent)
+      : c.discount_percentage != null
+        ? Number(c.discount_percentage)
+        : null;
+  if ((discountPct == null || !Number.isFinite(discountPct)) && list != null && list > price && price > 0) {
+    discountPct = Math.round(((list - price) / list) * 100);
+  }
+  const strike = list != null && list > price ? `KES ${list}` : null;
+  const discount =
+    discountPct != null && discountPct > 0 ? `${Math.round(discountPct)}% off` : null;
+  return { label: `KES ${price}`, discount, strike };
+}
+
+function CourseMedia({ uri, large }: { uri?: string | null; large?: boolean }) {
+  const style = large ? styles.thumbLarge : styles.thumb;
+  if (uri) return <Image source={{ uri }} style={style} />;
+  return (
+    <View style={[style, styles.thumbPh]}>
+      <Ionicons name="book-outline" size={large ? 36 : 28} color={Colors.primary} />
+    </View>
+  );
+}
 
 export function CoursesScreen() {
   const insets = useSafeAreaInsets();
@@ -139,7 +203,8 @@ export function CoursesScreen() {
       })
       .filter((c) => {
         if (!q) return true;
-        const hay = `${c.title || ''} ${c.short_description || ''} ${c.category || ''}`.toLowerCase();
+        const school = offeringLabel(c) || '';
+        const hay = `${c.title || ''} ${c.short_description || ''} ${c.category || ''} ${school}`.toLowerCase();
         return hay.includes(q);
       });
   }, [catalog, enrolledIds, filter, query]);
@@ -189,30 +254,33 @@ export function CoursesScreen() {
             {enrolled.length > 0 ? (
               <View style={{ marginBottom: 8 }}>
                 <Text style={styles.section}>Continue learning</Text>
-                {enrolled.map((item) => (
-                  <Pressable
-                    key={item.enrollment_id}
-                    style={styles.card}
-                    onPress={() => openCourse(item.course_id, item.title, 'learn')}
-                  >
-                    {item.thumbnail_url ? (
-                      <Image source={{ uri: item.thumbnail_url }} style={styles.thumb} />
-                    ) : (
-                      <View style={[styles.thumb, styles.thumbPh]}>
-                        <Ionicons name="book" size={22} color={Colors.primary} />
+                {enrolled.map((item) => {
+                  const school = offeringLabel(item);
+                  return (
+                    <Pressable
+                      key={item.enrollment_id}
+                      style={styles.cardLarge}
+                      onPress={() => openCourse(item.course_id, item.title, 'learn')}
+                    >
+                      <CourseMedia uri={item.thumbnail_url} large />
+                      <View style={styles.cardBodyLarge}>
+                        <Text style={styles.cardTitleLarge} numberOfLines={2}>
+                          {item.title}
+                        </Text>
+                        {item.short_description ? (
+                          <Text style={styles.desc} numberOfLines={2}>
+                            {item.short_description}
+                          </Text>
+                        ) : null}
+                        {school ? <Text style={styles.school}>{school}</Text> : null}
+                        <Text style={styles.meta}>
+                          {Math.round(Number(item.progress_percent || 0))}% · Continue
+                        </Text>
                       </View>
-                    )}
-                    <View style={styles.cardBody}>
-                      <Text style={styles.cardTitle} numberOfLines={2}>
-                        {item.title}
-                      </Text>
-                      <Text style={styles.meta}>
-                        {Math.round(Number(item.progress_percent || 0))}% · Continue
-                      </Text>
-                    </View>
-                    <Ionicons name="play-circle" size={22} color={Colors.primary} />
-                  </Pressable>
-                ))}
+                      <Ionicons name="play-circle" size={28} color={Colors.primary} style={styles.cardChevron} />
+                    </Pressable>
+                  );
+                })}
               </View>
             ) : null}
 
@@ -256,37 +324,52 @@ export function CoursesScreen() {
         }
         renderItem={({ item }) =>
           loading || item.id.startsWith('__sk') ? (
-            <View style={[styles.card, styles.skeletonCard]}>
-              <View style={[styles.thumb, styles.thumbPh]} />
-              <View style={styles.cardBody}>
+            <View style={[styles.cardLarge, styles.skeletonCard]}>
+              <View style={[styles.thumbLarge, styles.thumbPh]} />
+              <View style={styles.cardBodyLarge}>
                 <View style={styles.skLine} />
-                <View style={[styles.skLine, { width: '55%', marginTop: 8 }]} />
+                <View style={[styles.skLine, { width: '90%', marginTop: 10 }]} />
+                <View style={[styles.skLine, { width: '55%', marginTop: 10 }]} />
               </View>
             </View>
           ) : (
-            <Pressable style={styles.card} onPress={() => openCourse(item.id, item.title)}>
-              {item.thumbnail_url ? (
-                <Image source={{ uri: item.thumbnail_url }} style={styles.thumb} />
-              ) : (
-                <View style={[styles.thumb, styles.thumbPh]}>
-                  <Ionicons name="book-outline" size={22} color={Colors.primary} />
-                </View>
-              )}
-              <View style={styles.cardBody}>
-                <Text style={styles.cardTitle} numberOfLines={2}>
-                  {item.title || 'Course'}
-                </Text>
-                <Text style={styles.meta} numberOfLines={2}>
-                  {item.is_free || Number(item.price || 0) <= 0
-                    ? 'Free'
-                    : item.price != null
-                      ? `KES ${item.price}`
-                      : item.short_description || 'Open'}
-                  {item.is_certified ? ' · Certified' : ''}
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={Colors.mutedForeground} />
-            </Pressable>
+            (() => {
+              const pricing = formatPrice(item);
+              const school = offeringLabel(item);
+              const desc = item.short_description || item.description || '';
+              return (
+                <Pressable style={styles.cardLarge} onPress={() => openCourse(item.id, item.title)}>
+                  <CourseMedia uri={item.thumbnail_url} large />
+                  <View style={styles.cardBodyLarge}>
+                    <Text style={styles.cardTitleLarge} numberOfLines={2}>
+                      {item.title || 'Course'}
+                    </Text>
+                    {desc ? (
+                      <Text style={styles.desc} numberOfLines={2}>
+                        {desc.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()}
+                      </Text>
+                    ) : null}
+                    {school ? <Text style={styles.school}>{school}</Text> : null}
+                    <View style={styles.priceRow}>
+                      <Text style={styles.price}>{pricing.label}</Text>
+                      {pricing.strike ? <Text style={styles.strike}>{pricing.strike}</Text> : null}
+                      {pricing.discount ? (
+                        <View style={styles.discountBadge}>
+                          <Text style={styles.discountText}>{pricing.discount}</Text>
+                        </View>
+                      ) : null}
+                      {item.is_certified ? <Text style={styles.certified}> · Certified</Text> : null}
+                    </View>
+                  </View>
+                  <Ionicons
+                    name="chevron-forward"
+                    size={20}
+                    color={Colors.mutedForeground}
+                    style={styles.cardChevron}
+                  />
+                </Pressable>
+              );
+            })()
           )
         }
         ListEmptyComponent={
@@ -314,7 +397,6 @@ export function CoursesScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.background },
-  center: { alignItems: 'center', justifyContent: 'center', gap: 12 },
   h1: { fontSize: 28, fontWeight: '700', color: '#fff', marginBottom: 4 },
   sub: { color: 'rgba(255,255,255,0.75)', marginBottom: 16, fontSize: 14 },
   section: { fontSize: 16, fontWeight: '700', color: Colors.foreground, marginBottom: 10, marginTop: 8 },
@@ -345,22 +427,42 @@ const styles = StyleSheet.create({
   chipOn: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   chipText: { fontSize: 13, fontWeight: '600', color: Colors.foreground },
   chipTextOn: { color: '#fff' },
-  card: {
+  cardLarge: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+    alignItems: 'stretch',
+    gap: 14,
     backgroundColor: '#fff',
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 10,
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 14,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Colors.border,
+    minHeight: 132,
   },
   thumb: { width: 56, height: 56, borderRadius: 10, backgroundColor: '#E8F5F0' },
+  thumbLarge: { width: 112, height: 112, borderRadius: 14, backgroundColor: '#E8F5F0' },
   thumbPh: { alignItems: 'center', justifyContent: 'center' },
-  cardBody: { flex: 1, minWidth: 0 },
-  cardTitle: { fontSize: 15, fontWeight: '600', color: Colors.foreground },
-  meta: { fontSize: 12, color: Colors.mutedForeground, marginTop: 4 },
+  cardBodyLarge: { flex: 1, minWidth: 0, justifyContent: 'center', gap: 4 },
+  cardTitleLarge: { fontSize: 17, fontWeight: '700', color: Colors.foreground, lineHeight: 22 },
+  desc: { fontSize: 13, color: Colors.mutedForeground, lineHeight: 18 },
+  school: { fontSize: 12, fontWeight: '600', color: Colors.primary, marginTop: 2 },
+  meta: { fontSize: 13, color: Colors.mutedForeground, marginTop: 4 },
+  priceRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 4 },
+  price: { fontSize: 14, fontWeight: '700', color: Colors.foreground },
+  strike: {
+    fontSize: 12,
+    color: Colors.mutedForeground,
+    textDecorationLine: 'line-through',
+  },
+  discountBadge: {
+    backgroundColor: 'rgba(232,93,4,0.12)',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  discountText: { fontSize: 11, fontWeight: '700', color: Colors.orange },
+  certified: { fontSize: 12, color: Colors.mutedForeground },
+  cardChevron: { alignSelf: 'center' },
   errBox: {
     flexDirection: 'row',
     gap: 8,

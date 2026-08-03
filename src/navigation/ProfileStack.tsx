@@ -10,6 +10,7 @@ import {
   PreferencesScreen,
   ProfileEditScreen,
   ProfileHomeScreen,
+  ThemesScreen,
 } from '../screens/profile/ProfileScreens';
 import { Colors } from '../theme/yana';
 
@@ -20,6 +21,7 @@ export type ProfileStackParamList = {
   Portfolio: undefined;
   Memory: undefined;
   Preferences: undefined;
+  ProfileThemes: undefined;
   Balances: undefined;
 };
 
@@ -54,6 +56,7 @@ export function ProfileStack() {
       <Stack.Screen name="Portfolio" component={PortfolioScreen} />
       <Stack.Screen name="Memory" component={MemoryScreen} />
       <Stack.Screen name="Preferences" component={PreferencesScreen} />
+      <Stack.Screen name="ProfileThemes" component={ThemesScreen} options={{ title: 'Themes' }} />
       <Stack.Screen name="Balances" component={BalancesScreen} />
     </Stack.Navigator>
   );
