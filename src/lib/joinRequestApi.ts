@@ -1,10 +1,12 @@
 /**
  * Join-request helpers for “Add your student” (SchoolPicker).
  * Nest: GET /parents/join/schools|students, POST /parents/join/requests
+ * Uses getNestApiBaseUrl (staging Railway) — never local Desk :3251 for these.
  */
 
-import { deskFetch, ensureNestDeskSession } from './deskApi';
-import { supabase } from './supabase';
+import { getNestApiBaseUrl } from './localHost';
+import { searchRegistrationSchools } from './platformAuthApi';
+import { resolveNestAccessTokenForWebView } from './platformNestAuth';
 
 export type JoinSchoolHit = {
   id: string;
@@ -26,6 +28,77 @@ export type JoinStudentHit = {
   person_type?: 'student';
 };
 
+type PlatformDbFilter = {
+  op: 'eq' | 'in';
+  column: string;
+  value: unknown;
+};
+
+async function nestJoinFetch<T>(
+  path: string,
+  opts: { method?: string; body?: unknown } = {},
+): Promise<T> {
+  const token = await resolveNestAccessTokenForWebView();
+  if (!token) throw new Error('Sign in required');
+  const base = getNestApiBaseUrl().replace(/\/$/, '');
+  const url = `${base}${path.startsWith('/') ? path : `/${path}`}`;
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+    Authorization: `Bearer ${token}`,
+  };
+  if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
+
+  const res = await fetch(url, {
+    method: opts.method ?? 'GET',
+    headers,
+    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+  });
+  const json = await res.json().catch(() => null);
+  if (!res.ok) {
+    const msg =
+      (typeof json?.message === 'string' && json.message) ||
+      (typeof json?.error === 'string' && json.error) ||
+      `Nest ${res.status}`;
+    throw new Error(msg);
+  }
+  if (json && typeof json === 'object' && 'data' in json) {
+    return (json as { data: T }).data;
+  }
+  return json as T;
+}
+
+async function platformDbSelect<T = Record<string, unknown>>(opts: {
+  table: string;
+  select?: string;
+  filters?: PlatformDbFilter[];
+}): Promise<T[]> {
+  try {
+    const token = await resolveNestAccessTokenForWebView();
+    if (!token) return [];
+    const base = getNestApiBaseUrl().replace(/\/$/, '');
+    const res = await fetch(`${base}/platform/db`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        table: opts.table,
+        action: 'select',
+        select: opts.select || '*',
+        filters: opts.filters || [],
+      }),
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok) return [];
+    const payload = json?.data?.data ?? json?.data ?? [];
+    return (Array.isArray(payload) ? payload : []) as T[];
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Belt-and-suspenders: even if Nest is stale and returns companies,
  * keep only org_type=school and/or rows that exist in admin_schools.
@@ -37,22 +110,33 @@ async function keepSchoolsOnly(hits: JoinSchoolHit[]): Promise<JoinSchoolHit[]> 
 
   const schoolIds = new Set<string>();
   try {
-    const [{ data: orgs }, { data: schools }] = await Promise.all([
-      supabase.from('organizations').select('id').in('id', ids).eq('org_type', 'school'),
-      supabase.from('admin_schools').select('id').in('id', ids),
+    const [orgs, schools] = await Promise.all([
+      platformDbSelect<{ id?: string }>({
+        table: 'organizations',
+        select: 'id',
+        filters: [
+          { op: 'in', column: 'id', value: ids },
+          { op: 'eq', column: 'org_type', value: 'school' },
+        ],
+      }),
+      platformDbSelect<{ id?: string }>({
+        table: 'admin_schools',
+        select: 'id',
+        filters: [{ op: 'in', column: 'id', value: ids }],
+      }),
     ]);
-    for (const r of orgs || []) {
-      if ((r as { id?: string }).id) schoolIds.add(String((r as { id: string }).id));
+    for (const r of orgs) {
+      if (r.id) schoolIds.add(String(r.id));
     }
-    for (const r of schools || []) {
-      if ((r as { id?: string }).id) schoolIds.add(String((r as { id: string }).id));
+    for (const r of schools) {
+      if (r.id) schoolIds.add(String(r.id));
     }
   } catch {
     // If filter fails, fall back to Nest list (better than empty).
     return hits;
   }
 
-  // Nest already restricts to schools; if RLS can't verify ids, keep Nest hits
+  // Nest already restricts to schools; if gateway can't verify ids, keep Nest hits
   // rather than blanking Find school.
   const filtered = hits.filter((h) => schoolIds.has(h.id));
   if (!filtered.length && hits.length) return hits;
@@ -63,71 +147,34 @@ export async function searchJoinSchools(q: string) {
   const term = q.trim();
   if (term.length < 2) return { schools: [] as JoinSchoolHit[], count: 0 };
   try {
-    await ensureNestDeskSession();
-  } catch {
-    // continue — Nest search may still work with current token
-  }
-  try {
-    const res = await deskFetch<{ schools?: JoinSchoolHit[]; count?: number }>(
+    const res = await nestJoinFetch<{ schools?: JoinSchoolHit[]; count?: number }>(
       `/parents/join/schools?q=${encodeURIComponent(term)}`,
     );
     const raw = Array.isArray(res?.schools) ? res.schools : [];
     const schools = await keepSchoolsOnly(raw);
     return { schools, count: schools.length };
   } catch (e) {
-    // Desk down / 401 — search staging schools directly so Find school still works.
-    const schools = await searchSchoolsViaSupabase(term);
+    // Nest parents join unavailable — fall back to public registration school search.
+    const schools = await searchSchoolsViaNestRegistration(term);
     if (schools.length) return { schools, count: schools.length };
     throw e;
   }
 }
 
-async function searchSchoolsViaSupabase(term: string): Promise<JoinSchoolHit[]> {
-  const like = `%${term}%`;
-  const hits: JoinSchoolHit[] = [];
-  const seen = new Set<string>();
-  const push = (row: {
-    id?: string;
-    name?: string | null;
-    code?: string | null;
-    username?: string | null;
-    slug?: string | null;
-    logo_url?: string | null;
-    county?: string | null;
-  }) => {
-    const id = String(row.id || '').trim();
-    if (!id || seen.has(id)) return;
-    seen.add(id);
-    hits.push({
-      id,
-      name: String(row.name ?? 'School'),
-      code: (row.code || row.username || row.slug || null) as string | null,
-      logo_url: row.logo_url ?? null,
-      county: row.county ?? null,
-    });
-  };
+async function searchSchoolsViaNestRegistration(term: string): Promise<JoinSchoolHit[]> {
   try {
-    const [byName, byCode, byUser, orgByName, orgBySlug, orgByUser] = await Promise.all([
-      supabase.from('admin_schools').select('id, name, code, username, logo_url, county').eq('is_active', true).ilike('name', like).limit(15),
-      supabase.from('admin_schools').select('id, name, code, username, logo_url, county').eq('is_active', true).ilike('code', like).limit(10),
-      supabase.from('admin_schools').select('id, name, code, username, logo_url, county').eq('is_active', true).ilike('username', like).limit(10),
-      supabase.from('organizations').select('id, name, slug, username, logo_url, county, org_type').eq('org_type', 'school').ilike('name', like).limit(15),
-      supabase.from('organizations').select('id, name, slug, username, logo_url, county, org_type').eq('org_type', 'school').ilike('slug', like).limit(10),
-      supabase.from('organizations').select('id, name, slug, username, logo_url, county, org_type').eq('org_type', 'school').ilike('username', like).limit(10),
-    ]);
-    for (const batch of [byName.data, byCode.data, byUser.data]) {
-      for (const r of batch || []) push(r);
-    }
-    for (const batch of [orgByName.data, orgBySlug.data, orgByUser.data]) {
-      for (const r of batch || []) {
-        if (String((r as { org_type?: string }).org_type || '').toLowerCase() !== 'school') continue;
-        push(r);
-      }
-    }
+    const res = await searchRegistrationSchools(term);
+    if (!res.ok) return [];
+    return (res.data || []).map((s) => ({
+      id: s.id,
+      name: s.name,
+      code: s.code ?? null,
+      logo_url: s.logo_url ?? null,
+      county: s.county ?? null,
+    }));
   } catch {
     return [];
   }
-  return hits.slice(0, 25);
 }
 
 export async function searchJoinStudents(schoolId: string, q: string, limit = 20) {
@@ -138,7 +185,7 @@ export async function searchJoinStudents(schoolId: string, q: string, limit = 20
     q: term,
     limit: String(limit),
   });
-  return deskFetch<{ students?: JoinStudentHit[]; count?: number }>(
+  return nestJoinFetch<{ students?: JoinStudentHit[]; count?: number }>(
     `/parents/join/students?${params.toString()}`,
   );
 }
@@ -150,7 +197,7 @@ export async function createJoinRequest(body: {
   relationship?: string;
   note?: string;
 }) {
-  return deskFetch<{
+  return nestJoinFetch<{
     request?: { id: string; status: string };
     already_pending?: boolean;
   }>('/parents/join/requests', {

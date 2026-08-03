@@ -8,6 +8,9 @@ const SESSION_KEY = 'tukua_session';
 const PROFILE_KEY = 'tukua_profile';
 const BIOMETRIC_KEY = 'tukua_biometric_enabled';
 
+/** When true, Nest identity success still tries a soft GoTrue login for legacy WebViews. */
+const TRY_GOTRUE_AFTER_NEST = false;
+
 export type UserProfile = {
   id: string;
   email: string;
@@ -63,6 +66,35 @@ function isConfirmedInvalidJwt(message: string): boolean {
   );
 }
 
+function nestSessionFromProfile(
+  accessToken: string,
+  refreshToken: string,
+  profile: UserProfile,
+  expiresIn = 7 * 24 * 3600,
+): Session {
+  return {
+    access_token: accessToken,
+    refresh_token: refreshToken || accessToken,
+    expires_in: expiresIn,
+    expires_at: Math.floor(Date.now() / 1000) + expiresIn,
+    token_type: 'bearer',
+    user: {
+      id: profile.id,
+      email: profile.email,
+      app_metadata: { provider: 'nest', providers: ['nest'] },
+      user_metadata: {
+        full_name: profile.fullName,
+        phone: profile.phone,
+        account_type: profile.accountType,
+        approval_status: profile.approvalStatus,
+        activation_status: profile.activationStatus,
+      },
+      aud: 'authenticated',
+      created_at: new Date().toISOString(),
+    },
+  } as Session;
+}
+
 /** Restore Nest or Supabase session from secure storage. */
 export async function refreshSessionIfNeeded(): Promise<Session | null> {
   let session: Session | null = null;
@@ -80,28 +112,7 @@ export async function refreshSessionIfNeeded(): Promise<Session | null> {
         if (nestTok) {
           const profile = await fetchProfileFromNest(nestTok);
           if (profile) {
-            const expiresIn = 7 * 24 * 3600;
-            session = {
-              access_token: nestTok,
-              refresh_token: stored.refresh_token || nestTok,
-              expires_in: expiresIn,
-              expires_at: Math.floor(Date.now() / 1000) + expiresIn,
-              token_type: 'bearer',
-              user: {
-                id: profile.id,
-                email: profile.email,
-                app_metadata: { provider: 'nest', providers: ['nest'] },
-                user_metadata: {
-                  full_name: profile.fullName,
-                  phone: profile.phone,
-                  account_type: profile.accountType,
-                  approval_status: profile.approvalStatus,
-                  activation_status: profile.activationStatus,
-                },
-                aud: 'authenticated',
-                created_at: new Date().toISOString(),
-              },
-            } as Session;
+            session = nestSessionFromProfile(nestTok, stored.refresh_token || nestTok, profile);
             await persistSession(session);
             return session;
           }
@@ -256,42 +267,62 @@ export async function signInWithNestIdentity(email: string, password: string) {
     await SecureStore.setItemAsync(PROFILE_KEY, JSON.stringify(profile));
   }
 
-  // Soft-attempt GoTrue for legacy WebViews — ignore failures for Nest-only users.
-  try {
-    await supabase.auth.signInWithPassword({ email: email.trim(), password });
-  } catch {
-    /* nest-only account */
+  // Optional soft GoTrue for legacy WebViews — off by default (Nest JWT is primary).
+  if (TRY_GOTRUE_AFTER_NEST) {
+    try {
+      await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    } catch {
+      /* nest-only account */
+    }
   }
 
   log.info('Auth', 'Nest identity signIn ok', { userId });
   return { user: session.user, session };
 }
 
+function mapNestProfilePayload(data: any): UserProfile | null {
+  const user = data?.user || data || {};
+  const profile = data?.profile || data || {};
+  const id = String(user.id || profile.id || '');
+  if (!id) return null;
+  return {
+    id,
+    email: String(user.email || profile.email || ''),
+    fullName: String(
+      profile.full_name || user.full_name || user.email || profile.email || '',
+    ),
+    county: profile.county || undefined,
+    phone: user.phone || user.phone_number || profile.phone_number || profile.phone || undefined,
+    avatarUrl: profile.avatar_url || user.profile_image_url || undefined,
+    activationStatus: profile.activation_status ?? null,
+    approvalStatus: profile.approval_status ?? null,
+    accountType: profile.account_type ?? null,
+  };
+}
+
 export async function fetchProfileFromNest(accessToken: string): Promise<UserProfile | null> {
   try {
     const { getNestApiBaseUrl } = await import('./localHost');
-    const res = await fetch(`${getNestApiBaseUrl().replace(/\/$/, '')}/platform/auth/me`, {
-      headers: { Accept: 'application/json', Authorization: `Bearer ${accessToken}` },
-    });
-    const json = await res.json().catch(() => null);
-    const data = json?.data || json;
-    const user = data?.user || {};
-    const profile = data?.profile || {};
-    const id = String(user.id || '');
-    if (!id) return null;
-    const out: UserProfile = {
-      id,
-      email: String(user.email || ''),
-      fullName: String(profile.full_name || user.full_name || user.email || ''),
-      county: profile.county,
-      phone: user.phone || user.phone_number || profile.phone_number,
-      avatarUrl: profile.avatar_url || user.profile_image_url,
-      activationStatus: profile.activation_status ?? null,
-      approvalStatus: profile.approval_status ?? null,
-      accountType: profile.account_type ?? null,
-    };
-    await SecureStore.setItemAsync(PROFILE_KEY, JSON.stringify(out));
-    return out;
+    const base = getNestApiBaseUrl().replace(/\/$/, '');
+    const headers = { Accept: 'application/json', Authorization: `Bearer ${accessToken}` };
+
+    // Prefer /platform/auth/me (identity), then /platform/me/profile.
+    for (const path of ['/platform/auth/me', '/platform/me/profile']) {
+      try {
+        const res = await fetch(`${base}${path}`, { headers });
+        if (!res.ok) continue;
+        const json = await res.json().catch(() => null);
+        const data = json?.data || json;
+        const out = mapNestProfilePayload(data);
+        if (out) {
+          await SecureStore.setItemAsync(PROFILE_KEY, JSON.stringify(out));
+          return out;
+        }
+      } catch {
+        /* try next path */
+      }
+    }
+    return null;
   } catch {
     return null;
   }
@@ -303,20 +334,97 @@ export async function signUpWithEmail(
   metadata: Record<string, string>,
 ) {
   log.info('Auth', 'signUpWithEmail', { email, accountType: metadata.account_type });
-  const { data, error } = await supabase.auth.signUp({
-    email,
+  const { platformRegister } = await import('./platformAuthApi');
+  const { persistPlatformNestSession } = await import('./platformNestAuth');
+  const res = await platformRegister({
+    email: email.trim(),
     password,
-    options: { data: metadata },
+    full_name: metadata.full_name,
+    username: metadata.username,
+    account_type: metadata.account_type,
+    phone: metadata.phone,
   });
-  if (error) {
-    log.error('Auth', 'signUp failed', error.message);
-    throw error;
+  if (!res.ok) {
+    // Legacy GoTrue fallback only when Nest register is unavailable.
+    log.warn('Auth', 'Nest register failed — trying Supabase', res.message || res.error);
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: metadata },
+    });
+    if (error) {
+      log.error('Auth', 'signUp failed', error.message);
+      throw error;
+    }
+    if (data.session) {
+      await saveSession(data.session.access_token, data.session.refresh_token);
+      await cachePasswordForBiometrics(password);
+    }
+    return data;
   }
-  if (data.session) {
-    await saveSession(data.session.access_token, data.session.refresh_token);
+
+  const data = res.data as {
+    access_token?: string;
+    refresh_token?: string;
+    expires_in?: number;
+    user?: {
+      id?: string;
+      email?: string | null;
+      full_name?: string | null;
+      account_type?: string | null;
+      approval_status?: string | null;
+      activation_status?: string | null;
+      phone?: string | null;
+    };
+  };
+
+  if (data.access_token) {
+    await persistPlatformNestSession(data.access_token, data.refresh_token, data.expires_in);
+    await saveSession(data.access_token, data.refresh_token || data.access_token);
     await cachePasswordForBiometrics(password);
   }
-  return data;
+
+  const userId = String(data.user?.id || '');
+  const expiresIn = Number(data.expires_in) || 7 * 24 * 3600;
+  const session = data.access_token
+    ? ({
+        access_token: data.access_token,
+        refresh_token: data.refresh_token || data.access_token,
+        expires_in: expiresIn,
+        expires_at: Math.floor(Date.now() / 1000) + expiresIn,
+        token_type: 'bearer',
+        user: {
+          id: userId,
+          email: data.user?.email || email,
+          app_metadata: { provider: 'nest', providers: ['nest'] },
+          user_metadata: {
+            full_name: data.user?.full_name || metadata.full_name,
+            phone: data.user?.phone || metadata.phone,
+            account_type: data.user?.account_type || metadata.account_type,
+            approval_status: data.user?.approval_status,
+            activation_status: data.user?.activation_status,
+          },
+          aud: 'authenticated',
+          created_at: new Date().toISOString(),
+        },
+      } as Session)
+    : null;
+
+  if (userId && session) {
+    const profile: UserProfile = {
+      id: userId,
+      email: String(data.user?.email || email),
+      fullName: String(data.user?.full_name || metadata.full_name || email),
+      phone: data.user?.phone || metadata.phone || undefined,
+      activationStatus: data.user?.activation_status ?? null,
+      approvalStatus: data.user?.approval_status ?? null,
+      accountType: data.user?.account_type || metadata.account_type || null,
+    };
+    await SecureStore.setItemAsync(PROFILE_KEY, JSON.stringify(profile));
+  }
+
+  log.info('Auth', 'Nest identity signUp ok', { userId });
+  return { user: session?.user ?? null, session };
 }
 
 export async function fetchProfileGate(userId: string) {
@@ -325,7 +433,7 @@ export async function fetchProfileGate(userId: string) {
     const tok = await resolveNestAccessTokenForWebView();
     if (tok) {
       const p = await fetchProfileFromNest(tok);
-      if (p && p.id === userId) {
+      if (p && (!userId || p.id === userId)) {
         return {
           activation_status: p.activationStatus,
           approval_status: p.approvalStatus,
@@ -336,36 +444,52 @@ export async function fetchProfileGate(userId: string) {
   } catch {
     /* fall through */
   }
-  const { data } = await supabase
-    .from('profiles')
-    .select('activation_status, approval_status, account_type')
-    .eq('id', userId)
-    .maybeSingle();
-  return data as {
-    activation_status?: string | null;
-    approval_status?: string | null;
-    account_type?: string | null;
-  } | null;
+  return null;
 }
 
 export async function fetchProfile(userId: string): Promise<UserProfile | null> {
-  const { data } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
-  const user = (await supabase.auth.getUser()).data.user;
-  if (!user) return null;
+  try {
+    const { resolveNestAccessTokenForWebView } = await import('./platformNestAuth');
+    const tok = await resolveNestAccessTokenForWebView();
+    if (tok) {
+      const fromNest = await fetchProfileFromNest(tok);
+      if (fromNest && (!userId || fromNest.id === userId)) return fromNest;
+    }
+  } catch {
+    /* fall through to cached / session metadata */
+  }
 
-  const profile: UserProfile = {
-    id: userId,
-    email: user.email ?? '',
-    fullName: data?.full_name ?? user.user_metadata?.full_name ?? user.email ?? '',
-    county: data?.county ?? user.user_metadata?.county,
-    phone: data?.phone ?? user.user_metadata?.phone,
-    avatarUrl: data?.avatar_url?.trim() || user.user_metadata?.avatar_url || undefined,
-    activationStatus: data?.activation_status ?? null,
-    approvalStatus: data?.approval_status ?? null,
-    accountType: data?.account_type ?? null,
-  };
-  await SecureStore.setItemAsync(PROFILE_KEY, JSON.stringify(profile));
-  return profile;
+  const cached = await getCachedProfile();
+  if (cached && (!userId || cached.id === userId)) return cached;
+
+  const stored = await getStoredSession();
+  if (stored?.access_token) {
+    const fromTok = await fetchProfileFromNest(stored.access_token);
+    if (fromTok) return fromTok;
+  }
+
+  // Last resort: GoTrue user_metadata (no PostgREST profiles select).
+  try {
+    const user = (await supabase.auth.getUser()).data.user;
+    if (user && (!userId || user.id === userId)) {
+      const profile: UserProfile = {
+        id: user.id,
+        email: user.email ?? '',
+        fullName: user.user_metadata?.full_name ?? user.email ?? '',
+        county: user.user_metadata?.county,
+        phone: user.user_metadata?.phone,
+        avatarUrl: user.user_metadata?.avatar_url || undefined,
+        activationStatus: user.user_metadata?.activation_status ?? null,
+        approvalStatus: user.user_metadata?.approval_status ?? null,
+        accountType: user.user_metadata?.account_type ?? null,
+      };
+      await SecureStore.setItemAsync(PROFILE_KEY, JSON.stringify(profile));
+      return profile;
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
 }
 
 export async function getCachedProfile(): Promise<UserProfile | null> {
@@ -374,7 +498,17 @@ export async function getCachedProfile(): Promise<UserProfile | null> {
 }
 
 export async function signOut() {
-  await supabase.auth.signOut();
+  try {
+    await supabase.auth.signOut();
+  } catch {
+    /* ignore */
+  }
+  try {
+    const { clearPlatformNestToken } = await import('./platformNestAuth');
+    await clearPlatformNestToken();
+  } catch {
+    /* ignore */
+  }
   await SecureStore.deleteItemAsync(SESSION_KEY);
   await SecureStore.deleteItemAsync(PROFILE_KEY);
   // Keep biometric credentials so fingerprint login works after sign out.

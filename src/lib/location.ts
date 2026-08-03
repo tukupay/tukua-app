@@ -1,4 +1,5 @@
 import * as Location from 'expo-location';
+import { getNestApiBaseUrl } from './localHost';
 
 export type UserLocation = {
   latitude: number;
@@ -47,7 +48,7 @@ export async function captureUserLocation(): Promise<UserLocation | null> {
 
 /** Sync GPS to Yana on first login (TukuPay path). Stored in users.first_login_* columns. */
 export async function syncLocationToYana(accessToken: string, location: UserLocation) {
-  const url = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/sync-tukupay-user`;
+  const url = `${getNestApiBaseUrl()}/platform/edge/sync-tukupay-user`;
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
