@@ -118,3 +118,25 @@ export async function getPeaConfig(role?: string) {
     status: res.status,
   };
 }
+
+export async function listRegistrationOrgTypes() {
+  const res = await fetch(`${nestBase()}/platform/registration/org-types`, {
+    method: 'GET',
+    headers: { Accept: 'application/json' },
+  });
+  const json = await res.json().catch(() => null);
+  const raw =
+    json && typeof json === 'object' && 'data' in json
+      ? (json as { data: { items?: unknown[] } | unknown[] }).data
+      : json;
+  const items = Array.isArray(raw)
+    ? raw
+    : Array.isArray((raw as { items?: unknown[] })?.items)
+      ? (raw as { items: unknown[] }).items
+      : [];
+  return {
+    ok: res.ok && (json?.success !== false),
+    data: items as Array<{ id: string; slug: string; label: string; description: string | null }>,
+    status: res.status,
+  };
+}

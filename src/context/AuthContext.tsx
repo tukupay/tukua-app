@@ -11,6 +11,7 @@ import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import {
   fetchProfile,
+  fetchProfileFromNest,
   getCachedProfile,
   persistSession,
   refreshSessionIfNeeded,
@@ -18,6 +19,7 @@ import {
   signOut,
   UserProfile,
 } from '../lib/auth';
+import { clearPlatformNestToken } from '../lib/platformNestAuth';
 import { getSavageModeForUser } from '../lib/userPreferences';
 import { clearDeskSession } from '../lib/deskApi';
 import { clearSelectedContext } from '../lib/selectedContext';
@@ -33,6 +35,8 @@ type AuthContextType = {
   refreshUserPreferences: () => Promise<void>;
   setSavageMode: (enabled: boolean) => void;
   ensureFreshSession: () => Promise<Session | null>;
+  /** Adopt Nest identity session after PEA / Nest login (no GoTrue required). */
+  adoptSession: (session: Session) => Promise<void>;
   logout: () => Promise<void>;
 };
 
@@ -46,6 +50,7 @@ const AuthContext = createContext<AuthContextType>({
   refreshUserPreferences: async () => {},
   setSavageMode: () => {},
   ensureFreshSession: async () => null,
+  adoptSession: async () => {},
   logout: async () => {},
 });
 
@@ -76,6 +81,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshProfile = useCallback(async () => {
     try {
+      // Nest JWT session (PEA / Nest login) — no GoTrue user.
+      if (session?.access_token && session.user?.app_metadata?.provider === 'nest') {
+        const p = await fetchProfileFromNest(session.access_token);
+        if (p) {
+          setProfile(p);
+          await loadUserPreferences(p.id);
+        }
+        return;
+      }
       const { data, error } = await supabase.auth.getUser();
       if (error) {
         log.warn('Auth', 'getUser failed during profile refresh', error.message);
@@ -96,7 +110,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       log.warn('Auth', 'refreshProfile error', String(error));
     }
-  }, [loadUserPreferences]);
+  }, [loadUserPreferences, session?.access_token, session?.user?.app_metadata?.provider]);
+
+  const adoptSession = useCallback(
+    async (next: Session) => {
+      setSession(next);
+      await persistSession(next);
+      if (next.user?.id) {
+        const cached = await getCachedProfile();
+        if (cached?.id === next.user.id) setProfile(cached);
+        const fromNest =
+          next.user.app_metadata?.provider === 'nest'
+            ? await fetchProfileFromNest(next.access_token)
+            : null;
+        const p = fromNest || (await fetchProfile(next.user.id));
+        if (p) setProfile(p);
+        await loadUserPreferences(next.user.id);
+      }
+    },
+    [loadUserPreferences],
+  );
 
   const ensureFreshSession = useCallback(async () => {
     const { data: before } = await supabase.auth.getSession();
@@ -196,6 +229,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         refreshUserPreferences,
         setSavageMode,
         ensureFreshSession,
+        adoptSession,
         logout: async () => {
           log.info('Auth', 'sign out');
           const userId = session?.user?.id;
@@ -203,6 +237,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             await clearSelectedContext(userId);
           }
           await clearDeskSession();
+          await clearPlatformNestToken().catch(() => {});
           await signOut();
           setSession(null);
           setProfile(null);

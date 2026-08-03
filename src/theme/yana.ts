@@ -36,7 +36,7 @@ export const Colors = {
   navbarMuted: 'rgba(255,255,255,0.78)',
 };
 
-/** Web SPA (Yana Vite) — Chat / Register / Courses / Profile are WebViews of this app. */
+/** Web SPA (Yana Vite) — Chat / Courses / Profile may still use WebViews until those tabs are native. Register is native Nest REST only. */
 export const TukuaWeb = {
   get base() {
     return getWebBaseUrl();

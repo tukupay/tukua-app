@@ -11,10 +11,20 @@ type Props = {
   peaStatus?: PeaStatus;
   peaMessage?: string;
   peaAmount?: number;
+  freeTokens?: number;
+  message?: string;
   loaded?: boolean;
 };
 
-export function PeaRegistrationCard({ phone, peaStatus = 'idle', peaMessage = '', peaAmount, loaded }: Props) {
+export function PeaRegistrationCard({
+  phone,
+  peaStatus = 'idle',
+  peaMessage = '',
+  peaAmount,
+  freeTokens,
+  message,
+  loaded,
+}: Props) {
   const [peaConfig, setPeaConfig] = useState<PeaConfig>(DEFAULT_PEA_CONFIG);
   const [configLoaded, setConfigLoaded] = useState(loaded ?? false);
 
@@ -34,7 +44,9 @@ export function PeaRegistrationCard({ phone, peaStatus = 'idle', peaMessage = ''
   }, [loaded]);
 
   const amount = peaAmount ?? peaConfig.amount;
-  const explanation = formatPeaMessage(peaConfig.message, amount, peaConfig.free_tokens);
+  const tokens = freeTokens ?? peaConfig.free_tokens;
+  const template = message ?? peaConfig.message;
+  const explanation = formatPeaMessage(template, amount, tokens);
   const phoneLabel = phone.trim() || 'your phone';
   const isLoaded = loaded ?? configLoaded;
 
@@ -60,7 +72,7 @@ export function PeaRegistrationCard({ phone, peaStatus = 'idle', peaMessage = ''
               </Text>
               <Text style={styles.bonus}>
                 As a welcome gift, you&apos;ll receive{' '}
-                <Text style={styles.bonusStrong}>{formatTokenCount(peaConfig.free_tokens)} bonus tokens</Text>{' '}
+                <Text style={styles.bonusStrong}>{formatTokenCount(tokens)} bonus tokens</Text>{' '}
                 once registration is complete.
               </Text>
             </>

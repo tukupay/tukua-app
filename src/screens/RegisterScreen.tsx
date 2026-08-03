@@ -30,14 +30,14 @@ import {
   PeaStatus,
   RegistrationForm,
 } from '../lib/peaRegistrationFlow';
-import { cachePasswordForBiometrics } from '../lib/biometricStorage';
 import { Colors, TukuaWeb } from '../theme/yana';
 import { RootStackParamList } from '../navigation/types';
-import { fetchProfile } from '../lib/auth';
+import { signInWithNestIdentity } from '../lib/auth';
 import { useAuth } from '../context/AuthContext';
+import { useDeskAuth } from '../context/DeskAuthContext';
 import { useDialog } from '../context/DialogContext';
 import { captureUserLocation } from '../lib/location';
-import { supabase } from '../lib/supabase';
+import { saveDeskCredentials } from '../lib/deskApi';
 import { log } from '../lib/logger';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Register'>;
@@ -81,7 +81,8 @@ const ACCOUNT_TYPES = [
 ];
 
 export function RegisterScreen({ navigation }: Props) {
-  const { refreshProfile } = useAuth();
+  const { refreshProfile, adoptSession } = useAuth();
+  const { connectDesk } = useDeskAuth();
   const { showDialog } = useDialog();
   const [step, setStep] = useState<Step>('type');
   const [accountType, setAccountType] = useState('individual');
@@ -113,23 +114,26 @@ export function RegisterScreen({ navigation }: Props) {
   const isOrg = accountType === 'organization';
   const selectedType = ACCOUNT_TYPES.find((t) => t.id === accountType);
   const peaAmount = peaConfig.amount;
+  const peaRole = isOrg ? 'organization' : undefined;
 
   useEffect(() => {
-    fetchPeaConfig().then((cfg) => {
+    setPeaConfigLoaded(false);
+    fetchPeaConfig(peaRole).then((cfg) => {
       setPeaConfig(cfg);
       setPeaConfigLoaded(true);
     });
-  }, []);
+  }, [peaRole]);
 
   useEffect(() => {
-    supabase
-      .from('org_types')
-      .select('id, slug, label, description')
-      .eq('is_active', true)
-      .order('display_order')
-      .then(({ data }) => {
-        if (data) setOrgTypes(data as OrgType[]);
-      });
+    void (async () => {
+      try {
+        const { listRegistrationOrgTypes } = await import('../lib/platformAuthApi');
+        const r = await listRegistrationOrgTypes();
+        if (r.ok && r.data?.length) setOrgTypes(r.data);
+      } catch {
+        /* keep empty — user can still use individual */
+      }
+    })();
   }, []);
 
   const canRegister = useMemo(() => {
@@ -184,20 +188,37 @@ export function RegisterScreen({ navigation }: Props) {
       setLoading(false);
       return;
     }
-    await cachePasswordForBiometrics(form.password);
-    await fetchProfile(result.userId);
-    await refreshProfile();
-    captureUserLocation().catch(() => {});
-    if (form.isOrg) {
+    try {
+      await saveDeskCredentials(form.email.trim(), form.password);
+      const nest = await signInWithNestIdentity(form.email.trim(), form.password);
+      if (nest.session) await adoptSession(nest.session as any);
+      try {
+        await connectDesk(form.email.trim(), form.password);
+      } catch {
+        /* Desk LAN optional */
+      }
+      await refreshProfile();
+      captureUserLocation().catch(() => {});
+      if (form.isOrg) {
+        showDialog({
+          title: 'Registration submitted',
+          message: 'Your organisation account is pending approval. We will contact you within 48 hours.',
+          variant: 'success',
+          icon: 'business-outline',
+          buttons: [{ text: 'OK', onPress: () => navigation.navigate('Login') }],
+        });
+      } else {
+        log.info('Register', 'PEA success — Nest session active');
+      }
+    } catch (e: any) {
+      setError(e?.message || 'Account created — please sign in.');
       showDialog({
-        title: 'Registration submitted',
-        message: 'Your organisation account is pending approval. We will contact you within 48 hours.',
-        variant: 'success',
-        icon: 'business-outline',
-        buttons: [{ text: 'OK', onPress: () => navigation.navigate('Login') }],
+        title: 'Account created',
+        message: 'Sign in with your email and password to continue.',
+        variant: 'info',
+        icon: 'checkmark-circle-outline',
+        buttons: [{ text: 'Sign in', onPress: () => navigation.navigate('Login') }],
       });
-    } else {
-      log.info('Register', 'PEA success — session active');
     }
     setLoading(false);
   };
@@ -487,6 +508,8 @@ export function RegisterScreen({ navigation }: Props) {
                     peaStatus={peaStatus}
                     peaMessage={peaMessage}
                     peaAmount={peaAmount}
+                    freeTokens={peaConfig.free_tokens}
+                    message={peaConfig.message}
                     loaded={peaConfigLoaded}
                   />
 

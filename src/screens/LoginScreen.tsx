@@ -34,9 +34,8 @@ import { AuthButton } from '../components/auth/AuthButton';
 import { RootStackParamList } from '../navigation/types';
 
 import { signInWithEmail, fetchProfile, fetchProfileGate, sendPasswordReset, signOut } from '../lib/auth';
-import { useDeskAuth } from '../context/DeskAuthContext';
-
 import { useAuth } from '../context/AuthContext';
+import { useDeskAuth } from '../context/DeskAuthContext';
 
 import { useDialog } from '../context/DialogContext';
 
@@ -89,7 +88,7 @@ export function LoginScreen({ navigation }: Props) {
 
   }, [height]);
 
-  const { refreshProfile } = useAuth();
+  const { refreshProfile, adoptSession } = useAuth();
   const { connectDesk } = useDeskAuth();
 
   const [email, setEmail] = useState('');
@@ -140,6 +139,13 @@ export function LoginScreen({ navigation }: Props) {
     } catch {
       // ignore SecureStore failures
     }
+    // Warm Nest identity JWT for chat/courses WebView (api-host), not GoTrue.
+    try {
+      const { resolveNestAccessTokenForWebView } = await import('../lib/platformNestAuth');
+      await resolveNestAccessTokenForWebView();
+    } catch {
+      /* nest api-host may be down — inject falls back later */
+    }
     log.info('DeskConnection', 'Nest desk login starting', {
       email: loginEmail.trim(),
       deskApi: getDeskApiDebugInfo().deskResolved,
@@ -154,11 +160,17 @@ export function LoginScreen({ navigation }: Props) {
       );
     }
 
-    // Supabase = Chat / Courses / Profile WebViews
-    const { user } = await signInWithEmail(loginEmail.trim(), loginPass);
-    if (!user) return;
+    // Nest identity first (PEA accounts); falls back to Supabase inside signInWithEmail.
+    const signed = await signInWithEmail(loginEmail.trim(), loginPass);
+    const nestSession = (signed as { session?: { access_token?: string; user?: { id?: string; app_metadata?: { provider?: string } } } })
+      ?.session;
+    if (nestSession?.access_token && nestSession.user) {
+      await adoptSession(nestSession as any);
+    }
+    const userId = nestSession?.user?.id || (signed as { user?: { id?: string } })?.user?.id;
+    if (!userId) return;
 
-    const gate = await fetchProfileGate(user.id);
+    const gate = await fetchProfileGate(userId);
     if (gate?.account_type === 'organization' && gate?.approval_status === 'pending') {
       await signOut();
       showDialog({
@@ -170,7 +182,7 @@ export function LoginScreen({ navigation }: Props) {
       return;
     }
 
-    await fetchProfile(user.id);
+    await fetchProfile(userId);
     await refreshProfile();
 
     captureUserLocation().catch(() => {});

@@ -3,7 +3,7 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { createNavigationContainerRef, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { LoginScreen } from '../screens/LoginScreen';
-import { WebRegisterScreen } from '../screens/WebRegisterScreen';
+import { RegisterScreen } from '../screens/RegisterScreen';
 import { MainTabs } from './MainTabs';
 import { RootStackParamList } from './types';
 import { useAuth } from '../context/AuthContext';
@@ -30,7 +30,7 @@ export function navigateDashboard(
 
 function RootNavigator() {
   const { isAuthenticated, loading } = useAuth();
-  // Desk (Nest) is optional — only Dashboard uses it. Chat login is Supabase.
+  // Desk (Nest) is optional — only Dashboard uses it. Chat login is Nest JWT (+ optional WebViews).
   // School picker overlays inside MainTabs so header + bottom nav stay mounted.
   const { deskReady, schoolsReady } = useDeskAuth();
 
@@ -50,7 +50,7 @@ function RootNavigator() {
       ) : (
         <>
           <Stack.Screen name="Login" component={LoginScreen} />
-          <Stack.Screen name="Register" component={WebRegisterScreen} />
+          <Stack.Screen name="Register" component={RegisterScreen} />
         </>
       )}
     </Stack.Navigator>
