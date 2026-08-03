@@ -315,42 +315,10 @@ export function RegisterScreen({ navigation }: Props) {
     setLoading(true);
     setError('');
     const form = buildForm();
-    const parts = form.fullName.trim().split(' ');
-    const role = form.isOrg ? form.orgSubtype : 'individual';
     try {
-      const { data, error: signUpErr } = await supabase.auth.signUp({
-        email: form.email,
-        password: form.password,
-        options: {
-          data: {
-            full_name: form.fullName.trim(),
-            first_name: parts[0] ?? '',
-            last_name: parts.slice(1).join(' ') ?? '',
-            role,
-            account_type: form.accountType,
-            phone: form.phone,
-            phone_number: form.phone,
-            county: form.county || null,
-          },
-        },
-      });
-      if (signUpErr) throw signUpErr;
-      const userId = data.user?.id;
-      if (!userId) throw new Error('Account could not be created');
-
-      await (supabase as any).from('profiles').update({
-        role,
-        full_name: form.fullName.trim(),
-        phone: form.phone,
-        phone_number: form.phone,
-        account_type: form.accountType,
-        county: form.county || null,
-        approval_status: form.isOrg ? 'pending' : 'approved',
-        activation_status: 'pending_payment',
-        registration_payment_status: 'unpaid',
-      }).eq('id', userId);
-
-      supabase.functions.invoke('send-registration-welcome', { body: { user_id: userId, mode: 'deferred' } }).catch(() => {});
+      const { registerDeferredAccount } = await import('../lib/peaRegistrationFlow');
+      const reg = await registerDeferredAccount(form);
+      if (!reg.ok) throw new Error(reg.error || 'Account could not be created');
 
       showDialog({
         title: 'Account saved',

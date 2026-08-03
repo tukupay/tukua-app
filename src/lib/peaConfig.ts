@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { getPeaConfig as nestGetPeaConfig } from './platformAuthApi';
 
 export type PeaConfig = {
   amount: number;
@@ -22,14 +22,14 @@ export function formatPeaMessage(template: string, amount: number, freeTokens: n
     .replace(/\{free_tokens\}/g, String(freeTokens));
 }
 
-/** Load PEA amount, bonus tokens, and copy from get-pea-config edge function (same as yana Register). */
-export async function fetchPeaConfig(): Promise<PeaConfig> {
+/** Load PEA config from Nest GET /platform/registration/pea-config (same as web). */
+export async function fetchPeaConfig(role?: string): Promise<PeaConfig> {
   try {
-    const { data, error } = await supabase.functions.invoke('get-pea-config');
-    if (error || !data || typeof (data as PeaConfig).amount !== 'number') {
+    const r = await nestGetPeaConfig(role);
+    const cfg = r.data;
+    if (!r.ok || !cfg || typeof cfg.amount !== 'number') {
       return DEFAULT_PEA_CONFIG;
     }
-    const cfg = data as PeaConfig;
     return {
       amount: Number(cfg.amount) || DEFAULT_PEA_CONFIG.amount,
       free_tokens: Number(cfg.free_tokens) || DEFAULT_PEA_CONFIG.free_tokens,
