@@ -42,6 +42,8 @@ export function ImmersiveSystemBars() {
 
   useEffect(() => {
     hide();
+    setTimeout(hide, 50);
+    setTimeout(hide, 200);
 
     const sub = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
@@ -52,7 +54,9 @@ export function ImmersiveSystemBars() {
       }
     });
 
-    const poll = Platform.OS === 'android' ? setInterval(hide, 500) : setInterval(hide, 1500);
+    // Aggressive poll — the top status bar must NEVER reappear (WebView loads,
+    // Modal opens, keyboard focus, and biometric sheets all re-show it natively).
+    const poll = setInterval(hide, Platform.OS === 'android' ? 350 : 800);
 
     return () => {
       sub.remove();
@@ -60,5 +64,5 @@ export function ImmersiveSystemBars() {
     };
   }, [hide]);
 
-  return <StatusBar hidden style="light" animated />;
+  return <StatusBar hidden style="light" animated={false} />;
 }

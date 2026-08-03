@@ -83,6 +83,21 @@ type CatalogCourse = {
   certifying_agency_name?: string | null;
 };
 
+type OrgBrand = {
+  id?: string;
+  name?: string | null;
+  logo_url?: string | null;
+  slug?: string | null;
+};
+
+type CertifierEntry = {
+  id?: string;
+  name?: string | null;
+  short_name?: string | null;
+  logo_url?: string | null;
+  is_default?: boolean;
+};
+
 type FilterKey = 'all' | 'featured' | 'free' | 'certified';
 
 const FILTERS: { key: FilterKey; label: string }[] = [
@@ -138,7 +153,64 @@ function CourseMedia({ uri, large }: { uri?: string | null; large?: boolean }) {
   if (uri) return <Image source={{ uri }} style={style} />;
   return (
     <View style={[style, styles.thumbPh]}>
-      <Ionicons name="book-outline" size={large ? 36 : 28} color={Colors.primary} />
+      <Ionicons name="book-outline" size={large ? 44 : 28} color={Colors.primary} />
+    </View>
+  );
+}
+
+/** Mirrors web `CourseOrgBrandBadge` — delivering-org logo + "Partnership with" label. */
+function OrgBrandBadge({ brand }: { brand: OrgBrand | null }) {
+  const name = brand?.name?.trim();
+  if (!name) return null;
+  const initials = name.slice(0, 2).toUpperCase();
+  return (
+    <View style={styles.orgBadge}>
+      {brand?.logo_url ? (
+        <Image source={{ uri: brand.logo_url }} style={styles.orgBadgeLogo} />
+      ) : (
+        <View style={[styles.orgBadgeLogo, styles.orgBadgeLogoPh]}>
+          <Text style={styles.orgBadgeInitials}>{initials}</Text>
+        </View>
+      )}
+      <View style={{ minWidth: 0, flexShrink: 1 }}>
+        <Text style={styles.orgBadgeLabel}>Partnership with</Text>
+        <Text style={styles.orgBadgeName} numberOfLines={1}>
+          {name}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+/** Mirrors web `CourseCertifierLabels` — primary certifying agency (with logo) + others. */
+function CertifierLabels({ entries }: { entries: CertifierEntry[] }) {
+  const named = entries.filter((e) => (e.name || e.short_name)?.trim());
+  if (!named.length) return null;
+  const primary = named.find((e) => e.is_default) || named[0];
+  const others = named.filter((e) => e !== primary);
+  const primaryName = (primary.name || primary.short_name || '').trim();
+  const othersLabel = others
+    .map((e) => (e.name || e.short_name || '').trim())
+    .filter(Boolean)
+    .join(' · ');
+
+  return (
+    <View style={styles.certWrap}>
+      <View style={styles.certRow}>
+        {primary.logo_url ? (
+          <Image source={{ uri: primary.logo_url }} style={styles.certLogo} />
+        ) : (
+          <Ionicons name="ribbon-outline" size={13} color="#B45309" />
+        )}
+        <Text style={styles.certPrimary} numberOfLines={1}>
+          {primaryName}
+        </Text>
+      </View>
+      {othersLabel ? (
+        <Text style={styles.certOthers} numberOfLines={1}>
+          {othersLabel}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -148,6 +220,8 @@ export function CoursesScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<CoursesStackParamList>>();
   const [enrolled, setEnrolled] = useState<Enrolled[]>([]);
   const [catalog, setCatalog] = useState<CatalogCourse[]>([]);
+  const [orgBrandByCourse, setOrgBrandByCourse] = useState<Record<string, OrgBrand>>({});
+  const [certifiersByCourse, setCertifiersByCourse] = useState<Record<string, CertifierEntry[]>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -162,10 +236,16 @@ export function CoursesScreen() {
     try {
       const [mine, page] = await Promise.all([
         nestAuthGet<{ items: Enrolled[] }>('/platform/courses/mine?limit=40'),
-        nestAuthGet<{ items: CatalogCourse[] }>('/platform/courses/catalog-page'),
+        nestAuthGet<{
+          items: CatalogCourse[];
+          org_brand_by_course?: Record<string, OrgBrand>;
+          certifiers_by_course?: Record<string, CertifierEntry[]>;
+        }>('/platform/courses/catalog-page'),
       ]);
       setEnrolled(mine?.items || []);
       setCatalog(page?.items || []);
+      setOrgBrandByCourse(page?.org_brand_by_course || {});
+      setCertifiersByCourse(page?.certifiers_by_course || {});
       setVisibleCount(20);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Could not load courses';
@@ -262,22 +342,24 @@ export function CoursesScreen() {
                       style={styles.cardLarge}
                       onPress={() => openCourse(item.course_id, item.title, 'learn')}
                     >
-                      <CourseMedia uri={item.thumbnail_url} large />
-                      <View style={styles.cardBodyLarge}>
-                        <Text style={styles.cardTitleLarge} numberOfLines={2}>
-                          {item.title}
-                        </Text>
-                        {item.short_description ? (
-                          <Text style={styles.desc} numberOfLines={2}>
-                            {item.short_description}
+                      <View style={styles.cardTopRow}>
+                        <CourseMedia uri={item.thumbnail_url} large />
+                        <View style={styles.cardBodyLarge}>
+                          <Text style={styles.cardTitleLarge} numberOfLines={2}>
+                            {item.title}
                           </Text>
-                        ) : null}
-                        {school ? <Text style={styles.school}>{school}</Text> : null}
-                        <Text style={styles.meta}>
-                          {Math.round(Number(item.progress_percent || 0))}% · Continue
-                        </Text>
+                          {school ? <Text style={styles.school}>{school}</Text> : null}
+                          <Text style={styles.meta}>
+                            {Math.round(Number(item.progress_percent || 0))}% · Continue
+                          </Text>
+                        </View>
+                        <Ionicons name="play-circle" size={30} color={Colors.primary} style={styles.cardChevron} />
                       </View>
-                      <Ionicons name="play-circle" size={28} color={Colors.primary} style={styles.cardChevron} />
+                      {item.short_description ? (
+                        <Text style={styles.desc} numberOfLines={2}>
+                          {item.short_description}
+                        </Text>
+                      ) : null}
                     </Pressable>
                   );
                 })}
@@ -325,48 +407,56 @@ export function CoursesScreen() {
         renderItem={({ item }) =>
           loading || item.id.startsWith('__sk') ? (
             <View style={[styles.cardLarge, styles.skeletonCard]}>
-              <View style={[styles.thumbLarge, styles.thumbPh]} />
-              <View style={styles.cardBodyLarge}>
-                <View style={styles.skLine} />
-                <View style={[styles.skLine, { width: '90%', marginTop: 10 }]} />
-                <View style={[styles.skLine, { width: '55%', marginTop: 10 }]} />
+              <View style={styles.cardTopRow}>
+                <View style={[styles.thumbLarge, styles.thumbPh]} />
+                <View style={styles.cardBodyLarge}>
+                  <View style={styles.skLine} />
+                  <View style={[styles.skLine, { width: '90%', marginTop: 10 }]} />
+                  <View style={[styles.skLine, { width: '55%', marginTop: 10 }]} />
+                </View>
               </View>
             </View>
           ) : (
             (() => {
               const pricing = formatPrice(item);
-              const school = offeringLabel(item);
+              const orgBrand = orgBrandByCourse[item.id] || null;
+              const school = orgBrand?.name?.trim() || offeringLabel(item);
+              const certifiers = certifiersByCourse[item.id] || [];
               const desc = item.short_description || item.description || '';
               return (
                 <Pressable style={styles.cardLarge} onPress={() => openCourse(item.id, item.title)}>
-                  <CourseMedia uri={item.thumbnail_url} large />
-                  <View style={styles.cardBodyLarge}>
-                    <Text style={styles.cardTitleLarge} numberOfLines={2}>
-                      {item.title || 'Course'}
-                    </Text>
-                    {desc ? (
-                      <Text style={styles.desc} numberOfLines={2}>
-                        {desc.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()}
+                  {orgBrand?.name ? <OrgBrandBadge brand={orgBrand} /> : null}
+                  <View style={styles.cardTopRow}>
+                    <CourseMedia uri={item.thumbnail_url} large />
+                    <View style={styles.cardBodyLarge}>
+                      <Text style={styles.cardTitleLarge} numberOfLines={2}>
+                        {item.title || 'Course'}
                       </Text>
-                    ) : null}
-                    {school ? <Text style={styles.school}>{school}</Text> : null}
-                    <View style={styles.priceRow}>
-                      <Text style={styles.price}>{pricing.label}</Text>
-                      {pricing.strike ? <Text style={styles.strike}>{pricing.strike}</Text> : null}
-                      {pricing.discount ? (
-                        <View style={styles.discountBadge}>
-                          <Text style={styles.discountText}>{pricing.discount}</Text>
-                        </View>
-                      ) : null}
-                      {item.is_certified ? <Text style={styles.certified}> · Certified</Text> : null}
+                      {!orgBrand?.name && school ? <Text style={styles.school}>{school}</Text> : null}
+                      <View style={styles.priceRow}>
+                        <Text style={styles.price}>{pricing.label}</Text>
+                        {pricing.strike ? <Text style={styles.strike}>{pricing.strike}</Text> : null}
+                        {pricing.discount ? (
+                          <View style={styles.discountBadge}>
+                            <Text style={styles.discountText}>{pricing.discount}</Text>
+                          </View>
+                        ) : null}
+                        {item.is_certified ? <Text style={styles.certified}> · Certified</Text> : null}
+                      </View>
                     </View>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={20}
+                      color={Colors.mutedForeground}
+                      style={styles.cardChevron}
+                    />
                   </View>
-                  <Ionicons
-                    name="chevron-forward"
-                    size={20}
-                    color={Colors.mutedForeground}
-                    style={styles.cardChevron}
-                  />
+                  {desc ? (
+                    <Text style={styles.desc} numberOfLines={2}>
+                      {desc.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()}
+                    </Text>
+                  ) : null}
+                  <CertifierLabels entries={certifiers} />
                 </Pressable>
               );
             })()
@@ -428,41 +518,79 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 13, fontWeight: '600', color: Colors.foreground },
   chipTextOn: { color: '#fff' },
   cardLarge: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    gap: 14,
+    flexDirection: 'column',
     backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 14,
+    borderRadius: 20,
+    padding: 18,
+    marginBottom: 20,
+    marginTop: 14,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Colors.border,
-    minHeight: 132,
+    minHeight: 220,
+    gap: 10,
+  },
+  cardTopRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 16,
   },
   thumb: { width: 56, height: 56, borderRadius: 10, backgroundColor: '#E8F5F0' },
-  thumbLarge: { width: 112, height: 112, borderRadius: 14, backgroundColor: '#E8F5F0' },
+  thumbLarge: { width: 152, height: 152, borderRadius: 18, backgroundColor: '#E8F5F0' },
   thumbPh: { alignItems: 'center', justifyContent: 'center' },
-  cardBodyLarge: { flex: 1, minWidth: 0, justifyContent: 'center', gap: 4 },
-  cardTitleLarge: { fontSize: 17, fontWeight: '700', color: Colors.foreground, lineHeight: 22 },
-  desc: { fontSize: 13, color: Colors.mutedForeground, lineHeight: 18 },
-  school: { fontSize: 12, fontWeight: '600', color: Colors.primary, marginTop: 2 },
-  meta: { fontSize: 13, color: Colors.mutedForeground, marginTop: 4 },
-  priceRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 4 },
-  price: { fontSize: 14, fontWeight: '700', color: Colors.foreground },
+  cardBodyLarge: { flex: 1, minWidth: 0, justifyContent: 'center', gap: 6 },
+  cardTitleLarge: { fontSize: 20, fontWeight: '700', color: Colors.foreground, lineHeight: 26 },
+  desc: { fontSize: 14, color: Colors.mutedForeground, lineHeight: 20 },
+  school: { fontSize: 13, fontWeight: '600', color: Colors.primary, marginTop: 2 },
+  meta: { fontSize: 14, color: Colors.mutedForeground, marginTop: 4 },
+  priceRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 6 },
+  price: { fontSize: 16, fontWeight: '700', color: Colors.foreground },
   strike: {
-    fontSize: 12,
+    fontSize: 13,
     color: Colors.mutedForeground,
     textDecorationLine: 'line-through',
   },
   discountBadge: {
     backgroundColor: 'rgba(232,93,4,0.12)',
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 7,
   },
-  discountText: { fontSize: 11, fontWeight: '700', color: Colors.orange },
-  certified: { fontSize: 12, color: Colors.mutedForeground },
+  discountText: { fontSize: 12, fontWeight: '700', color: Colors.orange },
+  certified: { fontSize: 13, color: Colors.mutedForeground },
   cardChevron: { alignSelf: 'center' },
+  orgBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    alignSelf: 'flex-start',
+    backgroundColor: Colors.primaryLight,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: Colors.border,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    maxWidth: '100%',
+  },
+  orgBadgeLogo: { width: 32, height: 32, borderRadius: 8, backgroundColor: '#fff' },
+  orgBadgeLogoPh: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primary,
+  },
+  orgBadgeInitials: { fontSize: 12, fontWeight: '800', color: '#fff' },
+  orgBadgeLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: Colors.mutedForeground,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  orgBadgeName: { fontSize: 13, fontWeight: '700', color: Colors.foreground },
+  certWrap: { marginTop: 2, gap: 2 },
+  certRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  certLogo: { width: 16, height: 16, borderRadius: 4, backgroundColor: '#fff' },
+  certPrimary: { fontSize: 12, fontWeight: '700', color: Colors.foreground, flexShrink: 1 },
+  certOthers: { fontSize: 11, color: Colors.mutedForeground, marginLeft: 19 },
   errBox: {
     flexDirection: 'row',
     gap: 8,

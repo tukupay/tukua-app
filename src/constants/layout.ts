@@ -2,7 +2,7 @@
 export const TAB_BAR_BODY_HEIGHT = 54;
 
 /** Floating transparent header body (excluding safe-area). Keep in sync with NativeAppHeader. */
-export const FLOATING_HEADER_BODY = 44;
+export const FLOATING_HEADER_BODY = 36;
 
 /** Extra gap below floating header before page content. */
 export const FLOATING_HEADER_GAP = 10;

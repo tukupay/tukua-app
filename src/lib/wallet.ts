@@ -4,7 +4,7 @@
  * Top-up: POST /payments/mpesa/stk.
  */
 import { getNestApiBaseUrl } from './localHost';
-import { mpesaStk } from './platformAuthApi';
+import { mpesaCheckStatus, mpesaStk } from './platformAuthApi';
 import { resolveNestAccessTokenForWebView } from './platformNestAuth';
 
 export type Wallet = {
@@ -107,29 +107,87 @@ export function totalSavings(wallets: Wallet[]) {
   return wallets.reduce((sum, w) => sum + (w.balance ?? 0), 0);
 }
 
-/** M-Pesa STK top-up via Nest (never /platform/edge). */
+/**
+ * Default individual-tier rate — mirrors web `DEFAULT_TOKEN_MINIMUMS.individual` fallback
+ * (`price_per_1m_kes: 950`). Org/role-specific tiers live in Supabase `token_pricing_settings`
+ * with no Nest REST reader yet, so mobile uses this flat default until that endpoint exists.
+ */
+const DEFAULT_PRICE_PER_1M_KES = 950;
+
+export function tokensFromKes(amountKes: number, pricePer1mKes: number = DEFAULT_PRICE_PER_1M_KES): number {
+  if (!amountKes || !pricePer1mKes || pricePer1mKes <= 0) return 0;
+  return Math.floor((amountKes / pricePer1mKes) * 1_000_000);
+}
+
+/** M-Pesa STK top-up via Nest (never /platform/edge). Computes `tokens` client-side so the STK
+ * callback credits the wallet — the Nest `mpesa_transactions.tokens` column drives crediting. */
 export async function topUpViaMpesa(body: {
   phone_number: string;
   amount: number;
+  user_id?: string;
+  tokens?: number;
   purpose?: string;
   description?: string;
   account_reference?: string;
   metadata?: Record<string, unknown>;
-}) {
+}): Promise<{ checkout_request_id: string; tokens: number }> {
   const phone = String(body.phone_number || '').trim();
   if (!phone) throw new Error('phone_number is required');
   if (!(Number(body.amount) > 0)) throw new Error('amount must be > 0');
+  const tokens = body.tokens != null ? Math.max(0, Math.floor(body.tokens)) : tokensFromKes(Number(body.amount));
 
   const res = await mpesaStk({
     phone_number: phone,
     amount: Number(body.amount),
-    purpose: body.purpose || 'wallet_topup',
-    description: body.description || 'Wallet top-up',
+    user_id: body.user_id,
+    tokens,
+    purpose: body.purpose || 'tokens',
+    description: body.description || `${tokens.toLocaleString()} Tukua tokens`,
     account_reference: body.account_reference,
     metadata: body.metadata,
   });
   if (!res.ok) {
     throw new Error(res.message || res.error || 'M-Pesa STK failed — use Nest /payments/mpesa/stk');
   }
-  return res.data;
+  const data = (res.data || {}) as { checkout_request_id?: string; data?: { checkout_request_id?: string } };
+  const checkoutRequestId = String(data.checkout_request_id || data.data?.checkout_request_id || '');
+  if (!checkoutRequestId) throw new Error('M-Pesa did not return a checkout request id');
+  return { checkout_request_id: checkoutRequestId, tokens };
+}
+
+export type MpesaTopUpStatus = {
+  status: 'pending' | 'completed' | 'failed' | 'cancelled' | 'unknown';
+  tokens?: number;
+  mpesa_receipt?: string;
+  message?: string;
+};
+
+/** Poll a checkout request until it resolves, or maxAttempts is hit (default 5s interval, 3 min). */
+export async function pollMpesaTopUpStatus(
+  checkoutRequestId: string,
+  opts?: { intervalMs?: number; maxAttempts?: number; onTick?: (status: MpesaTopUpStatus) => void },
+): Promise<MpesaTopUpStatus> {
+  const intervalMs = opts?.intervalMs ?? 5000;
+  const maxAttempts = opts?.maxAttempts ?? 36;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const res = await mpesaCheckStatus(checkoutRequestId);
+    const data = (res.data || {}) as Record<string, unknown>;
+    const rawStatus = String(data.status || '').toLowerCase();
+    const status: MpesaTopUpStatus = {
+      status:
+        rawStatus === 'completed' || rawStatus === 'failed' || rawStatus === 'cancelled' || rawStatus === 'pending'
+          ? (rawStatus as MpesaTopUpStatus['status'])
+          : 'unknown',
+      tokens: typeof data.tokens === 'number' ? data.tokens : undefined,
+      mpesa_receipt: typeof data.mpesa_receipt === 'string' ? data.mpesa_receipt : undefined,
+      message: typeof data.user_message === 'string' ? data.user_message : (typeof data.message === 'string' ? data.message : undefined),
+    };
+    opts?.onTick?.(status);
+    if (status.status === 'completed' || status.status === 'failed' || status.status === 'cancelled') {
+      return status;
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  return { status: 'unknown', message: 'Payment status check timed out' };
 }

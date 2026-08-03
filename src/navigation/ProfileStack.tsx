@@ -4,7 +4,9 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import {
   BalancesScreen,
+  DeleteAccountScreen,
   DocumentsScreen,
+  IdVerificationScreen,
   MemoryScreen,
   PortfolioScreen,
   PreferencesScreen,
@@ -23,6 +25,8 @@ export type ProfileStackParamList = {
   Preferences: undefined;
   ProfileThemes: undefined;
   Balances: undefined;
+  IdVerification: undefined;
+  DeleteAccount: undefined;
 };
 
 const Stack = createNativeStackNavigator<ProfileStackParamList>();
@@ -58,6 +62,8 @@ export function ProfileStack() {
       <Stack.Screen name="Preferences" component={PreferencesScreen} />
       <Stack.Screen name="ProfileThemes" component={ThemesScreen} options={{ title: 'Themes' }} />
       <Stack.Screen name="Balances" component={BalancesScreen} />
+      <Stack.Screen name="IdVerification" component={IdVerificationScreen} options={{ title: 'ID verification' }} />
+      <Stack.Screen name="DeleteAccount" component={DeleteAccountScreen} options={{ title: 'Delete account' }} />
     </Stack.Navigator>
   );
 }

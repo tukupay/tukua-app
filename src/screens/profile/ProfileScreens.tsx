@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GreenPattern } from '../../components/dashboard/DashboardBackground';
 import { ProfileAvatar } from '../../components/navigation/ProfileAvatar';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
+import { useAuth } from '../../context/AuthContext';
 import { useDialog } from '../../context/DialogContext';
 import {
   createDocument,
@@ -33,17 +34,23 @@ import {
   fetchPortfolio,
   fetchPreferences,
   fetchProfile,
+  lookupTokenShareRecipient,
   patchMemory,
   patchPortfolio,
   patchPreferences,
   patchProfile,
+  requestAccountDeletion,
+  transferTokens,
+  uploadProfileFile,
+  verifyIdDocument,
   ProfileData,
   ProfileDocument,
   ProfileMemory,
-  uploadProfileFile,
   type BalancesData,
   type PortfolioSettings,
+  type TokenShareLookup,
 } from '../../lib/profileApi';
+import { pollMpesaTopUpStatus, tokensFromKes, topUpViaMpesa } from '../../lib/wallet';
 import type { ProfileStackParamList } from '../../navigation/ProfileStack';
 import { useAppTheme } from '../../context/AppThemeContext';
 import { Colors } from '../../theme/yana';
@@ -57,6 +64,17 @@ import {
   type SchoolThemeId,
 } from '../../theme/schoolThemes';
 
+const FONT_OPTIONS: Array<{ value: string; label: string; family: string }> = [
+  { value: 'Inter', label: 'Inter', family: 'Inter_400Regular' },
+  { value: 'Poppins', label: 'Poppins', family: 'Poppins_400Regular' },
+  { value: 'Roboto', label: 'Roboto', family: 'Roboto_400Regular' },
+  { value: 'Cormorant Garamond', label: 'Cormorant', family: 'Cormorant_600SemiBold' },
+  { value: 'Plus Jakarta Sans', label: 'Jakarta Sans', family: 'PlusJakartaSans_700Bold' },
+];
+const FONT_SIZE_MIN = 12;
+const FONT_SIZE_MAX = 22;
+const FONT_SIZE_STEP = 1;
+
 type HomeProps = NativeStackScreenProps<ProfileStackParamList, 'ProfileHome'>;
 type EditProps = NativeStackScreenProps<ProfileStackParamList, 'ProfileEdit'>;
 
@@ -67,12 +85,13 @@ const HOME_LINKS: Array<{
   icon: keyof typeof Ionicons.glyphMap;
 }> = [
   { screen: 'ProfileEdit', title: 'Edit profile', subtitle: 'Identity, contact and avatar', icon: 'person-circle-outline' },
+  { screen: 'IdVerification', title: 'ID verification', subtitle: 'Verify your identity document', icon: 'shield-checkmark-outline' },
   { screen: 'Documents', title: 'Documents', subtitle: 'CV, certificates and files', icon: 'document-text-outline' },
   { screen: 'Portfolio', title: 'Portfolio', subtitle: 'Public page and visibility', icon: 'briefcase-outline' },
   { screen: 'Memory', title: 'Memory', subtitle: 'What Tukua remembers', icon: 'sparkles-outline' },
-  { screen: 'Preferences', title: 'Preferences', subtitle: 'AI model and response style', icon: 'options-outline' },
+  { screen: 'Preferences', title: 'Preferences', subtitle: 'AI model, font and response style', icon: 'options-outline' },
   { screen: 'ProfileThemes', title: 'Themes', subtitle: 'App colors and chat background', icon: 'color-palette-outline' },
-  { screen: 'Balances', title: 'Balances', subtitle: 'Tokens and recent activity', icon: 'wallet-outline' },
+  { screen: 'Balances', title: 'Balances', subtitle: 'Tokens, top-up and activity', icon: 'wallet-outline' },
 ];
 
 function errorMessage(error: unknown): string {
@@ -151,7 +170,7 @@ function Field({
   onChangeText: (value: string) => void;
   placeholder?: string;
   multiline?: boolean;
-  keyboardType?: 'default' | 'email-address' | 'phone-pad';
+  keyboardType?: 'default' | 'email-address' | 'phone-pad' | 'number-pad';
 }) {
   return (
     <View style={styles.field}>
@@ -163,7 +182,11 @@ function Field({
         placeholderTextColor={Colors.mutedForeground}
         multiline={multiline}
         keyboardType={keyboardType}
-        autoCapitalize={label.toLowerCase().includes('username') ? 'none' : 'sentences'}
+        autoCapitalize={
+          label.toLowerCase().includes('username') || label.toLowerCase().includes('email')
+            ? 'none'
+            : 'sentences'
+        }
         style={[styles.input, multiline && styles.textarea]}
       />
     </View>
@@ -319,6 +342,12 @@ export function ProfileEditScreen({}: EditProps) {
     void load();
   }, [load]);
 
+  const [skillsInput, setSkillsInput] = useState('');
+
+  useEffect(() => {
+    setSkillsInput((profile?.skills || []).join(', '));
+  }, [profile?.skills]);
+
   const update = (field: keyof ProfileData, value: string) => {
     setProfile((current) => ({ ...(current || {}), [field]: value }));
   };
@@ -327,6 +356,10 @@ export function ProfileEditScreen({}: EditProps) {
     if (!profile) return;
     setSaving(true);
     try {
+      const skills = skillsInput
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
       const updated = await patchProfile({
         full_name: profile.full_name,
         username: profile.username,
@@ -335,6 +368,14 @@ export function ProfileEditScreen({}: EditProps) {
         phone_number: profile.phone_number || profile.phone,
         whatsapp_phone: profile.whatsapp_phone,
         secondary_phone: profile.secondary_phone,
+        country_code: profile.country_code,
+        country_name: profile.country_name,
+        preferred_currency: profile.preferred_currency,
+        linkedin_url: profile.linkedin_url,
+        facebook_url: profile.facebook_url,
+        x_url: profile.x_url,
+        portfolio_url: profile.portfolio_url,
+        skills,
       });
       setProfile(updated);
       showDialog({ title: 'Profile saved', message: 'Your account details are up to date.', variant: 'success' });
@@ -396,6 +437,20 @@ export function ProfileEditScreen({}: EditProps) {
             <Field label="Primary phone" value={profile.phone_number || profile.phone || ''} onChangeText={(v) => update('phone_number', v)} keyboardType="phone-pad" />
             <Field label="WhatsApp" value={profile.whatsapp_phone || ''} onChangeText={(v) => update('whatsapp_phone', v)} keyboardType="phone-pad" />
             <Field label="Secondary phone" value={profile.secondary_phone || ''} onChangeText={(v) => update('secondary_phone', v)} keyboardType="phone-pad" />
+          </Card>
+          <Card title="Country & currency">
+            <Field label="Country code" value={profile.country_code || ''} onChangeText={(v) => update('country_code', v.toUpperCase())} placeholder="KE" />
+            <Field label="Country name" value={profile.country_name || ''} onChangeText={(v) => update('country_name', v)} placeholder="Kenya" />
+            <Field label="Preferred currency" value={profile.preferred_currency || ''} onChangeText={(v) => update('preferred_currency', v.toUpperCase())} placeholder="KES" />
+          </Card>
+          <Card title="Social links" subtitle="Shown on your public portfolio when enabled.">
+            <Field label="LinkedIn" value={profile.linkedin_url || ''} onChangeText={(v) => update('linkedin_url', v)} placeholder="https://linkedin.com/in/you" keyboardType="default" />
+            <Field label="Facebook" value={profile.facebook_url || ''} onChangeText={(v) => update('facebook_url', v)} placeholder="https://facebook.com/you" />
+            <Field label="X (Twitter)" value={profile.x_url || ''} onChangeText={(v) => update('x_url', v)} placeholder="https://x.com/you" />
+            <Field label="Portfolio / website" value={profile.portfolio_url || ''} onChangeText={(v) => update('portfolio_url', v)} placeholder="https://your-site.com" />
+          </Card>
+          <Card title="Skills" subtitle="Comma separated — shown on your public portfolio.">
+            <Field label="Skills" value={skillsInput} onChangeText={setSkillsInput} placeholder="React, Excel, Public Speaking" multiline />
           </Card>
           <PrimaryButton label="Save profile" onPress={() => void save()} busy={saving} />
         </>
@@ -703,12 +758,17 @@ export function PreferencesScreen({ navigation }: NativeStackScreenProps<Profile
   const [sarcasm, setSarcasm] = useState(false);
   const [prompt, setPrompt] = useState('');
   const [promptMemoryId, setPromptMemoryId] = useState<string | null>(null);
+  const [preferredFont, setPreferredFont] = useState('Inter');
+  const [fontSize, setFontSize] = useState(16);
 
   useEffect(() => {
     void Promise.all([fetchPreferences(), fetchMemories()])
       .then(([preferences, memories]) => {
         setModel(preferences.preferred_model || 'gemini');
         setSarcasm(Boolean(preferences.sarcasm_mode));
+        const userPrefs = preferences.user_preferences || {};
+        setPreferredFont(String(userPrefs.preferred_font || 'Inter'));
+        setFontSize(Number(userPrefs.font_size) || 16);
         const memory = memories.find((item) => item.key === 'user_prompt');
         if (memory) {
           setPromptMemoryId(memory.id);
@@ -722,7 +782,12 @@ export function PreferencesScreen({ navigation }: NativeStackScreenProps<Profile
   const save = async () => {
     setSaving(true);
     try {
-      await patchPreferences({ preferred_model: model, sarcasm_mode: sarcasm });
+      await patchPreferences({
+        preferred_model: model,
+        sarcasm_mode: sarcasm,
+        preferred_font: preferredFont,
+        font_size: fontSize,
+      });
       if (promptMemoryId) {
         await patchMemory(promptMemoryId, { value: prompt });
       } else if (prompt.trim()) {
@@ -754,6 +819,41 @@ export function PreferencesScreen({ navigation }: NativeStackScreenProps<Profile
         <View style={styles.toggleRow}>
           <View style={styles.rowBody}><Text style={styles.toggleLabel}>Savage mode 😏</Text><Text style={styles.rowMeta}>Adds extra wit to responses.</Text></View>
           <Switch value={sarcasm} onValueChange={setSarcasm} trackColor={{ true: Colors.orange }} />
+        </View>
+      </Card>
+      <Card title="Font" subtitle="Applies across chat and profile web views.">
+        <View style={styles.fontChipRow}>
+          {FONT_OPTIONS.map((opt) => (
+            <Pressable
+              key={opt.value}
+              style={[styles.fontChip, preferredFont === opt.value && styles.fontChipActive]}
+              onPress={() => setPreferredFont(opt.value)}
+            >
+              <Text style={[styles.fontChipText, preferredFont === opt.value && styles.fontChipTextActive]}>
+                {opt.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+        <View style={styles.fontSizeRow}>
+          <Text style={styles.rowMeta}>Font size</Text>
+          <View style={styles.fontSizeControls}>
+            <Pressable
+              style={styles.fontSizeBtn}
+              onPress={() => setFontSize((v) => Math.max(FONT_SIZE_MIN, v - FONT_SIZE_STEP))}
+              accessibilityLabel="Decrease font size"
+            >
+              <Ionicons name="remove" size={16} color={Colors.primary} />
+            </Pressable>
+            <Text style={styles.fontSizeValue}>{fontSize}px</Text>
+            <Pressable
+              style={styles.fontSizeBtn}
+              onPress={() => setFontSize((v) => Math.min(FONT_SIZE_MAX, v + FONT_SIZE_STEP))}
+              accessibilityLabel="Increase font size"
+            >
+              <Ionicons name="add" size={16} color={Colors.primary} />
+            </Pressable>
+          </View>
         </View>
       </Card>
       <Card title="Appearance" subtitle="School themes and chat background pattern.">
@@ -828,11 +928,25 @@ export function ThemesScreen() {
   );
 }
 
-export function BalancesScreen() {
+const TOPUP_PRESETS = [50, 100, 250, 500];
+
+export function BalancesScreen({ navigation }: NativeStackScreenProps<ProfileStackParamList, 'Balances'>) {
+  const { profile, session } = useAuth();
+  const { showDialog } = useDialog();
   const [data, setData] = useState<BalancesData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [phone, setPhone] = useState('');
+  const [amount, setAmount] = useState('100');
+  const [topUpBusy, setTopUpBusy] = useState(false);
+  const [topUpStatus, setTopUpStatus] = useState('');
+  const [shareEmail, setShareEmail] = useState('');
+  const [shareKes, setShareKes] = useState('');
+  const [shareNote, setShareNote] = useState('');
+  const [shareLookup, setShareLookup] = useState<TokenShareLookup | null>(null);
+  const [shareLooking, setShareLooking] = useState(false);
+  const [shareBusy, setShareBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -850,6 +964,115 @@ export function BalancesScreen() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (profile?.phone && !phone) setPhone(profile.phone);
+  }, [profile?.phone, phone]);
+
+  const submitTopUp = async () => {
+    const numericAmount = Number(amount);
+    if (!phone.trim()) {
+      showDialog({ title: 'Phone required', message: 'Enter the M-Pesa number to charge.', variant: 'warning' });
+      return;
+    }
+    if (!(numericAmount > 0)) {
+      showDialog({ title: 'Invalid amount', message: 'Enter an amount greater than 0.', variant: 'warning' });
+      return;
+    }
+    setTopUpBusy(true);
+    setTopUpStatus('Sending M-Pesa prompt…');
+    try {
+      const { checkout_request_id, tokens } = await topUpViaMpesa({
+        phone_number: phone.trim(),
+        amount: numericAmount,
+        user_id: session?.user?.id,
+      });
+      setTopUpStatus('Check your phone for the M-Pesa prompt…');
+      const result = await pollMpesaTopUpStatus(checkout_request_id, {
+        onTick: (s) => {
+          if (s.status === 'pending') setTopUpStatus('Waiting for M-Pesa confirmation…');
+        },
+      });
+      if (result.status === 'completed') {
+        setTopUpStatus('');
+        showDialog({
+          title: 'Top-up successful',
+          message: result.message || `${(result.tokens || tokens).toLocaleString()} tokens have been added to your balance.`,
+          variant: 'success',
+        });
+        void load();
+      } else if (result.status === 'failed' || result.status === 'cancelled') {
+        setTopUpStatus('');
+        showDialog({ title: 'Top-up not completed', message: result.message || 'The M-Pesa payment was not completed.', variant: 'warning' });
+      } else {
+        setTopUpStatus('');
+        showDialog({ title: 'Still processing', message: 'We could not confirm the payment yet — check Balances shortly.', variant: 'warning' });
+      }
+    } catch (e) {
+      setTopUpStatus('');
+      showDialog({ title: 'Top-up failed', message: errorMessage(e), variant: 'danger' });
+    } finally {
+      setTopUpBusy(false);
+    }
+  };
+
+  const findShareRecipient = async () => {
+    const trimmed = shareEmail.trim().toLowerCase();
+    if (!trimmed.includes('@')) {
+      showDialog({ title: 'Email required', message: 'Enter a valid recipient email.', variant: 'warning' });
+      return;
+    }
+    setShareLooking(true);
+    setShareLookup(null);
+    try {
+      setShareLookup(await lookupTokenShareRecipient(trimmed));
+    } catch (e) {
+      showDialog({ title: 'Lookup failed', message: errorMessage(e), variant: 'danger' });
+    } finally {
+      setShareLooking(false);
+    }
+  };
+
+  const submitSambaza = async () => {
+    if (!shareLookup?.user_id) {
+      showDialog({ title: 'Find recipient', message: 'Look up a recipient email first.', variant: 'warning' });
+      return;
+    }
+    const kes = Math.floor(Number(shareKes)) || 0;
+    const tokens = tokensFromKes(kes);
+    if (kes < 1 || tokens < 1) {
+      showDialog({ title: 'Invalid amount', message: 'Enter a KES amount that yields at least 1 token.', variant: 'warning' });
+      return;
+    }
+    if (tokens > Number(data?.balance?.balance || 0)) {
+      showDialog({
+        title: 'Insufficient tokens',
+        message: `You need ${tokens.toLocaleString()} tokens for that Sambaza.`,
+        variant: 'warning',
+      });
+      return;
+    }
+    setShareBusy(true);
+    try {
+      await transferTokens({
+        to_user_id: shareLookup.user_id,
+        tokens,
+        note: shareNote.trim() || `Sambaza KES ${kes} → ${tokens} tokens`,
+      });
+      showDialog({
+        title: 'Sambaza sent',
+        message: `Sent ${tokens.toLocaleString()} tokens to ${shareLookup.first_name || shareLookup.email}.`,
+        variant: 'success',
+      });
+      setShareKes('');
+      setShareNote('');
+      void load();
+    } catch (e) {
+      showDialog({ title: 'Sambaza failed', message: errorMessage(e), variant: 'danger' });
+    } finally {
+      setShareBusy(false);
+    }
+  };
+
   const balance = Number(data?.balance?.balance || 0);
   return (
     <ScreenShell
@@ -866,6 +1089,52 @@ export function BalancesScreen() {
         <Text style={styles.balanceLabel}>Available tokens</Text>
         <Text style={styles.balanceAmount}>{balance.toLocaleString()}</Text>
       </View>
+
+      <Card title="Top up tokens" subtitle="Pay with M-Pesa — tokens land instantly after confirmation.">
+        <Field label="M-Pesa phone number" value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="0712345678" />
+        <View style={styles.presetRow}>
+          {TOPUP_PRESETS.map((preset) => (
+            <Pressable
+              key={preset}
+              style={[styles.presetChip, amount === String(preset) && styles.presetChipActive]}
+              onPress={() => setAmount(String(preset))}
+            >
+              <Text style={[styles.presetChipText, amount === String(preset) && styles.presetChipTextActive]}>
+                KES {preset}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+        <Field label="Amount (KES)" value={amount} onChangeText={setAmount} keyboardType="number-pad" />
+        {Number(amount) > 0 ? (
+          <Text style={styles.rowMeta}>≈ {tokensFromKes(Number(amount)).toLocaleString()} tokens</Text>
+        ) : null}
+        {topUpStatus ? (
+          <View style={styles.topUpStatusRow}>
+            <ActivityIndicator size="small" color={Colors.primary} />
+            <Text style={styles.rowMeta}>{topUpStatus}</Text>
+          </View>
+        ) : null}
+        <PrimaryButton label="Buy tokens with M-Pesa" onPress={() => void submitTopUp()} busy={topUpBusy} />
+      </Card>
+
+      <Card title="Sambaza tokens" subtitle="Share tokens with another Tukua user by email.">
+        <Field label="Recipient email" value={shareEmail} onChangeText={setShareEmail} keyboardType="email-address" placeholder="friend@example.com" />
+        <PrimaryButton label="Find recipient" onPress={() => void findShareRecipient()} busy={shareLooking} />
+        {shareLookup?.user_id ? (
+          <Text style={styles.rowMeta}>
+            Found: {shareLookup.first_name || 'User'}
+            {shareLookup.last_name_masked ? ` ${shareLookup.last_name_masked}` : ''} ({shareLookup.email})
+          </Text>
+        ) : null}
+        <Field label="Amount (KES equivalent)" value={shareKes} onChangeText={setShareKes} keyboardType="number-pad" />
+        {Number(shareKes) > 0 ? (
+          <Text style={styles.rowMeta}>≈ {tokensFromKes(Number(shareKes)).toLocaleString()} tokens</Text>
+        ) : null}
+        <Field label="Note (optional)" value={shareNote} onChangeText={setShareNote} placeholder="Happy learning" />
+        <PrimaryButton label="Send Sambaza" onPress={() => void submitSambaza()} busy={shareBusy} />
+      </Card>
+
       <Text style={styles.sectionTitle}>Recent activity</Text>
       {data?.transactions?.length ? data.transactions.map((item) => {
         const positive = Number(item.amount) >= 0;
@@ -884,6 +1153,134 @@ export function BalancesScreen() {
           </Card>
         );
       }) : !error ? <Card><Text style={styles.emptyText}>No token transactions yet.</Text></Card> : null}
+
+      <Pressable style={styles.dangerLink} onPress={() => navigation.navigate('DeleteAccount')}>
+        <Ionicons name="trash-outline" size={16} color={Colors.orange} />
+        <Text style={styles.dangerLinkText}>Delete my account</Text>
+      </Pressable>
+    </ScreenShell>
+  );
+}
+
+/** ID verification — Nest vision check via `/platform/ai/verify-id` (no Supabase Edge). */
+export function IdVerificationScreen() {
+  const { showDialog } = useDialog();
+  const [documentType, setDocumentType] = useState<'national_id' | 'passport'>('national_id');
+  const [fileName, setFileName] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [result, setResult] = useState<{ verified: boolean; message?: string } | null>(null);
+
+  const pickAndVerify = async () => {
+    try {
+      const picked = await DocumentPicker.getDocumentAsync({ type: 'image/*', copyToCacheDirectory: true });
+      if (picked.canceled || !picked.assets?.[0]) return;
+      const asset = picked.assets[0];
+      setFileName(asset.name || 'ID document');
+      setUploading(true);
+      setResult(null);
+      const extension = (asset.name || 'id.jpg').split('.').pop() || 'jpg';
+      const uploaded = await uploadProfileFile({
+        uri: asset.uri,
+        name: asset.name || `id-document.${extension}`,
+        mimeType: asset.mimeType,
+        bucket: 'user-documents',
+        path: `id-verification-${Date.now()}.${extension}`,
+      });
+      const signedUrl = await createSignedDownload(uploaded.path);
+      // Nest checks `document_type.startsWith('id_')` for ID-keyword validation.
+      const nestDocType = documentType === 'passport' ? 'id_passport' : 'id_national';
+      const verification = await verifyIdDocument({ image_url: signedUrl, document_type: nestDocType });
+      const verified = Boolean(verification.is_valid ?? verification.verified ?? verification.success);
+      setResult({ verified, message: verification.message || verification.analysis_notes });
+      showDialog({
+        title: verified ? 'ID verified' : 'Could not verify',
+        message: verification.message || verification.analysis_notes || (verified ? 'Your document looks valid.' : 'We could not confirm this document — try a clearer photo.'),
+        variant: verified ? 'success' : 'warning',
+      });
+    } catch (e) {
+      showDialog({ title: 'Verification failed', message: errorMessage(e), variant: 'danger' });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <ScreenShell>
+      <Card title="Verify your identity" subtitle="Upload a clear photo of your ID or passport. We use AI to check authenticity.">
+        <View style={styles.presetRow}>
+          <Pressable
+            style={[styles.presetChip, documentType === 'national_id' && styles.presetChipActive]}
+            onPress={() => setDocumentType('national_id')}
+          >
+            <Text style={[styles.presetChipText, documentType === 'national_id' && styles.presetChipTextActive]}>National ID</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.presetChip, documentType === 'passport' && styles.presetChipActive]}
+            onPress={() => setDocumentType('passport')}
+          >
+            <Text style={[styles.presetChipText, documentType === 'passport' && styles.presetChipTextActive]}>Passport</Text>
+          </Pressable>
+        </View>
+        {fileName ? <Text style={styles.rowMeta}>Selected: {fileName}</Text> : null}
+        {result ? (
+          <View style={styles.topUpStatusRow}>
+            <Ionicons
+              name={result.verified ? 'checkmark-circle' : 'alert-circle'}
+              size={18}
+              color={result.verified ? Colors.primary : Colors.orange}
+            />
+            <Text style={styles.rowMeta}>{result.message || (result.verified ? 'Verified' : 'Not verified')}</Text>
+          </View>
+        ) : null}
+        <PrimaryButton label="Upload & verify" onPress={() => void pickAndVerify()} busy={uploading} />
+      </Card>
+    </ScreenShell>
+  );
+}
+
+/** Delete account — Nest deletion request queue via `/platform/account/deletion-request` (no Supabase Edge). */
+export function DeleteAccountScreen() {
+  const { profile, logout } = useAuth();
+  const { showDialog } = useDialog();
+  const [reason, setReason] = useState('');
+  const [confirmText, setConfirmText] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async () => {
+    if (confirmText.trim().toUpperCase() !== 'DELETE') {
+      showDialog({ title: 'Type DELETE to confirm', message: 'This helps us avoid accidental account deletion.', variant: 'warning' });
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await requestAccountDeletion({ email: profile?.email, phone: profile?.phone, reason: reason.trim() || undefined });
+      showDialog({
+        title: 'Deletion requested',
+        message: 'We have received your request. Your account will be deleted per our data policy, and you will be signed out now.',
+        variant: 'success',
+      });
+      await logout();
+    } catch (e) {
+      showDialog({ title: 'Could not submit request', message: errorMessage(e), variant: 'danger' });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <ScreenShell>
+      <Card title="Delete account" subtitle="This permanently removes your Tukua account and data. This cannot be undone.">
+        <Field label="Why are you leaving? (optional)" value={reason} onChangeText={setReason} multiline placeholder="Tell us what we could improve…" />
+        <Field label='Type "DELETE" to confirm' value={confirmText} onChangeText={setConfirmText} placeholder="DELETE" />
+        <Pressable
+          style={[styles.dangerButton, submitting && styles.buttonDim]}
+          onPress={() => void submit()}
+          disabled={submitting}
+        >
+          {submitting ? <ActivityIndicator color={Colors.white} /> : <Ionicons name="trash-outline" size={16} color={Colors.white} />}
+          <Text style={styles.dangerButtonText}>Delete my account</Text>
+        </Pressable>
+      </Card>
     </ScreenShell>
   );
 }
@@ -954,6 +1351,69 @@ const styles = StyleSheet.create({
   transactionAmount: { fontSize: 15, fontWeight: '700' },
   creditText: { color: Colors.primary },
   debitText: { color: Colors.orange },
+  presetRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  presetChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.background,
+  },
+  presetChipActive: { borderColor: Colors.primary, backgroundColor: Colors.primaryLight },
+  presetChipText: { fontSize: 13, fontWeight: '600', color: Colors.mutedForeground },
+  presetChipTextActive: { color: Colors.primary },
+  topUpStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 },
+  dangerLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 16,
+    marginTop: 8,
+  },
+  dangerLinkText: { color: Colors.orange, fontSize: 13, fontWeight: '700', fontFamily: 'Inter_600SemiBold' },
+  dangerButton: {
+    minHeight: 48,
+    borderRadius: 13,
+    backgroundColor: '#D64545',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 12,
+  },
+  dangerButtonText: { color: Colors.white, fontSize: 14, fontWeight: '700', fontFamily: 'Inter_600SemiBold' },
+  fontChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
+  fontChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.background,
+  },
+  fontChipActive: { borderColor: Colors.primary, backgroundColor: Colors.primaryLight },
+  fontChipText: { fontSize: 13, fontWeight: '600', color: Colors.mutedForeground },
+  fontChipTextActive: { color: Colors.primary },
+  fontSizeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 14,
+  },
+  fontSizeControls: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  fontSizeBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primaryLight,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  fontSizeValue: { fontSize: 14, fontWeight: '700', color: Colors.foreground, minWidth: 36, textAlign: 'center' },
   themeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 4 },
   themeCard: {
     width: '47%',

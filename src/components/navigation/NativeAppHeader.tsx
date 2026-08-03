@@ -1,5 +1,6 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Animated,
   Modal,
   Pressable,
   ScrollView,
@@ -15,6 +16,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useDialog } from '../../context/DialogContext';
 import { useWebViewControl } from '../../context/WebViewControlContext';
 import { biometricEnableMessage, enableBiometrics } from '../../lib/biometrics';
+import { toggleSavageMode } from '../../lib/userPreferences';
 import { hideSystemStatusBar } from '../ImmersiveSystemBars';
 import { ProfileAvatar } from './ProfileAvatar';
 import { TokenBalancePill } from './TokenBalancePill';
@@ -25,13 +27,62 @@ import { navigateDashboard, navigateProfile } from '../../navigation/AppNavigato
 
 export { NATIVE_HEADER_BODY_HEIGHT };
 
+const SAVAGE_ON_OPACITY = 1;
+const SAVAGE_OFF_OPACITY = 0.35;
+
 export function NativeAppHeader() {
   const insets = useSafeAreaInsets();
-  const { profile, logout, session } = useAuth();
+  const { profile, logout, session, savageMode, setSavageMode } = useAuth();
   const { showDialog } = useDialog();
-  const { navigate, sendChatCommand, jumpToTab } = useWebViewControl();
+  const { navigate, sendChatCommand, jumpToTab, activeTabPath } = useWebViewControl();
   const [open, setOpen] = useState(false);
   const [chatsOpen, setChatsOpen] = useState(false);
+  const savageOpacity = useRef(new Animated.Value(SAVAGE_OFF_OPACITY)).current;
+  const showSavageToggle = activeTabPath === '/chat';
+
+  useEffect(() => {
+    if (!session?.user) {
+      savageOpacity.setValue(SAVAGE_OFF_OPACITY);
+      return;
+    }
+    savageOpacity.setValue(savageMode ? SAVAGE_ON_OPACITY : SAVAGE_OFF_OPACITY);
+  }, [session?.user?.id, savageMode, savageOpacity]);
+
+  const handleSavageToggle = useCallback(async () => {
+    try {
+      const enabled = await toggleSavageMode();
+      if (enabled === null) {
+        showDialog({
+          title: 'Sign in required',
+          message: 'Sign in to toggle savage mode.',
+          variant: 'warning',
+          icon: 'flame-outline',
+        });
+        return;
+      }
+      setSavageMode(enabled);
+      Animated.timing(savageOpacity, {
+        toValue: enabled ? SAVAGE_ON_OPACITY : SAVAGE_OFF_OPACITY,
+        duration: 220,
+        useNativeDriver: true,
+      }).start();
+      showDialog({
+        title: enabled ? 'Savage mode ON 😏' : 'Savage mode off',
+        message: enabled
+          ? 'Tukua will respond with extra wit. Enjoy responsibly.'
+          : 'Back to the regular Tukua tone.',
+        variant: 'success',
+        icon: 'flame-outline',
+      });
+    } catch {
+      showDialog({
+        title: 'Could not update',
+        message: 'Savage mode failed to save. Try again.',
+        variant: 'danger',
+        icon: 'flame-outline',
+      });
+    }
+  }, [savageOpacity, setSavageMode, showDialog]);
 
   const displayName = profile?.fullName?.trim() || profile?.email?.split('@')[0] || 'Account';
   const avatarUrl = useMemo(() => {
@@ -209,6 +260,16 @@ export function NativeAppHeader() {
           <TokenBalancePill />
 
           <View style={styles.actions}>
+            {showSavageToggle ? (
+              <TouchableOpacity
+                style={[styles.savageBtn, savageMode && styles.savageBtnActive]}
+                onPress={() => void handleSavageToggle()}
+                accessibilityLabel={savageMode ? 'Savage mode on' : 'Savage mode off'}
+                accessibilityRole="button">
+                <Animated.Text style={[styles.savageEmoji, { opacity: savageOpacity }]}>😏</Animated.Text>
+              </TouchableOpacity>
+            ) : null}
+
             <TouchableOpacity
               style={styles.menuTrigger}
               onPress={() => setOpen(true)}
@@ -298,15 +359,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingBottom: 8,
+    paddingBottom: 5,
     minHeight: NATIVE_HEADER_BODY_HEIGHT,
     backgroundColor: 'transparent',
-    gap: 10,
+    gap: 8,
   },
   chatsBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
@@ -322,24 +383,43 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     minWidth: 0,
   },
+  savageBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.28)',
+    backgroundColor: 'rgba(4,31,24,0.4)',
+    flexShrink: 0,
+  },
+  savageBtnActive: {
+    borderColor: 'rgba(244,140,6,0.75)',
+    backgroundColor: 'rgba(232,93,4,0.38)',
+  },
+  savageEmoji: {
+    fontSize: 14,
+    lineHeight: 17,
+  },
   menuTrigger: {
     flexShrink: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
     borderRadius: 999,
     backgroundColor: 'rgba(4,31,24,0.4)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.28)',
-    maxWidth: 160,
+    maxWidth: 150,
     minWidth: 0,
   },
   signOutBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
