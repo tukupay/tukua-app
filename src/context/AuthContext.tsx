@@ -20,7 +20,7 @@ import {
   UserProfile,
 } from '../lib/auth';
 import { clearPlatformNestToken } from '../lib/platformNestAuth';
-import { getSavageModeForUser } from '../lib/userPreferences';
+import { getSavageModeEnabled, getSavageModeForUser } from '../lib/userPreferences';
 import { clearDeskSession } from '../lib/deskApi';
 import { clearSelectedContext } from '../lib/selectedContext';
 import { log } from '../lib/logger';
@@ -62,7 +62,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loadUserPreferences = useCallback(async (userId: string) => {
     try {
-      const enabled = await getSavageModeForUser(userId);
+      // Nest JWT first — PostgREST `users` fails for Nest-only sessions (no auth.uid()).
+      const enabled = (await getSavageModeEnabled()) || (await getSavageModeForUser(userId));
       setSavageMode(enabled);
       log.info('Auth', 'user preferences loaded', { savageMode: enabled });
     } catch (error) {

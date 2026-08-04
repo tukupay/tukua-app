@@ -846,6 +846,7 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
   );
 
   const hydrate = useCallback(async () => {
+    let schoolsMarked = false;
     try {
       const [{ data: sessionData }, cached] = await Promise.all([
         supabase.auth.getSession(),
@@ -855,10 +856,10 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
 
       // Nest JWT required for /parents/me/* — reconnect before soft-adopting Supabase.
       const nestOk = await ensureNestDeskSession();
+      let nestUser = nestOk ? (await getCachedDeskUser()) ?? cached : cached;
       if (nestOk) {
         preferNestDeskTokenRef.current = true;
         const token = await getDeskToken();
-        const nestUser = (await getCachedDeskUser()) ?? cached;
         setDeskToken(token);
         if (nestUser) {
           // Do not trust nestUser.user_roles yet — syncSupabaseAsDesk restores the saved hat.
@@ -869,11 +870,60 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
 
       if (session?.access_token) {
         await syncSupabaseAsDesk(session, { quiet: true });
-      } else if (!nestOk) {
+        schoolsMarked = true;
+      } else if (nestOk) {
+        // Nest-only login (PEA / platform) — no GoTrue session. syncSupabaseAsDesk never runs,
+        // so without this branch schoolsReady stays false and AppNavigator spins forever.
+        let uid = nestUser?.id || nestUser?.user_id || null;
+        if (!uid) {
+          try {
+            const { restoreSession } = await import('../lib/auth');
+            const nestAuth = await restoreSession();
+            uid = nestAuth?.user?.id || null;
+            if (!nestUser && nestAuth?.user) {
+              nestUser = {
+                id: nestAuth.user.id,
+                email: nestAuth.user.email ?? undefined,
+                school_id: null,
+                user_roles: [],
+              };
+              setDeskUser(nestUser);
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+        if (uid) {
+          setAuthUserId(uid);
+          authUserIdRef.current = uid;
+          const membership = await applySchoolsForUser(uid, { quiet: true });
+          schoolsMarked = true;
+          const activeRole = membership.activeRole;
+          const schoolId = membership.schoolId ?? membership.schools[0]?.id ?? null;
+          setDeskUser((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  id: prev.id || uid!,
+                  school_id: schoolId ?? prev.school_id,
+                  user_roles: activeRole
+                    ? [activeRole]
+                    : prev.user_roles?.length
+                      ? prev.user_roles
+                      : [],
+                }
+              : prev,
+          );
+        } else {
+          setSchoolsReady(true);
+          schoolsMarked = true;
+        }
+      } else {
         const token = await getDeskToken();
         setDeskToken(token);
         setDeskUser(cached);
         setSchoolsReady(true);
+        schoolsMarked = true;
         if (token) {
           void deskFetchMe().then((me) => {
             if (me) setDeskUser(me);
@@ -882,9 +932,10 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
       }
       log.info('DeskAuth', 'hydrated', getDeskApiDebugInfo());
     } finally {
+      if (!schoolsMarked) setSchoolsReady(true);
       setDeskReady(true);
     }
-  }, [syncSupabaseAsDesk]);
+  }, [applySchoolsForUser, syncSupabaseAsDesk]);
 
   useEffect(() => {
     void hydrate();

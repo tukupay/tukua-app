@@ -29,7 +29,31 @@ async function nestSavageToggle(): Promise<boolean | null> {
   return Boolean(data?.sarcasm_mode ?? data?.enabled);
 }
 
+async function getCurrentPreferencesViaNest(): Promise<UserPreferences | null> {
+  try {
+    const token = await resolveNestAccessTokenForWebView();
+    if (!token) return null;
+    const res = await fetch(`${getNestApiBaseUrl().replace(/\/$/, '')}/platform/preferences`, {
+      headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok) {
+      log.warn('Preferences', 'nest fetch failed', res.status, json?.message);
+      return null;
+    }
+    const data = (json?.data ?? json) as UserPreferences | null;
+    return data || {};
+  } catch (e) {
+    log.warn('Preferences', 'nest fetch error', String(e));
+    return null;
+  }
+}
+
 async function getCurrentPreferences(userId: string): Promise<UserPreferences> {
+  const viaNest = await getCurrentPreferencesViaNest();
+  if (viaNest) return viaNest;
+
+  // Legacy GoTrue + PostgREST fallback only (Nest-only sessions have no auth.uid()).
   const { data, error } = await supabase
     .from('users')
     .select('user_preferences')

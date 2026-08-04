@@ -166,6 +166,9 @@ export function LiquidGlassBackdrop() {
           fill="none"
           opacity={0.22}
         />
+        {/* Extra-visible brand point (hero dot) */}
+        <Circle cx={W * 0.72} cy={H * 0.28} r={7} fill="#15411D" opacity={0.55} />
+        <Circle cx={W * 0.72} cy={H * 0.28} r={3.2} fill="#FFFFFF" opacity={0.9} />
       </Svg>
 
       {/* Extra blur wash so blobs feel liquid under glass */}

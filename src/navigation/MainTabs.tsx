@@ -148,7 +148,7 @@ function MainTabNavigator({
             return <AiTabIcon focused={focused} size={size} />;
           }
           const icons: Record<string, keyof typeof Ionicons.glyphMap> = {
-            Connect: 'chatbubbles-outline',
+            Connect: 'chatbubbles',
             Courses: 'book-outline',
             Dashboard: 'grid-outline',
             Profile: 'person-outline',
@@ -164,7 +164,12 @@ function MainTabNavigator({
           </>
         )}
       </Tab.Screen>
-      <Tab.Screen name="Connect" options={{ title: 'Connect' }}>
+      <Tab.Screen
+        name="Connect"
+        options={{
+          title: 'Connect',
+          tabBarAccessibilityLabel: 'Connect chats',
+        }}>
         {() => <WebAppScreen path="/connect" label="Connect" />}
       </Tab.Screen>
       <Tab.Screen name="Courses" options={{ title: 'Courses' }} component={CoursesStack} />

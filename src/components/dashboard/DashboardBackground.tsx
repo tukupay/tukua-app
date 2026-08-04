@@ -37,7 +37,20 @@ export function GreenPattern({
       <View style={[styles.orb, styles.orbB]} />
       <View style={[styles.orb, styles.orbC]} />
       {DOTS.map((d, i) => (
-        <View key={`d-${i}`} style={[styles.dot, { top: d.t, left: d.l, opacity: d.o }]} />
+        <View
+          key={`d-${i}`}
+          style={[
+            styles.dot,
+            {
+              top: d.t,
+              left: d.l,
+              opacity: d.o,
+              ...(d.s
+                ? { width: d.s, height: d.s, borderRadius: d.s / 2 }
+                : null),
+            },
+          ]}
+        />
       ))}
       <View style={[styles.hex, styles.hexA]} />
       <View style={[styles.hex, styles.hexB]} />
@@ -45,8 +58,10 @@ export function GreenPattern({
   );
 }
 
-const DOTS = [
+const DOTS: Array<{ t: number; l: number; o: number; s?: number }> = [
   { t: 18, l: 24, o: 0.18 },
+  // Extra-visible “hero” point — stronger brand cue on green mesh
+  { t: 42, l: 96, o: 0.55, s: 7 },
   { t: 36, l: 72, o: 0.12 },
   { t: 22, l: 140, o: 0.16 },
   { t: 48, l: 200, o: 0.1 },

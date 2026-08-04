@@ -132,15 +132,19 @@ function notifyAppSourceEvent() {
           'html.tukua-mobile-app .absolute.bottom-0[data-input-area]{' +
           'bottom:calc(58px + env(safe-area-inset-bottom,0px))!important;' +
           'padding-bottom:2px!important}' +
-          // Composer: grow with content + a visibly thicker/tinted border while typing.
+          // Composer: grow with content; border lives only on [data-composer-shell].
           'html.tukua-mobile-app [data-input-area] textarea{' +
-          'white-space:pre-wrap!important;word-break:break-word!important}' +
+          'white-space:pre-wrap!important;word-break:break-word!important;' +
+          'border:0!important;border-radius:0!important;box-shadow:none!important;outline:none!important;' +
+          'background:transparent!important}' +
           'html.tukua-mobile-app [data-input-area] > div{' +
-          'border-width:1px!important;' +
-          'transition:border-color .2s ease,box-shadow .2s ease!important}' +
-          'html.tukua-mobile-app [data-input-area] > div:focus-within{' +
+          'border:0!important;box-shadow:none!important;background:transparent!important}' +
+          'html.tukua-mobile-app [data-composer-shell]{' +
+          'border:1px solid hsl(var(--primary) / 0.35)!important;' +
+          'border-radius:16px!important}' +
+          'html.tukua-mobile-app [data-composer-shell]:focus-within{' +
           'border-color:hsl(var(--primary))!important;' +
-          'box-shadow:0 0 0 2px hsla(var(--primary)/0.2)!important}';
+          'box-shadow:0 0 0 2px hsl(var(--primary) / 0.22)!important}';
         (document.head || document.documentElement).appendChild(s);
       })();
       ${buildMobileKeyboardBridgeScript().trim()}
@@ -452,12 +456,21 @@ export function buildMobileChatTabBarStylesScript(tabBarPx: number, topInsetPx =
           'padding-bottom:calc(' + pad + ')!important}' +
           'html.tukua-mobile-app.tukua-kb-open [data-mobile-chat-shell]{' +
           'padding-bottom:var(--tukua-kb-pad,0px)!important}' +
-          'html.tukua-mobile-app [data-input-area] > div{' +
-          'border-width:1px!important;' +
-          'transition:border-color .2s ease,box-shadow .2s ease!important}' +
-          'html.tukua-mobile-app [data-input-area] > div:focus-within{' +
+          /* Single rounded shell only — do NOT border the outer wrapper (caused double border). */
+          'html.tukua-mobile-app [data-composer-shell]{' +
+          'border:1px solid hsl(var(--primary) / 0.35)!important;' +
+          'border-radius:16px!important;' +
+          'background:hsl(var(--background) / 0.96)!important;' +
+          'box-shadow:0 8px 28px rgba(0,0,0,0.1)!important}' +
+          'html.tukua-mobile-app [data-composer-shell]:focus-within{' +
           'border-color:hsl(var(--primary))!important;' +
-          'box-shadow:0 0 0 2px hsla(var(--primary)/0.2)!important}' +
+          'box-shadow:0 0 0 2px hsl(var(--primary) / 0.22),0 8px 28px rgba(0,0,0,0.12)!important}' +
+          'html.tukua-mobile-app [data-composer-shell] textarea,' +
+          'html.tukua-mobile-app [data-input-area] textarea{' +
+          'border:0!important;border-radius:0!important;box-shadow:none!important;outline:none!important;' +
+          'background:transparent!important}' +
+          'html.tukua-mobile-app [data-input-area] > div{' +
+          'border:0!important;box-shadow:none!important;background:transparent!important}' +
           (top > 0
             ? /* Chat hamburger is fixed top-2 in mobileApp — push below native header */
               'html.tukua-mobile-app button.fixed.left-2,' +

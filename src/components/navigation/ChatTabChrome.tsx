@@ -9,6 +9,7 @@ import { FLOATING_HEADER_BODY } from '../../constants/layout';
 /**
  * Chat-tab-only floating chrome: + new chat, docked top-right under the
  * floating header (savage toggle now lives in `NativeAppHeader` actions).
+ * zIndex above header (50) so it stays tappable while the keyboard is open.
  */
 export function ChatTabChrome() {
   const insets = useSafeAreaInsets();
@@ -31,7 +32,7 @@ export function ChatTabChrome() {
         accessibilityLabel="New chat"
         accessibilityRole="button"
         activeOpacity={0.85}>
-        <Ionicons name="add" size={20} color={Colors.primary} />
+        <Ionicons name="add" size={22} color={Colors.white} />
       </TouchableOpacity>
     </View>
   );
@@ -41,16 +42,20 @@ const styles = StyleSheet.create({
   newChatBtn: {
     position: 'absolute',
     right: 14,
-    zIndex: 40,
-    elevation: 40,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    zIndex: 60,
+    elevation: 60,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1.5,
-    borderColor: 'rgba(10,61,46,0.35)',
-    // Light / slightly visible — not opaque green
-    backgroundColor: 'rgba(232,245,239,0.72)',
+    borderColor: 'rgba(255,255,255,0.55)',
+    // Extra-visible solid brand chip (was pale and lost under the dark header)
+    backgroundColor: Colors.primary,
+    shadowColor: '#000',
+    shadowOpacity: 0.28,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
   },
 });
