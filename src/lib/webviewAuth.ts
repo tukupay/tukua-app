@@ -30,6 +30,7 @@ const NEST_API_BASE = getNestApiBaseUrl().replace(/\/$/, '');
 
 const SPA_CLIENT_ROUTES = [
   '/chat',
+  '/connect',
   '/sign-in',
   '/register',
   '/courses',
@@ -135,10 +136,11 @@ function notifyAppSourceEvent() {
           'html.tukua-mobile-app [data-input-area] textarea{' +
           'white-space:pre-wrap!important;word-break:break-word!important}' +
           'html.tukua-mobile-app [data-input-area] > div{' +
-          'transition:border-color .15s ease,box-shadow .15s ease!important}' +
+          'border-width:1px!important;' +
+          'transition:border-color .2s ease,box-shadow .2s ease!important}' +
           'html.tukua-mobile-app [data-input-area] > div:focus-within{' +
-          'border-width:2px!important;border-color:hsl(var(--primary))!important;' +
-          'box-shadow:0 0 0 3px hsla(var(--primary)/0.15)!important}';
+          'border-color:hsl(var(--primary))!important;' +
+          'box-shadow:0 0 0 2px hsla(var(--primary)/0.2)!important}';
         (document.head || document.documentElement).appendChild(s);
       })();
       ${buildMobileKeyboardBridgeScript().trim()}
@@ -163,7 +165,10 @@ function buildMobileKeyboardBridgeScript() {
         var update = function() {
           try {
             var kb = Math.round(window.innerHeight - vv.height - vv.offsetTop);
-            root.style.setProperty('--tukua-kb-pad', (kb > 40 ? kb : 0) + 'px');
+            var open = kb > 40;
+            root.style.setProperty('--tukua-kb-pad', (open ? kb : 0) + 'px');
+            if (open) root.classList.add('tukua-kb-open');
+            else root.classList.remove('tukua-kb-open');
           } catch (e) {}
         };
         vv.addEventListener('resize', update);
@@ -432,13 +437,27 @@ export function buildMobileChatTabBarStylesScript(tabBarPx: number, topInsetPx =
         }
         el.textContent =
           'html.tukua-mobile-app [data-input-area]{' +
-          'padding-bottom:calc(' + pad + ' + 2px + var(--tukua-kb-pad, 0px))!important;' +
+          'padding-bottom:calc(' + pad + ' + 2px)!important;' +
           'margin-bottom:0!important}' +
           'html.tukua-mobile-app [data-input-area].absolute,' +
           'html.tukua-mobile-app .absolute.bottom-0[data-input-area]{' +
-          'bottom:calc(' + pad + ' + var(--tukua-kb-pad, 0px))!important;padding-bottom:2px!important}' +
+          'bottom:calc(' + pad + ')!important;padding-bottom:2px!important}' +
+          /* Keyboard open: sit flush above keyboard — do NOT stack tab-bar height. */
+          'html.tukua-mobile-app.tukua-kb-open [data-input-area],' +
+          'html.tukua-mobile-app.tukua-kb-open [data-input-area].absolute,' +
+          'html.tukua-mobile-app.tukua-kb-open .absolute.bottom-0[data-input-area]{' +
+          'bottom:var(--tukua-kb-pad,0px)!important;' +
+          'padding-bottom:max(2px,env(safe-area-inset-bottom,0px))!important}' +
           'html.tukua-mobile-app [data-mobile-chat-shell]{' +
-          'padding-bottom:calc(' + pad + ' + var(--tukua-kb-pad, 0px))!important}' +
+          'padding-bottom:calc(' + pad + ')!important}' +
+          'html.tukua-mobile-app.tukua-kb-open [data-mobile-chat-shell]{' +
+          'padding-bottom:var(--tukua-kb-pad,0px)!important}' +
+          'html.tukua-mobile-app [data-input-area] > div{' +
+          'border-width:1px!important;' +
+          'transition:border-color .2s ease,box-shadow .2s ease!important}' +
+          'html.tukua-mobile-app [data-input-area] > div:focus-within{' +
+          'border-color:hsl(var(--primary))!important;' +
+          'box-shadow:0 0 0 2px hsla(var(--primary)/0.2)!important}' +
           (top > 0
             ? /* Chat hamburger is fixed top-2 in mobileApp — push below native header */
               'html.tukua-mobile-app button.fixed.left-2,' +

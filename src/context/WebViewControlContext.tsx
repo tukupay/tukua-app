@@ -28,12 +28,14 @@ type WebViewControlContextType = {
 
 const TAB_WEB_PATHS: Partial<Record<keyof MainTabParamList, string>> = {
   Chat: '/chat',
+  Connect: '/connect',
   Courses: '/courses',
   Profile: '/profile',
 };
 
 const PATH_TO_TAB: Record<string, keyof MainTabParamList> = {
   '/chat': 'Chat',
+  '/connect': 'Connect',
   '/courses': 'Courses',
   '/profile': 'Profile',
 };
@@ -42,6 +44,7 @@ function resolveTabPath(webPath: string, preferTabPath?: string): string {
   if (preferTabPath) return preferTabPath;
   if (webPath.startsWith('/courses')) return '/courses';
   if (webPath.startsWith('/profile')) return '/profile';
+  if (webPath.startsWith('/connect')) return '/connect';
   return '/chat';
 }
 

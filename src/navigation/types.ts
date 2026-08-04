@@ -60,6 +60,7 @@ export type DashboardStackParamList = {
 
 export type MainTabParamList = {
   Chat: undefined;
+  Connect: undefined;
   Courses: undefined;
   Dashboard: undefined;
   Profile: NavigatorScreenParams<ProfileStackParamList> | undefined;

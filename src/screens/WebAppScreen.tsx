@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   BackHandler,
-  KeyboardAvoidingView,
   Platform,
   StyleSheet,
   Text,
@@ -676,10 +675,8 @@ export function WebAppScreen({ path, label }: Props) {
   // Show until SPA posts TUKUA_CHAT_READY (or bootstrap timeout clears pageLoading).
   const showChatLoader = chatMode && isFocused && (booting || pageLoading);
 
-  const Container = chatMode ? KeyboardAvoidingView : View;
-  const containerKeyboardProps = chatMode
-    ? { behavior: Platform.OS === 'ios' ? ('padding' as const) : undefined, keyboardVerticalOffset: 0 }
-    : {};
+  const Container = View;
+  const containerKeyboardProps = {};
 
   return (
     <Container

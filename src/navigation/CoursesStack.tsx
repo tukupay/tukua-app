@@ -38,7 +38,7 @@ function CourseWebScreen({
           accessibilityRole="button"
           hitSlop={8}
         >
-          <Ionicons name="chevron-back" size={20} color={Colors.primary} />
+          <Ionicons name="chevron-back" size={24} color={Colors.ink || Colors.primary} />
         </TouchableOpacity>
       ) : null}
     </View>
@@ -49,16 +49,20 @@ const courseWebStyles = StyleSheet.create({
   backBtn: {
     position: 'absolute',
     left: 14,
-    zIndex: 45,
-    elevation: 45,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    zIndex: 60,
+    elevation: 60,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: 'rgba(10,61,46,0.35)',
-    backgroundColor: 'rgba(232,245,239,0.85)',
+    borderWidth: 2,
+    borderColor: 'rgba(10,61,46,0.55)',
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    shadowColor: '#0A3D2E',
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
   },
 });
 
