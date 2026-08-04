@@ -92,16 +92,19 @@ function RootNavigator() {
 }
 
 export function AppNavigator() {
-  const { navigationTheme } = useAppTheme();
+  const { navigationTheme, palette } = useAppTheme();
   return (
-    <NavigationContainer ref={rootNavigationRef} linking={linking} theme={navigationTheme}>
-      <MobileErrorBoundary>
-        <RootNavigator />
-      </MobileErrorBoundary>
-    </NavigationContainer>
+    <View style={[styles.root, { backgroundColor: palette.muted }]}>
+      <NavigationContainer ref={rootNavigationRef} linking={linking} theme={navigationTheme}>
+        <MobileErrorBoundary>
+          <RootNavigator />
+        </MobileErrorBoundary>
+      </NavigationContainer>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: { flex: 1 },
   gate: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 });

@@ -17,6 +17,7 @@ import { ProfileStack } from './ProfileStack';
 import { TAB_BAR_BODY_HEIGHT } from '../constants/layout';
 import { TAB_PATHS, WebViewControlProvider, useWebViewControl } from '../context/WebViewControlContext';
 import { useDialog } from '../context/DialogContext';
+import { useAppTheme } from '../context/AppThemeContext';
 import { Colors } from '../theme/yana';
 import { MainTabParamList } from './types';
 import { useAuth } from '../context/AuthContext';
@@ -79,9 +80,14 @@ function BiometricGate({ children }: { children: React.ReactNode }) {
   );
 }
 
-function MainTabNavigator() {
+function MainTabNavigator({
+  onTabChange,
+}: {
+  onTabChange: (tab: keyof MainTabParamList) => void;
+}) {
   const insets = useSafeAreaInsets();
   const { setActiveTabPath, notifyTabFocused } = useWebViewControl();
+  const { palette } = useAppTheme();
   const tabBarHeight = TAB_BAR_BODY_HEIGHT + insets.bottom;
 
   useEffect(() => {
@@ -103,6 +109,7 @@ function MainTabNavigator() {
           const state = e.data.state;
           if (!state) return;
           const route = state.routes[state.index]?.name as keyof MainTabParamList;
+          onTabChange(route);
           const webPath = TAB_PATHS[route];
           if (webPath) {
             setActiveTabPath(webPath);
@@ -119,8 +126,8 @@ function MainTabNavigator() {
           animation: 'timing',
           config: { duration: 220 },
         },
-        sceneStyle: styles.scene,
-        tabBarActiveTintColor: Colors.primary,
+        sceneStyle: [styles.scene, { backgroundColor: palette.muted }],
+        tabBarActiveTintColor: palette.primary,
         tabBarInactiveTintColor: Colors.mutedForeground,
         tabBarStyle: {
           position: 'absolute',
@@ -166,16 +173,20 @@ function MainTabNavigator() {
 export function MainTabs() {
   const { session } = useAuth();
   const { needsSchoolPick, schoolsReady, deskReady } = useDeskAuth();
+  const { palette } = useAppTheme();
   const gating = Boolean(session) && (!deskReady || !schoolsReady);
+  // Tracks the real focused bottom-tab route (Dashboard/Courses/Profile have no
+  // web path, so WebViewControl's activeTabPath alone can't gate chat-only chrome).
+  const [focusedTab, setFocusedTab] = useState<keyof MainTabParamList>('Chat');
 
   return (
     <SafeAreaProvider>
       <BiometricGate>
         <WebViewControlProvider>
-          <View style={styles.shell}>
-            <MainTabNavigator />
+          <View style={[styles.shell, { backgroundColor: palette.muted }]}>
+            <MainTabNavigator onTabChange={setFocusedTab} />
             <NativeAppHeader />
-            <ChatTabChrome />
+            {focusedTab === 'Chat' ? <ChatTabChrome /> : null}
             <PushNotificationBootstrap />
             {gating ? (
               <ContextPickLoader />

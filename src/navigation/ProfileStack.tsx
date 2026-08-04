@@ -15,6 +15,7 @@ import {
   ThemesScreen,
 } from '../screens/profile/ProfileScreens';
 import { Colors } from '../theme/yana';
+import { useAppTheme } from '../context/AppThemeContext';
 
 export type ProfileStackParamList = {
   ProfileHome: undefined;
@@ -33,6 +34,7 @@ const Stack = createNativeStackNavigator<ProfileStackParamList>();
 
 /** Fully native profile hub and account settings stack. */
 export function ProfileStack() {
+  const { palette } = useAppTheme();
   return (
     <Stack.Navigator
       screenOptions={({ navigation }) => ({
@@ -42,7 +44,7 @@ export function ProfileStack() {
         headerTintColor: Colors.foreground,
         headerTitleStyle: { fontWeight: '700', fontSize: 17 },
         headerShadowVisible: false,
-        contentStyle: { backgroundColor: Colors.background },
+        contentStyle: { backgroundColor: palette.muted },
         headerLeft: navigation.canGoBack()
           ? () => (
               <TouchableOpacity

@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CoursesScreen } from '../screens/CoursesScreen';
 import { WebAppScreen } from '../screens/WebAppScreen';
 import { Colors } from '../theme/yana';
+import { useAppTheme } from '../context/AppThemeContext';
 import { FLOATING_HEADER_BODY } from '../constants/layout';
 
 export type CoursesStackParamList = {
@@ -63,6 +64,7 @@ const courseWebStyles = StyleSheet.create({
 
 /** Native course list + in-app WebView for full course features (lessons, pay, quizzes). */
 export function CoursesStack() {
+  const { palette } = useAppTheme();
   return (
     <Stack.Navigator
       screenOptions={({ navigation }) => ({
@@ -72,7 +74,7 @@ export function CoursesStack() {
         headerTintColor: Colors.foreground,
         headerTitleStyle: { fontWeight: '700', fontSize: 17 },
         headerShadowVisible: false,
-        contentStyle: { backgroundColor: Colors.background },
+        contentStyle: { backgroundColor: palette.muted },
         headerLeft: navigation.canGoBack()
           ? () => (
               <TouchableOpacity

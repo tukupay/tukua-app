@@ -1,5 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, BackHandler, Platform, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  BackHandler,
+  KeyboardAvoidingView,
+  Platform,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { WebView, WebViewNavigation } from 'react-native-webview';
 import { hideSystemStatusBar } from '../components/ImmersiveSystemBars';
@@ -83,7 +91,7 @@ export function WebAppScreen({ path, label }: Props) {
   const { register, registerTabFocusHandler, consumePendingRoute, navigate: navigateWeb } =
     useWebViewControl();
   const { session, ensureFreshSession, logout } = useAuth();
-  const { themeId, chatBgPattern } = useAppTheme();
+  const { themeId, chatBgPattern, palette } = useAppTheme();
   const { webFamily, webWeight, webStyle, fontSize } = useFontPreference();
 
   useEffect(() => {
@@ -649,17 +657,24 @@ export function WebAppScreen({ path, label }: Props) {
   // Show until SPA posts TUKUA_CHAT_READY (or bootstrap timeout clears pageLoading).
   const showChatLoader = chatMode && isFocused && (booting || pageLoading);
 
+  const Container = chatMode ? KeyboardAvoidingView : View;
+  const containerKeyboardProps = chatMode
+    ? { behavior: Platform.OS === 'ios' ? ('padding' as const) : undefined, keyboardVerticalOffset: 0 }
+    : {};
+
   return (
-    <View style={[styles.container, { paddingTop: webTopClearance }]}>
+    <Container
+      style={[styles.container, { paddingTop: webTopClearance, backgroundColor: palette.muted }]}
+      {...containerKeyboardProps}>
       {showOverlay && (
-        <View style={styles.loaderOverlay} pointerEvents="none">
+        <View style={[styles.loaderOverlay, { backgroundColor: `${palette.muted}E0` }]} pointerEvents="none">
           <ActivityIndicator size="large" color={Colors.primary} />
           <Text style={styles.loaderText}>Loading {loadingLabel}…</Text>
         </View>
       )}
 
       {showChatLoader && (
-        <View style={styles.chatLoaderOverlay} pointerEvents="none">
+        <View style={[styles.chatLoaderOverlay, { backgroundColor: `${palette.muted}8C` }]} pointerEvents="none">
           <ActivityIndicator size="large" color={Colors.primary} />
           <Text style={styles.loaderText}>Loading chat…</Text>
         </View>
@@ -668,7 +683,7 @@ export function WebAppScreen({ path, label }: Props) {
       <WebView
         ref={webRef}
         source={{ uri: shellUrl }}
-        style={styles.web}
+        style={[styles.web, { backgroundColor: palette.muted }]}
         originWhitelist={['https://*', 'http://*']}
         onLoadEnd={() => {
           hideSystemStatusBar();
@@ -737,8 +752,12 @@ export function WebAppScreen({ path, label }: Props) {
         allowFileAccessFromFileURLs
         allowUniversalAccessFromFileURLs
         mixedContentMode={Platform.OS === 'android' ? 'always' : undefined}
+        keyboardDisplayRequiresUserAction={false}
+        contentInsetAdjustmentBehavior="never"
+        automaticallyAdjustsScrollIndicatorInsets={false}
+        automaticallyAdjustContentInsets={false}
       />
-    </View>
+    </Container>
   );
 }
 

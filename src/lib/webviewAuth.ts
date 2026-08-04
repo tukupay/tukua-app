@@ -130,10 +130,47 @@ function notifyAppSourceEvent() {
           'html.tukua-mobile-app [data-input-area].absolute,' +
           'html.tukua-mobile-app .absolute.bottom-0[data-input-area]{' +
           'bottom:calc(58px + env(safe-area-inset-bottom,0px))!important;' +
-          'padding-bottom:2px!important}';
+          'padding-bottom:2px!important}' +
+          // Composer: grow with content + a visibly thicker/tinted border while typing.
+          'html.tukua-mobile-app [data-input-area] textarea{' +
+          'white-space:pre-wrap!important;word-break:break-word!important}' +
+          'html.tukua-mobile-app [data-input-area] > div{' +
+          'transition:border-color .15s ease,box-shadow .15s ease!important}' +
+          'html.tukua-mobile-app [data-input-area] > div:focus-within{' +
+          'border-width:2px!important;border-color:hsl(var(--primary))!important;' +
+          'box-shadow:0 0 0 3px hsla(var(--primary)/0.15)!important}';
         (document.head || document.documentElement).appendChild(s);
       })();
+      ${buildMobileKeyboardBridgeScript().trim()}
     } catch (e) {}
+  `;
+}
+
+/**
+ * Bridges the on-screen keyboard height into a `--tukua-kb-pad` CSS var so the
+ * chat composer can pad itself above the keyboard even when the native WebView
+ * frame does not resize (iOS). Installed once per page load.
+ */
+function buildMobileKeyboardBridgeScript() {
+  return `
+    (function() {
+      try {
+        if (window.__TUKUA_KB_BRIDGE__) return;
+        window.__TUKUA_KB_BRIDGE__ = true;
+        var vv = window.visualViewport;
+        if (!vv) return;
+        var root = document.documentElement;
+        var update = function() {
+          try {
+            var kb = Math.round(window.innerHeight - vv.height - vv.offsetTop);
+            root.style.setProperty('--tukua-kb-pad', (kb > 40 ? kb : 0) + 'px');
+          } catch (e) {}
+        };
+        vv.addEventListener('resize', update);
+        vv.addEventListener('scroll', update);
+        update();
+      } catch (e) {}
+    })();
   `;
 }
 
@@ -395,13 +432,13 @@ export function buildMobileChatTabBarStylesScript(tabBarPx: number, topInsetPx =
         }
         el.textContent =
           'html.tukua-mobile-app [data-input-area]{' +
-          'padding-bottom:calc(' + pad + ' + 2px)!important;' +
+          'padding-bottom:calc(' + pad + ' + 2px + var(--tukua-kb-pad, 0px))!important;' +
           'margin-bottom:0!important}' +
           'html.tukua-mobile-app [data-input-area].absolute,' +
           'html.tukua-mobile-app .absolute.bottom-0[data-input-area]{' +
-          'bottom:' + pad + '!important;padding-bottom:2px!important}' +
+          'bottom:calc(' + pad + ' + var(--tukua-kb-pad, 0px))!important;padding-bottom:2px!important}' +
           'html.tukua-mobile-app [data-mobile-chat-shell]{' +
-          'padding-bottom:' + pad + '!important}' +
+          'padding-bottom:calc(' + pad + ' + var(--tukua-kb-pad, 0px))!important}' +
           (top > 0
             ? /* Chat hamburger is fixed top-2 in mobileApp — push below native header */
               'html.tukua-mobile-app button.fixed.left-2,' +
@@ -661,7 +698,16 @@ export function buildThemeChromeInjectScript(
         ${tertiary ? `root.style.setProperty('--tertiary', ${JSON.stringify(tertiary)});` : ''}
         ${tertiaryFg ? `root.style.setProperty('--tertiary-foreground', ${JSON.stringify(tertiaryFg)});` : ''}
         ${muted ? `root.style.setProperty('--muted', ${JSON.stringify(muted)});` : ''}
+        ${muted ? `root.style.setProperty('--background', ${JSON.stringify(muted)});` : ''}
+        ${muted ? `root.style.setProperty('--card', ${JSON.stringify(muted)});` : ''}
         ${primary ? `root.style.setProperty('--chat-bubble-user', ${JSON.stringify(primary)});` : ''}
+        ${
+          muted
+            ? `var appBg = 'hsl(' + ${JSON.stringify(muted)} + ')';
+        root.style.backgroundColor = appBg;
+        if (document.body) document.body.style.backgroundColor = appBg;`
+            : ''
+        }
         window.dispatchEvent(new CustomEvent('TUKUA_APP_THEME', {
           detail: { theme: ${JSON.stringify(themeId)}, chatBg: ${JSON.stringify(chatBgPattern)} }
         }));

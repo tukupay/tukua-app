@@ -150,17 +150,21 @@ export function NativeChatDrawer({ visible, onClose }: Props) {
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+      statusBarTranslucent>
       <View style={styles.root}>
         <View
           style={[
             styles.panel,
             {
-              paddingTop: insets.top + 8,
               paddingBottom: Math.max(insets.bottom, 12),
             },
           ]}>
-          <View style={styles.hero}>
+          <View style={[styles.hero, { paddingTop: Math.max(insets.top, 12) }]}>
             <GreenPattern style={styles.heroPattern} darker />
             <View style={styles.heroRow}>
               <View>
@@ -241,44 +245,48 @@ export function NativeChatDrawer({ visible, onClose }: Props) {
           )}
 
           <View style={styles.footer}>
-            <TouchableOpacity
-              style={styles.userCard}
-              onPress={() => {
-                onClose();
-                navigateProfile('ProfileHome');
-              }}
-              activeOpacity={0.9}>
-              <ProfileAvatar name={displayName} uri={avatarUri} size={32} />
-              <View style={styles.userText}>
-                <Text style={styles.userName} numberOfLines={1}>
-                  {displayName}
-                </Text>
-                {profile?.email ? (
-                  <Text style={styles.userEmail} numberOfLines={1}>
-                    {profile.email}
+            <View style={styles.accountCard}>
+              <TouchableOpacity
+                style={styles.userCard}
+                onPress={() => {
+                  onClose();
+                  navigateProfile('ProfileHome');
+                }}
+                activeOpacity={0.9}>
+                <ProfileAvatar name={displayName} uri={avatarUri} size={32} />
+                <View style={styles.userText}>
+                  <Text style={styles.userName} numberOfLines={1}>
+                    {displayName}
                   </Text>
-                ) : null}
-              </View>
-              <Ionicons name="chevron-forward" size={16} color={Colors.mutedForeground} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.logoutBtn}
-              onPress={() => {
-                onClose();
-                showDialog({
-                  title: 'Sign out?',
-                  message: 'You can sign back in anytime with your Tukua account.',
-                  variant: 'danger',
-                  icon: 'log-out-outline',
-                  buttons: [
-                    { text: 'Stay', style: 'cancel' },
-                    { text: 'Sign out', style: 'destructive', onPress: () => void logout() },
-                  ],
-                });
-              }}>
-              <Ionicons name="log-out-outline" size={18} color={Colors.destructive} />
-              <Text style={styles.logoutText}>Sign out</Text>
-            </TouchableOpacity>
+                  {profile?.email ? (
+                    <Text style={styles.userEmail} numberOfLines={1}>
+                      {profile.email}
+                    </Text>
+                  ) : null}
+                </View>
+                <Ionicons name="chevron-forward" size={16} color={Colors.mutedForeground} />
+              </TouchableOpacity>
+              <View style={styles.cardDivider} />
+              <TouchableOpacity
+                style={styles.logoutBtn}
+                activeOpacity={0.9}
+                onPress={() => {
+                  onClose();
+                  showDialog({
+                    title: 'Sign out?',
+                    message: 'You can sign back in anytime with your Tukua account.',
+                    variant: 'danger',
+                    icon: 'log-out-outline',
+                    buttons: [
+                      { text: 'Stay', style: 'cancel' },
+                      { text: 'Sign out', style: 'destructive', onPress: () => void logout() },
+                    ],
+                  });
+                }}>
+                <Ionicons name="log-out-outline" size={18} color={Colors.destructive} />
+                <Text style={styles.logoutText}>Sign out</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
         <Pressable style={styles.backdrop} onPress={onClose} />
@@ -293,6 +301,7 @@ const styles = StyleSheet.create({
   panel: {
     width: '86%',
     maxWidth: 360,
+    height: '100%',
     backgroundColor: '#F4F7F5',
     borderTopRightRadius: 20,
     borderBottomRightRadius: 20,
@@ -309,6 +318,7 @@ const styles = StyleSheet.create({
     paddingBottom: 14,
     overflow: 'hidden',
     borderBottomLeftRadius: 0,
+    backgroundColor: Colors.brandGreenDark,
   },
   heroPattern: { ...StyleSheet.absoluteFillObject },
   heroRow: {
@@ -421,7 +431,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  center: { paddingVertical: 40, alignItems: 'center', gap: 10 },
+  center: { flex: 1, paddingVertical: 40, alignItems: 'center', justifyContent: 'center', gap: 10 },
   error: { color: Colors.destructive, textAlign: 'center', fontSize: 13, paddingHorizontal: 16 },
   retry: { color: Colors.primary, fontWeight: '700' },
   empty: { color: Colors.mutedForeground, padding: 16, textAlign: 'center' },
@@ -430,17 +440,25 @@ const styles = StyleSheet.create({
     borderTopColor: 'rgba(10,61,46,0.1)',
     paddingHorizontal: 12,
     paddingTop: 10,
-    gap: 8,
+  },
+  /** Single pinned-bottom card — profile row + logout row share one border/bg. */
+  accountCard: {
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(10,61,46,0.08)',
+    overflow: 'hidden',
+  },
+  cardDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: 'rgba(10,61,46,0.08)',
+    marginHorizontal: 10,
   },
   userCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: '#fff',
-    borderRadius: 14,
     padding: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(10,61,46,0.08)',
   },
   userText: { flex: 1, minWidth: 0 },
   userName: {
@@ -458,9 +476,9 @@ const styles = StyleSheet.create({
   logoutBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 10,
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
   },
   logoutText: {
     color: Colors.destructive,

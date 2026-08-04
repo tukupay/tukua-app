@@ -22,6 +22,7 @@ import { BursaryScreen } from '../screens/dashboard/BursaryScreen';
 import { SecurityHomeScreen } from '../screens/dashboard/SecurityHomeScreen';
 import { DashboardStackParamList } from './types';
 import { Colors } from '../theme/yana';
+import { useAppTheme } from '../context/AppThemeContext';
 
 const Stack = createNativeStackNavigator<DashboardStackParamList>();
 
@@ -38,6 +39,7 @@ const lazyCamera = {
 };
 
 export function DashboardStack() {
+  const { palette } = useAppTheme();
   return (
     <Stack.Navigator
       screenOptions={({ navigation }) => ({
@@ -45,7 +47,7 @@ export function DashboardStack() {
         headerTintColor: Colors.foreground,
         headerTitleStyle: { fontWeight: '700', fontSize: 17 },
         headerShadowVisible: false,
-        contentStyle: { backgroundColor: Colors.background },
+        contentStyle: { backgroundColor: palette.muted },
         headerLeft: navigation.canGoBack()
           ? () => (
               <TouchableOpacity
