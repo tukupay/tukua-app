@@ -671,6 +671,31 @@ export function buildThemeChromeInjectScript(
   `;
 }
 
+/**
+ * Push the preferred font + size into the SPA (mirrors web
+ * `src/lib/fontUtils.ts` `applyFontPreference` / `applyFontSize` — same
+ * `--chat-font-*` CSS vars the chat/profile pages already read).
+ */
+export function buildFontChromeInjectScript(
+  fontFamily: string,
+  fontSize: number,
+  fontWeight?: string,
+  fontStyle?: string,
+) {
+  return `
+    (function() {
+      try {
+        var root = document.documentElement;
+        root.style.setProperty('--chat-font-family', ${JSON.stringify(fontFamily)});
+        ${fontWeight ? `root.style.setProperty('--chat-font-weight', ${JSON.stringify(fontWeight)});` : "root.style.removeProperty('--chat-font-weight');"}
+        ${fontStyle ? `root.style.setProperty('--chat-font-style', ${JSON.stringify(fontStyle)});` : "root.style.removeProperty('--chat-font-style');"}
+        root.style.setProperty('--chat-font-size', ${JSON.stringify(`${fontSize}px`)});
+      } catch (e) {}
+      true;
+    })();
+  `;
+}
+
 /** Push the latest native session into an already-loaded WebView (no navigation). */
 export function buildSessionResyncScript(session: Session, nestAccessToken?: string | null) {
   return `${buildPreloadSessionScript(session, nestAccessToken)}\ntrue;`;

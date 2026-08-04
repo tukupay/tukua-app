@@ -91,13 +91,13 @@ export function AppThemeProvider({ children }: { children: React.ReactNode }) {
   }, [palette]);
 
   const setThemeId = useCallback((id: SchoolThemeId) => {
-    setThemeIdState(id);
     void AsyncStorage.setItem(APP_THEME_STORAGE_KEY, id);
+    setThemeIdState(id);
   }, []);
 
   const setChatBgPattern = useCallback((id: ChatBgPatternId) => {
-    setChatBgPatternState(id);
     void AsyncStorage.setItem(CHAT_BG_PATTERN_STORAGE_KEY, id);
+    setChatBgPatternState(id);
   }, []);
 
   const navigationTheme = useMemo(() => buildNavigationTheme(palette), [palette]);

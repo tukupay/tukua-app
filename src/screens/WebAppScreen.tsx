@@ -14,6 +14,7 @@ import {
   buildSpaNavigateScript,
   buildSupabaseRefreshAndNavigateScript,
   buildThemeChromeInjectScript,
+  buildFontChromeInjectScript,
   applyWebSessionTokens,
   getActiveSessionScript,
   isMainFrameWebViewRequest,
@@ -25,6 +26,7 @@ import { historyKeyFromUrl, TabHistoryStack } from '../lib/webviewHistory';
 import { isAppWebHost } from '../lib/localHost';
 import { useAuth } from '../context/AuthContext';
 import { useAppTheme } from '../context/AppThemeContext';
+import { useFontPreference } from '../context/FontPreferenceContext';
 import { useWebViewControl } from '../context/WebViewControlContext';
 import { log } from '../lib/logger';
 import { getWebViewMediaProps, WEBVIEW_MEDIA_INJECT_JS } from '../lib/webViewMedia';
@@ -82,6 +84,7 @@ export function WebAppScreen({ path, label }: Props) {
     useWebViewControl();
   const { session, ensureFreshSession, logout } = useAuth();
   const { themeId, chatBgPattern } = useAppTheme();
+  const { webFamily, webWeight, webStyle, fontSize } = useFontPreference();
 
   useEffect(() => {
     let cancelled = false;
@@ -295,7 +298,9 @@ export function WebAppScreen({ path, label }: Props) {
   }, [session?.access_token, isFocused, session]);
 
   useEffect(() => {
-    if (!webRef.current || !isFocused) return;
+    // Re-inject whenever theme/chat-bg changes — even if this tab is not focused
+    // (Chat stays mounted; ThemesScreen updates must reach the WebView immediately).
+    if (!webRef.current) return;
     const hsl = SCHOOL_THEME_HSL[themeId];
     const vars = hsl
       ? {
@@ -309,7 +314,12 @@ export function WebAppScreen({ path, label }: Props) {
         }
       : undefined;
     webRef.current.injectJavaScript(buildThemeChromeInjectScript(themeId, chatBgPattern, vars));
-  }, [themeId, chatBgPattern, isFocused, path]);
+  }, [themeId, chatBgPattern, path]);
+
+  useEffect(() => {
+    if (!webRef.current || !isFocused) return;
+    webRef.current.injectJavaScript(buildFontChromeInjectScript(webFamily, fontSize, webWeight, webStyle));
+  }, [webFamily, webWeight, webStyle, fontSize, isFocused, path]);
 
   useEffect(() => {
     if (!pageLoading || !isFocused) return;

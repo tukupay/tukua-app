@@ -36,6 +36,8 @@ export function ProfileStack() {
   return (
     <Stack.Navigator
       screenOptions={({ navigation }) => ({
+        animation: 'fade_from_bottom',
+        animationDuration: 220,
         headerStyle: { backgroundColor: Colors.white },
         headerTintColor: Colors.foreground,
         headerTitleStyle: { fontWeight: '700', fontSize: 17 },

@@ -32,6 +32,8 @@ export type ProfileData = {
 
   avatar_url?: string | null;
 
+  cover_photo_url?: string | null;
+
   country_code?: string | null;
 
   country_name?: string | null;
@@ -75,6 +77,8 @@ export type ProfileDocument = {
   mime_type?: string | null;
 
   status?: string | null;
+
+  ai_analysis?: string | null;
 
   created_at?: string | null;
 
@@ -410,13 +414,25 @@ export type BalancesData = {
 
   }>;
 
+  total_transactions?: number | null;
+
+  has_more?: boolean;
+
 };
 
 
 
-export function fetchBalances(): Promise<BalancesData> {
+export const BALANCES_PAGE_SIZE = 20;
 
-  return nestPlatformFetch('/platform/me/balances?limit=40');
+
+
+export function fetchBalances(opts: { limit?: number; offset?: number } = {}): Promise<BalancesData> {
+
+  const limit = opts.limit ?? BALANCES_PAGE_SIZE;
+
+  const offset = opts.offset ?? 0;
+
+  return nestPlatformFetch(`/platform/me/balances?limit=${limit}&offset=${offset}`);
 
 }
 
@@ -538,6 +554,21 @@ export function verifyIdDocument(body: {
 
   return nestPlatformFetch('/platform/ai/verify-id', { method: 'POST', body });
 
+}
+
+export type DocumentAnalysisResult = {
+  success?: boolean;
+  doc_id?: string;
+  status?: 'completed' | 'error' | string;
+  error?: string;
+};
+
+/** Background AI analysis of one uploaded document — `/platform/ai/analyze-documents` (Nest-native). */
+export function analyzeDocument(userId: string, docId: string): Promise<DocumentAnalysisResult> {
+  return nestPlatformFetch('/platform/ai/analyze-documents', {
+    method: 'POST',
+    body: { mode: 'analyze_one', user_id: userId, doc_id: docId },
+  });
 }
 
 export type TokenShareLookup = {

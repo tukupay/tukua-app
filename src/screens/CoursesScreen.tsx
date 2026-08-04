@@ -148,12 +148,11 @@ function formatPrice(c: CatalogCourse): {
   return { label: `KES ${price}`, discount, strike };
 }
 
-function CourseMedia({ uri, large }: { uri?: string | null; large?: boolean }) {
-  const style = large ? styles.thumbLarge : styles.thumb;
-  if (uri) return <Image source={{ uri }} style={style} />;
+function CourseMedia({ uri }: { uri?: string | null }) {
+  if (uri) return <Image source={{ uri }} style={styles.thumb} />;
   return (
-    <View style={[style, styles.thumbPh]}>
-      <Ionicons name="book-outline" size={large ? 44 : 28} color={Colors.primary} />
+    <View style={[styles.thumb, styles.thumbPh]}>
+      <Ionicons name="book-outline" size={26} color={Colors.primary} />
     </View>
   );
 }
@@ -269,6 +268,14 @@ export function CoursesScreen() {
     });
   };
 
+  /** Enrolled courses open the learn path (same as web). */
+  const openEnrolled = (courseId: string, title?: string) => {
+    navigation.navigate('CourseWeb', {
+      path: `/courses/${courseId}/learn`,
+      title: title || 'Course',
+    });
+  };
+
   const enrolledIds = useMemo(() => new Set(enrolled.map((e) => e.course_id)), [enrolled]);
 
   const browseAll = useMemo(() => {
@@ -304,7 +311,10 @@ export function CoursesScreen() {
       <FlatList
         data={loading ? ([{ id: '__sk1' }, { id: '__sk2' }, { id: '__sk3' }] as CatalogCourse[]) : browse}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={{ paddingTop: headerPad, paddingBottom: 100, paddingHorizontal: 16 }}
+        contentContainerStyle={[styles.listContent, { paddingTop: headerPad }]}
+        showsVerticalScrollIndicator={false}
+        decelerationRate="normal"
+        scrollEventThrottle={16}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -335,31 +345,33 @@ export function CoursesScreen() {
               <View style={{ marginBottom: 8 }}>
                 <Text style={styles.section}>Continue learning</Text>
                 {enrolled.map((item) => {
-                  const school = offeringLabel(item);
+                  const orgBrand = orgBrandByCourse[item.course_id] || null;
+                  const school = orgBrand?.name?.trim() || offeringLabel(item);
                   return (
                     <Pressable
                       key={item.enrollment_id}
                       style={styles.cardLarge}
-                      onPress={() => openCourse(item.course_id, item.title, 'learn')}
+                      onPress={() => openEnrolled(item.course_id, item.title)}
                     >
-                      <View style={styles.cardTopRow}>
-                        <CourseMedia uri={item.thumbnail_url} large />
-                        <View style={styles.cardBodyLarge}>
-                          <Text style={styles.cardTitleLarge} numberOfLines={2}>
-                            {item.title}
-                          </Text>
-                          {school ? <Text style={styles.school}>{school}</Text> : null}
+                      {orgBrand?.name ? <OrgBrandBadge brand={orgBrand} /> : null}
+                      <Text style={styles.cardTitleFull} numberOfLines={2}>
+                        {item.title}
+                      </Text>
+                      {!orgBrand?.name && school ? <Text style={styles.school}>{school}</Text> : null}
+                      <View style={styles.cardBodyRow}>
+                        <CourseMedia uri={item.thumbnail_url} />
+                        <View style={styles.cardBodyRight}>
+                          {item.short_description ? (
+                            <Text style={styles.desc} numberOfLines={2}>
+                              {item.short_description}
+                            </Text>
+                          ) : null}
                           <Text style={styles.meta}>
                             {Math.round(Number(item.progress_percent || 0))}% · Continue
                           </Text>
                         </View>
-                        <Ionicons name="play-circle" size={30} color={Colors.primary} style={styles.cardChevron} />
+                        <Ionicons name="play-circle" size={28} color={Colors.primary} style={styles.cardChevron} />
                       </View>
-                      {item.short_description ? (
-                        <Text style={styles.desc} numberOfLines={2}>
-                          {item.short_description}
-                        </Text>
-                      ) : null}
                     </Pressable>
                   );
                 })}
@@ -407,11 +419,11 @@ export function CoursesScreen() {
         renderItem={({ item }) =>
           loading || item.id.startsWith('__sk') ? (
             <View style={[styles.cardLarge, styles.skeletonCard]}>
-              <View style={styles.cardTopRow}>
-                <View style={[styles.thumbLarge, styles.thumbPh]} />
-                <View style={styles.cardBodyLarge}>
-                  <View style={styles.skLine} />
-                  <View style={[styles.skLine, { width: '90%', marginTop: 10 }]} />
+              <View style={[styles.skLine, { width: '70%' }]} />
+              <View style={styles.cardBodyRow}>
+                <View style={[styles.thumb, styles.thumbPh]} />
+                <View style={styles.cardBodyRight}>
+                  <View style={[styles.skLine, { width: '90%' }]} />
                   <View style={[styles.skLine, { width: '55%', marginTop: 10 }]} />
                 </View>
               </View>
@@ -426,13 +438,18 @@ export function CoursesScreen() {
               return (
                 <Pressable style={styles.cardLarge} onPress={() => openCourse(item.id, item.title)}>
                   {orgBrand?.name ? <OrgBrandBadge brand={orgBrand} /> : null}
-                  <View style={styles.cardTopRow}>
-                    <CourseMedia uri={item.thumbnail_url} large />
-                    <View style={styles.cardBodyLarge}>
-                      <Text style={styles.cardTitleLarge} numberOfLines={2}>
-                        {item.title || 'Course'}
-                      </Text>
-                      {!orgBrand?.name && school ? <Text style={styles.school}>{school}</Text> : null}
+                  <Text style={styles.cardTitleFull} numberOfLines={2}>
+                    {item.title || 'Course'}
+                  </Text>
+                  {!orgBrand?.name && school ? <Text style={styles.school}>{school}</Text> : null}
+                  <View style={styles.cardBodyRow}>
+                    <CourseMedia uri={item.thumbnail_url} />
+                    <View style={styles.cardBodyRight}>
+                      {desc ? (
+                        <Text style={styles.desc} numberOfLines={2}>
+                          {desc.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()}
+                        </Text>
+                      ) : null}
                       <View style={styles.priceRow}>
                         <Text style={styles.price}>{pricing.label}</Text>
                         {pricing.strike ? <Text style={styles.strike}>{pricing.strike}</Text> : null}
@@ -451,11 +468,6 @@ export function CoursesScreen() {
                       style={styles.cardChevron}
                     />
                   </View>
-                  {desc ? (
-                    <Text style={styles.desc} numberOfLines={2}>
-                      {desc.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()}
-                    </Text>
-                  ) : null}
                   <CertifierLabels entries={certifiers} />
                 </Pressable>
               );
@@ -487,6 +499,7 @@ export function CoursesScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.background },
+  listContent: { paddingBottom: 100, paddingHorizontal: 16 },
   h1: { fontSize: 28, fontWeight: '700', color: '#fff', marginBottom: 4 },
   sub: { color: 'rgba(255,255,255,0.75)', marginBottom: 16, fontSize: 14 },
   section: { fontSize: 16, fontWeight: '700', color: Colors.foreground, marginBottom: 10, marginTop: 8 },
@@ -520,26 +533,24 @@ const styles = StyleSheet.create({
   cardLarge: {
     flexDirection: 'column',
     backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 18,
-    marginBottom: 20,
-    marginTop: 14,
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 14,
+    marginTop: 10,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Colors.border,
-    minHeight: 220,
-    gap: 10,
+    gap: 8,
   },
-  cardTopRow: {
+  cardTitleFull: { fontSize: 17, fontWeight: '700', color: Colors.foreground, lineHeight: 22 },
+  cardBodyRow: {
     flexDirection: 'row',
-    alignItems: 'stretch',
-    gap: 16,
+    alignItems: 'flex-start',
+    gap: 12,
   },
-  thumb: { width: 56, height: 56, borderRadius: 10, backgroundColor: '#E8F5F0' },
-  thumbLarge: { width: 152, height: 152, borderRadius: 18, backgroundColor: '#E8F5F0' },
+  thumb: { width: 64, height: 64, borderRadius: 12, backgroundColor: '#E8F5F0' },
   thumbPh: { alignItems: 'center', justifyContent: 'center' },
-  cardBodyLarge: { flex: 1, minWidth: 0, justifyContent: 'center', gap: 6 },
-  cardTitleLarge: { fontSize: 20, fontWeight: '700', color: Colors.foreground, lineHeight: 26 },
-  desc: { fontSize: 14, color: Colors.mutedForeground, lineHeight: 20 },
+  cardBodyRight: { flex: 1, minWidth: 0, justifyContent: 'center', gap: 4 },
+  desc: { fontSize: 13, color: Colors.mutedForeground, lineHeight: 18 },
   school: { fontSize: 13, fontWeight: '600', color: Colors.primary, marginTop: 2 },
   meta: { fontSize: 14, color: Colors.mutedForeground, marginTop: 4 },
   priceRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 6 },

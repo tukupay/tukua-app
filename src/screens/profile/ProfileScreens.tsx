@@ -2,7 +2,10 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  FlatList,
+  Image,
   Linking,
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -13,6 +16,7 @@ import {
   View,
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
+import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -22,6 +26,7 @@ import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layo
 import { useAuth } from '../../context/AuthContext';
 import { useDialog } from '../../context/DialogContext';
 import {
+  analyzeDocument,
   createDocument,
   createMemory,
   createSignedDownload,
@@ -43,6 +48,7 @@ import {
   transferTokens,
   uploadProfileFile,
   verifyIdDocument,
+  BALANCES_PAGE_SIZE,
   ProfileData,
   ProfileDocument,
   ProfileMemory,
@@ -53,6 +59,8 @@ import {
 import { pollMpesaTopUpStatus, tokensFromKes, topUpViaMpesa } from '../../lib/wallet';
 import type { ProfileStackParamList } from '../../navigation/ProfileStack';
 import { useAppTheme } from '../../context/AppThemeContext';
+import { useFontPreference } from '../../context/FontPreferenceContext';
+import { MOBILE_FONT_OPTIONS, findFontOption, resolveNativeFontFamily } from '../../lib/mobileFonts';
 import { Colors } from '../../theme/yana';
 import {
   CHAT_BG_PATTERN_IDS,
@@ -64,16 +72,64 @@ import {
   type SchoolThemeId,
 } from '../../theme/schoolThemes';
 
-const FONT_OPTIONS: Array<{ value: string; label: string; family: string }> = [
-  { value: 'Inter', label: 'Inter', family: 'Inter_400Regular' },
-  { value: 'Poppins', label: 'Poppins', family: 'Poppins_400Regular' },
-  { value: 'Roboto', label: 'Roboto', family: 'Roboto_400Regular' },
-  { value: 'Cormorant Garamond', label: 'Cormorant', family: 'Cormorant_600SemiBold' },
-  { value: 'Plus Jakarta Sans', label: 'Jakarta Sans', family: 'PlusJakartaSans_700Bold' },
-];
 const FONT_SIZE_MIN = 12;
 const FONT_SIZE_MAX = 22;
 const FONT_SIZE_STEP = 1;
+
+/** A picked file/image, normalized across DocumentPicker and ImagePicker assets. */
+type PickedAsset = {
+  uri: string;
+  name: string;
+  mimeType?: string | null;
+  size?: number | null;
+};
+
+async function pickDocumentOrImage(): Promise<PickedAsset | null> {
+  const picked = await DocumentPicker.getDocumentAsync({
+    type: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'image/*'],
+    copyToCacheDirectory: true,
+  });
+  if (picked.canceled || !picked.assets?.[0]) return null;
+  const asset = picked.assets[0];
+  return { uri: asset.uri, name: asset.name, mimeType: asset.mimeType, size: asset.size };
+}
+
+async function pickFromGallery(): Promise<PickedAsset | null> {
+  const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (!perm.granted) return null;
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ImagePicker.MediaTypeOptions.Images,
+    quality: 0.85,
+  });
+  if (result.canceled || !result.assets?.[0]) return null;
+  const asset = result.assets[0];
+  const extension = (asset.mimeType || 'image/jpeg').split('/').pop() || 'jpg';
+  const name = asset.fileName || `photo-${Date.now()}.${extension}`;
+  return { uri: asset.uri, name, mimeType: asset.mimeType || 'image/jpeg', size: asset.fileSize };
+}
+
+async function pickFromCamera(): Promise<PickedAsset | null> {
+  const perm = await ImagePicker.requestCameraPermissionsAsync();
+  if (!perm.granted) return null;
+  const result = await ImagePicker.launchCameraAsync({ quality: 0.85 });
+  if (result.canceled || !result.assets?.[0]) return null;
+  const asset = result.assets[0];
+  const extension = (asset.mimeType || 'image/jpeg').split('/').pop() || 'jpg';
+  const name = asset.fileName || `photo-${Date.now()}.${extension}`;
+  return { uri: asset.uri, name, mimeType: asset.mimeType || 'image/jpeg', size: asset.fileSize };
+}
+
+/** Native Alert action sheet — Take photo / Choose photo / Choose file. */
+function pickFileOrPhoto(): Promise<PickedAsset | null> {
+  return new Promise((resolve) => {
+    Alert.alert('Add a file', 'Take a photo, choose one from your gallery, or pick a file.', [
+      { text: 'Take photo', onPress: () => void pickFromCamera().then(resolve) },
+      { text: 'Choose photo', onPress: () => void pickFromGallery().then(resolve) },
+      { text: 'Choose file', onPress: () => void pickDocumentOrImage().then(resolve) },
+      { text: 'Cancel', style: 'cancel', onPress: () => resolve(null) },
+    ]);
+  });
+}
 
 type HomeProps = NativeStackScreenProps<ProfileStackParamList, 'ProfileHome'>;
 type EditProps = NativeStackScreenProps<ProfileStackParamList, 'ProfileEdit'>;
@@ -117,6 +173,9 @@ function ScreenShell({
         styles.content,
         { paddingTop: floatingHeaderInset(insets.top), paddingBottom: moduleScrollBottomPad(insets.bottom) },
       ]}
+      showsVerticalScrollIndicator={false}
+      decelerationRate="normal"
+      scrollEventThrottle={16}
       keyboardShouldPersistTaps="handled"
       refreshControl={
         onRefresh ? (
@@ -260,7 +319,10 @@ export function ProfileHomeScreen({ navigation }: HomeProps) {
   return (
     <ScrollView
       style={styles.screen}
-      contentContainerStyle={{ paddingBottom: moduleScrollBottomPad(insets.bottom) }}
+      contentContainerStyle={[styles.homeContent, { paddingBottom: moduleScrollBottomPad(insets.bottom) }]}
+      showsVerticalScrollIndicator={false}
+      decelerationRate="normal"
+      scrollEventThrottle={16}
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -325,6 +387,7 @@ export function ProfileEditScreen({}: EditProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [avatarBusy, setAvatarBusy] = useState(false);
+  const [coverBusy, setCoverBusy] = useState(false);
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
@@ -409,6 +472,29 @@ export function ProfileEditScreen({}: EditProps) {
     }
   };
 
+  const chooseCoverPhoto = async () => {
+    const picked = await DocumentPicker.getDocumentAsync({ type: 'image/*', copyToCacheDirectory: true });
+    if (picked.canceled || !picked.assets[0]) return;
+    const asset = picked.assets[0];
+    setCoverBusy(true);
+    try {
+      const extension = asset.name.split('.').pop() || 'jpg';
+      const result = await uploadProfileFile({
+        uri: asset.uri,
+        name: asset.name,
+        mimeType: asset.mimeType,
+        bucket: 'avatars',
+        path: `cover-${Date.now()}.${extension}`,
+      });
+      const updated = await patchProfile({ cover_photo_url: result.publicUrl || result.path });
+      setProfile(updated);
+    } catch (e) {
+      showDialog({ title: 'Cover photo upload failed', message: errorMessage(e), variant: 'danger' });
+    } finally {
+      setCoverBusy(false);
+    }
+  };
+
   return (
     <ScreenShell loading={loading}>
       {error ? <ErrorCard message={error} retry={() => void load()} /> : null}
@@ -426,6 +512,19 @@ export function ProfileEditScreen({}: EditProps) {
                 <Text style={styles.secondaryButtonText}>{avatarBusy ? 'Uploading…' : 'Change avatar'}</Text>
               </Pressable>
             </View>
+          </Card>
+          <Card title="Cover photo" subtitle="Shown at the top of your public portfolio page.">
+            {profile.cover_photo_url ? (
+              <Image source={{ uri: profile.cover_photo_url }} style={styles.coverPreview} resizeMode="cover" />
+            ) : (
+              <View style={[styles.coverPreview, styles.coverPreviewEmpty]}>
+                <Ionicons name="image-outline" size={26} color={Colors.mutedForeground} />
+              </View>
+            )}
+            <Pressable style={[styles.secondaryButton, { marginTop: 12 }]} onPress={() => void chooseCoverPhoto()} disabled={coverBusy}>
+              {coverBusy ? <ActivityIndicator color={Colors.primary} /> : <Ionicons name="image-outline" size={18} color={Colors.primary} />}
+              <Text style={styles.secondaryButtonText}>{coverBusy ? 'Uploading…' : 'Change cover photo'}</Text>
+            </Pressable>
           </Card>
           <Card title="Identity">
             <Field label="Full name" value={profile.full_name || ''} onChangeText={(v) => update('full_name', v)} />
@@ -461,10 +560,12 @@ export function ProfileEditScreen({}: EditProps) {
 
 export function DocumentsScreen() {
   const { showDialog } = useDialog();
+  const { session } = useAuth();
   const [items, setItems] = useState<ProfileDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [analyzingIds, setAnalyzingIds] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     try {
@@ -481,34 +582,65 @@ export function DocumentsScreen() {
     void load();
   }, [load]);
 
-  const upload = async () => {
-    const picked = await DocumentPicker.getDocumentAsync({
-      type: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'image/*'],
-      copyToCacheDirectory: true,
-    });
-    if (picked.canceled || !picked.assets[0]) return;
-    const asset = picked.assets[0];
+  /** Fire analysis, poll a few times for status, then refresh the list once done. */
+  const analyzeInBackground = useCallback(
+    (docId: string) => {
+      const userId = session?.user?.id;
+      if (!userId) return;
+      setAnalyzingIds((prev) => new Set(prev).add(docId));
+      void analyzeDocument(userId, docId)
+        .catch(() => null)
+        .finally(async () => {
+          for (let attempt = 0; attempt < 6; attempt += 1) {
+            await new Promise((r) => setTimeout(r, 1500));
+            try {
+              const fresh = await fetchDocuments();
+              setItems(fresh);
+              const doc = fresh.find((d) => d.id === docId);
+              if (doc && doc.status !== 'analyzing' && doc.status !== 'pending') break;
+            } catch {
+              break;
+            }
+          }
+          setAnalyzingIds((prev) => {
+            const next = new Set(prev);
+            next.delete(docId);
+            return next;
+          });
+        });
+    },
+    [session?.user?.id],
+  );
+
+  const upload = async (picked: PickedAsset | null) => {
+    if (!picked) return;
     setBusy(true);
     try {
-      const safeName = asset.name.replace(/[^a-zA-Z0-9._-]/g, '-');
+      const safeName = picked.name.replace(/[^a-zA-Z0-9._-]/g, '-');
       const uploaded = await uploadProfileFile({
-        uri: asset.uri,
-        name: asset.name,
-        mimeType: asset.mimeType,
+        uri: picked.uri,
+        name: picked.name,
+        mimeType: picked.mimeType,
         bucket: 'user-documents',
         path: `${Date.now()}-${safeName}`,
       });
-      await createDocument({
-        title: asset.name.replace(/\.[^/.]+$/, ''),
+      const isImage = Boolean(picked.mimeType?.startsWith('image/'));
+      const document = await createDocument({
+        title: picked.name.replace(/\.[^/.]+$/, ''),
         description: null,
-        document_type: asset.mimeType?.startsWith('image/') ? 'other' : 'cv',
+        document_type: isImage ? 'other' : 'cv',
         file_url: uploaded.path,
-        file_name: asset.name,
-        file_size: asset.size || null,
-        mime_type: asset.mimeType || null,
+        file_name: picked.name,
+        file_size: picked.size || null,
+        mime_type: picked.mimeType || null,
         status: 'pending',
       });
       await load();
+      // Vision analysis supports images and PDFs (see ported-edge.service.ts analyzeUserDocuments).
+      const mime = String(picked.mimeType || '');
+      if (isImage || mime === 'application/pdf') {
+        analyzeInBackground(document.id);
+      }
     } catch (e) {
       showDialog({ title: 'Upload failed', message: errorMessage(e), variant: 'danger' });
     } finally {
@@ -542,23 +674,39 @@ export function DocumentsScreen() {
   return (
     <ScreenShell loading={loading}>
       {error ? <ErrorCard message={error} retry={() => void load()} /> : null}
-      <Card title="Your documents" subtitle="Upload a CV, certificate, transcript, ID, or portfolio file.">
-        <PrimaryButton label="Choose and upload file" icon="cloud-upload-outline" onPress={() => void upload()} busy={busy} />
+      <Card title="Your documents" subtitle="Upload a CV, certificate, transcript, ID, or portfolio file — from a file, your gallery, or the camera.">
+        <PrimaryButton
+          label="Add a document"
+          icon="cloud-upload-outline"
+          onPress={() => void pickFileOrPhoto().then(upload)}
+          busy={busy}
+        />
       </Card>
       {items.length ? (
-        items.map((item) => (
-          <Card key={item.id}>
-            <View style={styles.row}>
-              <View style={styles.rowIcon}><Ionicons name="document-text-outline" size={22} color={Colors.primary} /></View>
-              <View style={styles.rowBody}>
-                <Text style={styles.rowTitle}>{item.title}</Text>
-                <Text style={styles.rowMeta}>{item.document_type || 'Document'} · {item.status || 'saved'}</Text>
+        items.map((item) => {
+          const analyzing = analyzingIds.has(item.id) || item.status === 'analyzing';
+          return (
+            <Card key={item.id}>
+              <View style={styles.row}>
+                <View style={styles.rowIcon}><Ionicons name="document-text-outline" size={22} color={Colors.primary} /></View>
+                <View style={styles.rowBody}>
+                  <Text style={styles.rowTitle}>{item.title}</Text>
+                  <View style={styles.rowMetaRow}>
+                    {analyzing ? <ActivityIndicator size="small" color={Colors.primary} /> : null}
+                    <Text style={styles.rowMeta}>
+                      {item.document_type || 'Document'} · {analyzing ? 'Analyzing…' : item.status || 'saved'}
+                    </Text>
+                  </View>
+                </View>
+                <Pressable onPress={() => void open(item)} style={styles.iconButton}><Ionicons name="eye-outline" size={20} color={Colors.primary} /></Pressable>
+                <Pressable onPress={() => remove(item)} style={styles.iconButton}><Ionicons name="trash-outline" size={20} color={Colors.destructive} /></Pressable>
               </View>
-              <Pressable onPress={() => void open(item)} style={styles.iconButton}><Ionicons name="eye-outline" size={20} color={Colors.primary} /></Pressable>
-              <Pressable onPress={() => remove(item)} style={styles.iconButton}><Ionicons name="trash-outline" size={20} color={Colors.destructive} /></Pressable>
-            </View>
-          </Card>
-        ))
+              {item.ai_analysis && item.status === 'completed' ? (
+                <Text style={styles.memoryValue} numberOfLines={4}>{item.ai_analysis}</Text>
+              ) : null}
+            </Card>
+          );
+        })
       ) : !error ? (
         <Card><Text style={styles.emptyText}>No documents yet.</Text></Card>
       ) : null}
@@ -572,14 +720,20 @@ export function PortfolioScreen() {
   const { showDialog } = useDialog();
   const [username, setUsername] = useState('');
   const [settings, setSettings] = useState<PortfolioSettings>(DEFAULT_PORTFOLIO_SETTINGS);
+  /** Portfolio "tags" — same array field the public page renders as `profile.skills` (string[]). */
+  const [tags, setTags] = useState<string[]>([]);
+  const [tagsInput, setTagsInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    void fetchPortfolio()
-      .then((result) => {
-        setUsername(result.username || '');
-        setSettings(result.settings);
+    void Promise.all([fetchPortfolio(), fetchProfile()])
+      .then(([portfolio, profile]) => {
+        setUsername(portfolio.username || '');
+        setSettings(portfolio.settings);
+        const skills = Array.isArray(profile.skills) ? profile.skills : [];
+        setTags(skills);
+        setTagsInput(skills.join(', '));
       })
       .catch((e) => showDialog({ title: 'Could not load portfolio', message: errorMessage(e), variant: 'danger' }))
       .finally(() => setLoading(false));
@@ -589,10 +743,21 @@ export function PortfolioScreen() {
     setSettings((current) => ({ ...current, [key]: value }));
   };
 
+  const onTagsInputChange = (value: string) => {
+    setTagsInput(value);
+    // Always keep `tags` as string[] — split on comma, trim, drop blanks.
+    setTags(
+      value
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean),
+    );
+  };
+
   const save = async () => {
     setSaving(true);
     try {
-      await patchPortfolio(settings);
+      await Promise.all([patchPortfolio(settings), patchProfile({ skills: tags })]);
       showDialog({ title: 'Portfolio saved', message: 'Your public portfolio settings are updated.', variant: 'success' });
     } catch (e) {
       showDialog({ title: 'Could not save', message: errorMessage(e), variant: 'danger' });
@@ -617,6 +782,18 @@ export function PortfolioScreen() {
       </Card>
       <Card title="Custom headline">
         <Field label="Headline" value={settings.custom_headline || ''} onChangeText={(v) => toggle('custom_headline', v)} placeholder="Developer | Educator | Creator" />
+      </Card>
+      <Card title="Skills / tags" subtitle="Comma separated — shown as tags on your public portfolio page.">
+        <Field label="Tags" value={tagsInput} onChangeText={onTagsInputChange} placeholder="React, Excel, Public Speaking" multiline />
+        {tags.length ? (
+          <View style={styles.chips}>
+            {tags.map((tag, i) => (
+              <View key={`${tag}-${i}`} style={styles.chip}>
+                <Text style={styles.chipText}>{tag}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
       </Card>
       <Card title="What to show">
         {([
@@ -760,6 +937,9 @@ export function PreferencesScreen({ navigation }: NativeStackScreenProps<Profile
   const [promptMemoryId, setPromptMemoryId] = useState<string | null>(null);
   const [preferredFont, setPreferredFont] = useState('Inter');
   const [fontSize, setFontSize] = useState(16);
+  const [fontPickerOpen, setFontPickerOpen] = useState(false);
+  const [fontSearch, setFontSearch] = useState('');
+  const { setFontPreference } = useFontPreference();
 
   useEffect(() => {
     void Promise.all([fetchPreferences(), fetchMemories()])
@@ -788,6 +968,7 @@ export function PreferencesScreen({ navigation }: NativeStackScreenProps<Profile
         preferred_font: preferredFont,
         font_size: fontSize,
       });
+      setFontPreference(preferredFont, fontSize);
       if (promptMemoryId) {
         await patchMemory(promptMemoryId, { value: prompt });
       } else if (prompt.trim()) {
@@ -822,19 +1003,57 @@ export function PreferencesScreen({ navigation }: NativeStackScreenProps<Profile
         </View>
       </Card>
       <Card title="Font" subtitle="Applies across chat and profile web views.">
-        <View style={styles.fontChipRow}>
-          {FONT_OPTIONS.map((opt) => (
-            <Pressable
-              key={opt.value}
-              style={[styles.fontChip, preferredFont === opt.value && styles.fontChipActive]}
-              onPress={() => setPreferredFont(opt.value)}
-            >
-              <Text style={[styles.fontChipText, preferredFont === opt.value && styles.fontChipTextActive]}>
-                {opt.label}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
+        <Text style={styles.label}>Font family</Text>
+        <Pressable style={styles.fontDropdown} onPress={() => setFontPickerOpen(true)}>
+          <Text style={styles.fontDropdownText}>{findFontOption(preferredFont).label}</Text>
+          <Ionicons name="chevron-down" size={18} color={Colors.mutedForeground} />
+        </Pressable>
+        <Modal visible={fontPickerOpen} animationType="slide" transparent onRequestClose={() => setFontPickerOpen(false)}>
+          <View style={styles.fontModalBackdrop}>
+            <View style={styles.fontModalSheet}>
+              <View style={styles.fontModalHeader}>
+                <Text style={styles.cardTitle}>Choose a font</Text>
+                <Pressable onPress={() => setFontPickerOpen(false)} hitSlop={10}>
+                  <Ionicons name="close" size={22} color={Colors.foreground} />
+                </Pressable>
+              </View>
+              <TextInput
+                value={fontSearch}
+                onChangeText={setFontSearch}
+                placeholder="Search fonts…"
+                placeholderTextColor={Colors.mutedForeground}
+                style={[styles.input, { marginBottom: 8 }]}
+              />
+              <FlatList
+                data={MOBILE_FONT_OPTIONS.filter((f) =>
+                  f.label.toLowerCase().includes(fontSearch.trim().toLowerCase()),
+                )}
+                keyExtractor={(item) => item.value}
+                style={{ maxHeight: 380 }}
+                showsVerticalScrollIndicator={false}
+                decelerationRate="normal"
+                scrollEventThrottle={16}
+                renderItem={({ item }) => {
+                  const selected = item.value === preferredFont;
+                  const nativeFamily = resolveNativeFontFamily(item.value, Boolean(item.weight));
+                  return (
+                    <Pressable
+                      style={[styles.fontOptionRow, selected && styles.fontOptionRowActive]}
+                      onPress={() => {
+                        setPreferredFont(item.value);
+                        setFontPickerOpen(false);
+                        setFontSearch('');
+                      }}
+                    >
+                      <Text style={[styles.fontOptionText, { fontFamily: nativeFamily }]}>{item.label}</Text>
+                      {selected ? <Ionicons name="checkmark-circle" size={18} color={Colors.primary} /> : null}
+                    </Pressable>
+                  );
+                }}
+              />
+            </View>
+          </View>
+        </Modal>
         <View style={styles.fontSizeRow}>
           <Text style={styles.rowMeta}>Font size</Text>
           <View style={styles.fontSizeControls}>
@@ -877,6 +1096,15 @@ export function PreferencesScreen({ navigation }: NativeStackScreenProps<Profile
 export function ThemesScreen() {
   const { themeId, setThemeId, chatBgPattern, setChatBgPattern, palette } = useAppTheme();
 
+  const pickTheme = (id: SchoolThemeId) => {
+    // Persist immediately (AsyncStorage) and update context so WebAppScreen re-injects.
+    setThemeId(id);
+  };
+
+  const pickChatBg = (id: ChatBgPatternId) => {
+    setChatBgPattern(id);
+  };
+
   return (
     <ScreenShell>
       <Card title="School theme" subtitle="Colors apply to native chrome and Navigation where possible.">
@@ -887,7 +1115,7 @@ export function ThemesScreen() {
             return (
               <Pressable
                 key={id}
-                onPress={() => setThemeId(id)}
+                onPress={() => pickTheme(id)}
                 style={[styles.themeCard, selected && styles.themeCardSelected]}
               >
                 <View style={styles.themeSwatches}>
@@ -913,7 +1141,7 @@ export function ThemesScreen() {
             return (
               <Pressable
                 key={id}
-                onPress={() => setChatBgPattern(id)}
+                onPress={() => pickChatBg(id)}
                 style={[styles.chip, on && styles.chipActive]}
               >
                 <Text style={[styles.chipText, on && styles.chipTextActive]}>
@@ -947,11 +1175,13 @@ export function BalancesScreen({ navigation }: NativeStackScreenProps<ProfileSta
   const [shareLookup, setShareLookup] = useState<TokenShareLookup | null>(null);
   const [shareLooking, setShareLooking] = useState(false);
   const [shareBusy, setShareBusy] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const load = useCallback(async () => {
     try {
       setError('');
-      setData(await fetchBalances());
+      // Always reload from the top so a fresh top-up/Sambaza transaction shows first.
+      setData(await fetchBalances({ limit: BALANCES_PAGE_SIZE, offset: 0 }));
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -959,6 +1189,23 @@ export function BalancesScreen({ navigation }: NativeStackScreenProps<ProfileSta
       setRefreshing(false);
     }
   }, []);
+
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !data?.has_more) return;
+    setLoadingMore(true);
+    try {
+      const next = await fetchBalances({ limit: BALANCES_PAGE_SIZE, offset: data.transactions?.length || 0 });
+      setData((current) =>
+        current
+          ? { ...next, transactions: [...(current.transactions || []), ...(next.transactions || [])] }
+          : next,
+      );
+    } catch (e) {
+      showDialog({ title: 'Could not load more', message: errorMessage(e), variant: 'danger' });
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [data?.has_more, data?.transactions, loadingMore, showDialog]);
 
   useEffect(() => {
     void load();
@@ -1154,6 +1401,16 @@ export function BalancesScreen({ navigation }: NativeStackScreenProps<ProfileSta
         );
       }) : !error ? <Card><Text style={styles.emptyText}>No token transactions yet.</Text></Card> : null}
 
+      {data?.has_more ? (
+        <Pressable style={styles.loadMoreButton} onPress={() => void loadMore()} disabled={loadingMore}>
+          {loadingMore ? (
+            <ActivityIndicator size="small" color={Colors.foreground} />
+          ) : (
+            <Text style={styles.smallButtonMutedText}>Load more</Text>
+          )}
+        </Pressable>
+      ) : null}
+
       <Pressable style={styles.dangerLink} onPress={() => navigation.navigate('DeleteAccount')}>
         <Ionicons name="trash-outline" size={16} color={Colors.orange} />
         <Text style={styles.dangerLinkText}>Delete my account</Text>
@@ -1170,11 +1427,29 @@ export function IdVerificationScreen() {
   const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState<{ verified: boolean; message?: string } | null>(null);
 
+  const pickIdAsset = (): Promise<PickedAsset | null> => {
+    return new Promise((resolve) => {
+      Alert.alert('Add your ID', 'Take a photo, choose one from your gallery, or pick a file.', [
+        { text: 'Take photo', onPress: () => void pickFromCamera().then(resolve) },
+        { text: 'Choose photo', onPress: () => void pickFromGallery().then(resolve) },
+        {
+          text: 'Choose file',
+          onPress: () =>
+            void DocumentPicker.getDocumentAsync({ type: 'image/*', copyToCacheDirectory: true }).then((picked) => {
+              if (picked.canceled || !picked.assets?.[0]) return resolve(null);
+              const asset = picked.assets[0];
+              resolve({ uri: asset.uri, name: asset.name, mimeType: asset.mimeType, size: asset.size });
+            }),
+        },
+        { text: 'Cancel', style: 'cancel', onPress: () => resolve(null) },
+      ]);
+    });
+  };
+
   const pickAndVerify = async () => {
     try {
-      const picked = await DocumentPicker.getDocumentAsync({ type: 'image/*', copyToCacheDirectory: true });
-      if (picked.canceled || !picked.assets?.[0]) return;
-      const asset = picked.assets[0];
+      const asset = await pickIdAsset();
+      if (!asset) return;
       setFileName(asset.name || 'ID document');
       setUploading(true);
       setResult(null);
@@ -1232,7 +1507,7 @@ export function IdVerificationScreen() {
             <Text style={styles.rowMeta}>{result.message || (result.verified ? 'Verified' : 'Not verified')}</Text>
           </View>
         ) : null}
-        <PrimaryButton label="Upload & verify" onPress={() => void pickAndVerify()} busy={uploading} />
+        <PrimaryButton label="Add ID & verify" icon="camera-outline" onPress={() => void pickAndVerify()} busy={uploading} />
       </Card>
     </ScreenShell>
   );
@@ -1288,6 +1563,7 @@ export function DeleteAccountScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.background },
   content: { paddingHorizontal: 16 },
+  homeContent: { flexGrow: 1 },
   stack: { gap: 12 },
   skeleton: { borderRadius: 16, backgroundColor: '#E3EBE7', opacity: 0.9 },
   hero: { minHeight: 270, overflow: 'hidden', paddingHorizontal: 20 },
@@ -1325,6 +1601,9 @@ const styles = StyleSheet.create({
   rowBody: { flex: 1, minWidth: 0 },
   rowTitle: { fontSize: 14, fontWeight: '700', color: Colors.foreground, fontFamily: 'Inter_600SemiBold' },
   rowMeta: { fontSize: 11, color: Colors.mutedForeground, marginTop: 3, fontFamily: 'Inter_400Regular' },
+  rowMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 },
+  coverPreview: { width: '100%', height: 120, borderRadius: 14, backgroundColor: Colors.muted },
+  coverPreviewEmpty: { alignItems: 'center', justifyContent: 'center' },
   iconButton: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: Colors.muted },
   emptyText: { textAlign: 'center', color: Colors.mutedForeground, fontSize: 14, paddingVertical: 12 },
   portfolioUrl: { color: Colors.primary, fontSize: 13, fontWeight: '600' },
@@ -1341,6 +1620,7 @@ const styles = StyleSheet.create({
   smallButtonText: { color: Colors.white, fontSize: 12, fontWeight: '700' },
   smallButtonMuted: { borderRadius: 9, backgroundColor: Colors.muted, paddingHorizontal: 14, paddingVertical: 8 },
   smallButtonMutedText: { color: Colors.foreground, fontSize: 12, fontWeight: '600' },
+  loadMoreButton: { alignSelf: 'center', alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: Colors.muted, paddingHorizontal: 18, paddingVertical: 10, marginTop: 4, marginBottom: 8 },
   modelRow: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 58, paddingHorizontal: 10, borderRadius: 12, marginTop: 6 },
   modelRowActive: { backgroundColor: Colors.primaryLight },
   balanceHero: { minHeight: 150, borderRadius: 22, overflow: 'hidden', padding: 22, justifyContent: 'center', marginBottom: 18 },
@@ -1384,6 +1664,39 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   dangerButtonText: { color: Colors.white, fontSize: 14, fontWeight: '700', fontFamily: 'Inter_600SemiBold' },
+  fontDropdown: {
+    minHeight: 46,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.background,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  fontDropdownText: { fontSize: 14, fontWeight: '600', color: Colors.foreground, fontFamily: 'Inter_600SemiBold' },
+  fontModalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  fontModalSheet: {
+    backgroundColor: Colors.white,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 28,
+    maxHeight: '80%',
+  },
+  fontModalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  fontOptionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 50,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+  },
+  fontOptionRowActive: { backgroundColor: Colors.primaryLight },
+  fontOptionText: { fontSize: 15, color: Colors.foreground },
   fontChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
   fontChip: {
     paddingHorizontal: 14,

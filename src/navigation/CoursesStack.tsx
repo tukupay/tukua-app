@@ -66,6 +66,8 @@ export function CoursesStack() {
   return (
     <Stack.Navigator
       screenOptions={({ navigation }) => ({
+        animation: 'slide_from_right',
+        animationDuration: 220,
         headerStyle: { backgroundColor: Colors.white },
         headerTintColor: Colors.foreground,
         headerTitleStyle: { fontWeight: '700', fontSize: 17 },

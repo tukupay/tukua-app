@@ -114,6 +114,11 @@ function MainTabNavigator() {
         lazy: route.name !== 'Chat',
         unmountOnBlur: false,
         headerShown: false,
+        animation: 'fade',
+        transitionSpec: {
+          animation: 'timing',
+          config: { duration: 220 },
+        },
         sceneStyle: styles.scene,
         tabBarActiveTintColor: Colors.primary,
         tabBarInactiveTintColor: Colors.mutedForeground,
