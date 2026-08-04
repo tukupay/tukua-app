@@ -93,7 +93,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data, error } = await supabase.auth.getUser();
       if (error) {
         log.warn('Auth', 'getUser failed during profile refresh', error.message);
-        if (/jwt|expired|invalid|session/i.test(error.message) && !/network|fetch|offline|timeout/i.test(error.message)) {
+        // Nest-only sessions have no GoTrue user — "Auth session missing!" must NOT sign out.
+        const nestTok = session?.access_token && session?.user?.app_metadata?.provider === 'nest';
+        if (nestTok || /auth session missing/i.test(error.message)) {
+          if (nestTok) {
+            const p = await fetchProfileFromNest(session!.access_token);
+            if (p) {
+              setProfile(p);
+              await loadUserPreferences(p.id);
+            }
+          }
+          return;
+        }
+        // Only clear on confirmed JWT death — never bare "session" (matches "Auth session missing!").
+        if (
+          /invalid jwt|jwt expired|token expired|refresh_token|session not found/i.test(error.message) &&
+          !/network|fetch|offline|timeout/i.test(error.message)
+        ) {
           await clearDeskSession();
           await signOut();
           setSession(null);
@@ -174,15 +190,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       log.info('Auth', `state change: ${event}`, {
         email: nextSession?.user?.email ?? null,
       });
+      // Don't let GoTrue SIGNED_OUT / null wipe a Nest-only session.
+      if (!nextSession) {
+        if (event === 'SIGNED_OUT') {
+          setSession((prev) => {
+            if (prev?.user?.app_metadata?.provider === 'nest' && prev.access_token) {
+              return prev;
+            }
+            setProfile(null);
+            setSavageMode(false);
+            return null;
+          });
+          return;
+        }
+        setSession((prev) =>
+          prev?.user?.app_metadata?.provider === 'nest' && prev.access_token ? prev : null,
+        );
+        return;
+      }
       setSession(nextSession);
       if (nextSession?.user) {
         if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') {
           await persistSession(nextSession);
         }
         void refreshProfile();
-      } else if (event === 'SIGNED_OUT') {
-        setProfile(null);
-        setSavageMode(false);
       }
     });
 

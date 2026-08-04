@@ -116,9 +116,15 @@ export async function refreshSessionIfNeeded(): Promise<Session | null> {
             await persistSession(session);
             return session;
           }
+          // Nest token present but profile miss — keep synthetic session, never feed Nest JWT to GoTrue.
+          return stored as Session;
         }
       } catch {
-        /* fall through to GoTrue setSession */
+        /* if not Nest, try GoTrue below */
+      }
+      // Only setSession when tokens look like GoTrue (not Nest-only provider markers).
+      if ((stored as any)?.user?.app_metadata?.provider === 'nest') {
+        return stored as Session;
       }
       const { data, error } = await supabase.auth.setSession({
         access_token: stored.access_token,

@@ -632,6 +632,25 @@ export function WebAppScreen({ path, label }: Props) {
       } else if (msg.type === 'TUKUA_BOOTSTRAP_ERR') {
         log.error('WebApp', 'bootstrap err', { error: msg.error });
         setPageLoading(false);
+      } else if (msg.type === 'request_contacts') {
+        void (async () => {
+          try {
+            const { loadDeviceContactPhones } = await import('../lib/deviceContacts');
+            const phones = await loadDeviceContactPhones();
+            const payload = JSON.stringify(phones).replace(/</g, '\\u003c');
+            webRef.current?.injectJavaScript(`
+              (function(){
+                try {
+                  window.__TUKUA_CONTACT_PHONES__ = ${payload};
+                  window.dispatchEvent(new CustomEvent('tukua-contacts', { detail: { phones: window.__TUKUA_CONTACT_PHONES__ } }));
+                } catch (e) {}
+                true;
+              })();
+            `);
+          } catch (e) {
+            log.warn('WebApp', 'contacts load failed', String(e));
+          }
+        })();
       }
     } catch {
       // ignore non-json messages

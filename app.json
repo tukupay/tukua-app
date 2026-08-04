@@ -32,7 +32,8 @@
         "NSMicrophoneUsageDescription": "Tukua needs microphone access for voice features.",
         "NSLocationWhenInUseUsageDescription": "Tukua uses your location for security on first login.",
         "NSFaceIDUsageDescription": "Tukua uses Face ID for quick secure login.",
-        "NSUserNotificationsUsageDescription": "Tukua sends alerts for opportunities, courses, and account updates."
+        "NSUserNotificationsUsageDescription": "Tukua sends alerts for opportunities, courses, and account updates.",
+        "NSContactsUsageDescription": "Tukua matches people from your contacts who are already on Tukua Connect."
       }
     },
     "android": {
@@ -90,7 +91,9 @@
         "android.permission.READ_MEDIA_VIDEO",
         "android.permission.INTERNET",
         "android.permission.USE_BIOMETRIC",
-        "android.permission.USE_FINGERPRINT"
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.READ_CONTACTS",
+        "READ_CONTACTS"
       ]
     },
     "androidStatusBar": {
@@ -117,6 +120,12 @@
         "expo-location",
         {
           "locationWhenInUsePermission": "Tukua uses your location for security on first login."
+        }
+      ],
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Tukua matches people from your contacts who are already on Tukua Connect."
         }
       ],
       [
