@@ -60,48 +60,60 @@ type ActionSection = {
 };
 
 const HERO_GREEN = '#15411D';
-const TILE_SIZE = 56;
-const ICON_SIZE = 28;
+const TILE_SIZE = 48;
+const ICON_SIZE = 26;
 
-/** Map Feather action icons → bold Ionicons filled glyphs. */
+function PlainIcon({
+  name,
+  size,
+  color,
+}: {
+  name: FeatherIconName;
+  size: number;
+  color: string;
+}) {
+  return <Feather name={name} size={size} color={color} />;
+}
+
+/** Map legacy hero BoldIcon names used in hero header only. */
 const BOLD_ICON: Partial<Record<FeatherIconName, keyof typeof Ionicons.glyphMap>> = {
-  info: 'information-circle',
-  'dollar-sign': 'logo-usd',
-  'credit-card': 'wallet',
-  'plus-circle': 'add-circle',
-  repeat: 'swap-horizontal',
-  'book-open': 'book',
-  monitor: 'laptop',
-  book: 'library',
-  shield: 'shield',
-  users: 'people',
-  calendar: 'calendar',
-  'file-text': 'document-text',
-  layers: 'layers',
-  award: 'ribbon',
-  'trending-up': 'trending-up',
-  'edit-3': 'create',
-  clipboard: 'clipboard',
-  'message-circle': 'chatbubble',
-  user: 'person',
-  settings: 'settings',
-  home: 'home',
-  mail: 'mail',
-  grid: 'grid',
-  pocket: 'cash',
-  clock: 'time',
-  navigation: 'navigate',
-  upload: 'cloud-upload',
-  camera: 'camera',
-  map: 'map',
-  gift: 'gift',
-  cpu: 'hardware-chip',
-  globe: 'globe',
-  video: 'videocam',
-  heart: 'heart',
+  info: 'information-circle-outline',
+  'dollar-sign': 'cash-outline',
+  'credit-card': 'card-outline',
+  'plus-circle': 'add-circle-outline',
+  repeat: 'swap-horizontal-outline',
+  'book-open': 'book-outline',
+  monitor: 'laptop-outline',
+  book: 'library-outline',
+  shield: 'shield-outline',
+  users: 'people-outline',
+  calendar: 'calendar-outline',
+  'file-text': 'document-text-outline',
+  layers: 'layers-outline',
+  award: 'ribbon-outline',
+  'trending-up': 'trending-up-outline',
+  'edit-3': 'create-outline',
+  clipboard: 'clipboard-outline',
+  'message-circle': 'chatbubble-outline',
+  user: 'person-outline',
+  settings: 'settings-outline',
+  home: 'home-outline',
+  mail: 'mail-outline',
+  grid: 'grid-outline',
+  pocket: 'wallet-outline',
+  clock: 'time-outline',
+  navigation: 'navigate-outline',
+  upload: 'cloud-upload-outline',
+  camera: 'camera-outline',
+  map: 'map-outline',
+  gift: 'gift-outline',
+  cpu: 'hardware-chip-outline',
+  globe: 'globe-outline',
+  video: 'videocam-outline',
+  heart: 'heart-outline',
 };
 
-function BoldIcon({
+function HeroPlainIcon({
   name,
   size,
   color,
@@ -164,11 +176,9 @@ function sectionsForActions(actions: DashboardAction[]): ActionSection[] {
 function ModuleTile({
   action,
   onPress,
-  filled,
 }: {
   action: DashboardAction;
   onPress: () => void;
-  filled?: boolean;
 }) {
   const accent = action.accent || HERO_GREEN;
   return (
@@ -178,14 +188,8 @@ function ModuleTile({
       accessibilityRole="button"
       accessibilityLabel={`${action.title}. ${action.description}`}
       accessibilityHint={action.description}>
-      <View
-        style={[
-          styles.tileCircle,
-          filled
-            ? { backgroundColor: HERO_GREEN, borderColor: 'rgba(10,61,46,0.15)' }
-            : { backgroundColor: Colors.white, borderColor: 'rgba(10,61,46,0.1)' },
-        ]}>
-        <BoldIcon name={action.icon} size={ICON_SIZE} color={filled ? Colors.white : accent} />
+      <View style={styles.tileIconWrap}>
+        <PlainIcon name={action.icon} size={ICON_SIZE} color={accent} />
       </View>
       <View style={styles.tileLabelBox}>
         <Text style={styles.tileLabel} numberOfLines={2}>
@@ -586,7 +590,7 @@ export function DashboardHomeScreen() {
               <View style={styles.heroContent}>
                 <View style={styles.heroHead}>
                   <View style={styles.heroIconBox}>
-                    <BoldIcon name={primaryHero.icon} size={24} color={HERO_GREEN} />
+                    <HeroPlainIcon name={primaryHero.icon} size={24} color={HERO_GREEN} />
                   </View>
                   <View style={styles.heroHeadText}>
                     <Text style={styles.heroKicker}>{primaryHero.title}</Text>
@@ -626,17 +630,16 @@ export function DashboardHomeScreen() {
           </View>
 
           {/* Action grids — elevated single-border cards */}
-          {sections.map((section, sectionIndex) => (
+          {sections.map((section) => (
             <View key={section.id} style={styles.sectionBlock}>
               <Text style={styles.sectionTitle}>{section.title}</Text>
               <GlassPanel tone="frost" radius={16} shine={false}>
                 <View style={styles.sectionInner}>
                   <View style={styles.tileRow}>
-                    {section.actions.map((action, i) => (
+                    {section.actions.map((action) => (
                       <ModuleTile
                         key={action.id}
                         action={action}
-                        filled={sectionIndex === 0 && (i === 0 || i === section.actions.length - 1)}
                         onPress={() => onPressAction(action)}
                       />
                     ))}
@@ -883,19 +886,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   tilePad: { flex: 1 },
-  tilePressed: { opacity: 0.85, transform: [{ scale: 0.96 }] },
-  tileCircle: {
+  tilePressed: { opacity: 0.7 },
+  tileIconWrap: {
     width: TILE_SIZE,
     height: TILE_SIZE,
-    borderRadius: TILE_SIZE / 2,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
-    shadowColor: '#0A3D2E',
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 3,
   },
   tileLabelBox: {
     marginTop: 8,
