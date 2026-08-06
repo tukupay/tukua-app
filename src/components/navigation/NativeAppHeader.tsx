@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { useDialog } from '../../context/DialogContext';
 import { useWebViewControl } from '../../context/WebViewControlContext';
+import { useTokenGate } from '../../context/TokenGateContext';
 import { biometricEnableMessage, enableBiometrics } from '../../lib/biometrics';
 import { toggleSavageMode } from '../../lib/userPreferences';
 import { hideSystemStatusBar } from '../ImmersiveSystemBars';
@@ -46,6 +47,7 @@ export function NativeAppHeader() {
   const { profile, logout, session, savageMode, setSavageMode } = useAuth();
   const { showDialog } = useDialog();
   const { navigate, sendChatCommand, jumpToTab, activeTabPath } = useWebViewControl();
+  const { guardNavigation } = useTokenGate();
   const [open, setOpen] = useState(false);
   const [chatsOpen, setChatsOpen] = useState(false);
   const savageOpacity = useRef(new Animated.Value(SAVAGE_OFF_OPACITY)).current;
@@ -234,18 +236,18 @@ export function NativeAppHeader() {
             id: 'courses',
             label: 'Courses',
             icon: 'book-outline' as const,
-            onPress: () => navigate('/courses', '/courses'),
+            onPress: () => guardNavigation(() => navigate('/courses', '/courses')),
           },
           {
             id: 'dashboard',
             label: 'Dashboard',
             icon: 'grid-outline' as const,
-            onPress: () => jumpToTab('Dashboard'),
+            onPress: () => guardNavigation(() => jumpToTab('Dashboard')),
           },
         ],
       },
     ],
-    [handleEnableBiometrics, handleLogout, jumpToTab, navigate, openProfileScreen, sendChatCommand],
+    [guardNavigation, handleEnableBiometrics, handleLogout, jumpToTab, navigate, openProfileScreen, sendChatCommand],
   );
 
   return (

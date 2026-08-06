@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { View, Platform, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
@@ -29,6 +29,7 @@ import { PushNotificationBootstrap } from '../components/notifications/PushNotif
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { navigateDashboard } from './AppNavigator';
 import { JOIN_PROMPT_SEEN_KEY } from '../screens/dashboard/JoinSchoolScreen';
+import { TokenGateProvider, useTokenGate } from '../context/TokenGateContext';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
@@ -90,8 +91,18 @@ function MainTabNavigator({
 }) {
   const insets = useSafeAreaInsets();
   const { setActiveTabPath, notifyTabFocused } = useWebViewControl();
+  const { guardTab } = useTokenGate();
   const { palette } = useAppTheme();
   const tabBarHeight = TAB_BAR_BODY_HEIGHT + insets.bottom;
+
+  const tabPressGuard = useCallback(
+    (tab: keyof MainTabParamList) => ({
+      tabPress: (e: { preventDefault: () => void }) => {
+        if (!guardTab(tab)) e.preventDefault();
+      },
+    }),
+    [guardTab],
+  );
 
   useEffect(() => {
     hideSystemStatusBar();
@@ -158,7 +169,7 @@ function MainTabNavigator({
           return <Ionicons name={icons[route.name] ?? 'ellipse'} size={size} color={color} />;
         },
       })}>
-      <Tab.Screen name="Chat" options={{ title: 'AI' }}>
+      <Tab.Screen name="Chat" options={{ title: 'AI' }} listeners={tabPressGuard('Chat')}>
         {() => (
           <>
             <WebViewTabBridge />
@@ -167,9 +178,9 @@ function MainTabNavigator({
         )}
       </Tab.Screen>
       {/* Tukua Connect parked for next release — tab hidden */}
-      <Tab.Screen name="Courses" options={{ title: 'Courses' }} component={CoursesStack} />
-      <Tab.Screen name="Dashboard" options={{ title: 'Dashboard' }} component={DashboardStack} />
-      <Tab.Screen name="Profile" options={{ title: 'Profile' }} component={ProfileStack} />
+      <Tab.Screen name="Courses" options={{ title: 'Courses' }} component={CoursesStack} listeners={tabPressGuard('Courses')} />
+      <Tab.Screen name="Dashboard" options={{ title: 'Dashboard' }} component={DashboardStack} listeners={tabPressGuard('Dashboard')} />
+      <Tab.Screen name="Profile" options={{ title: 'Profile' }} component={ProfileStack} listeners={tabPressGuard('Profile')} />
     </Tab.Navigator>
   );
 }
@@ -205,17 +216,19 @@ export function MainTabs() {
     <SafeAreaProvider>
       <BiometricGate>
         <WebViewControlProvider>
-          <View style={[styles.shell, { backgroundColor: palette.muted }]}>
-            <MainTabNavigator onTabChange={setFocusedTab} />
-            <NativeAppHeader />
-            {focusedTab === 'Chat' ? <ChatTabChrome /> : null}
-            <PushNotificationBootstrap />
-            {gating ? (
-              <ContextPickLoader />
-            ) : needsSchoolPick ? (
-              <SchoolPickerScreen />
-            ) : null}
-          </View>
+          <TokenGateProvider>
+            <View style={[styles.shell, { backgroundColor: palette.muted }]}>
+              <MainTabNavigator onTabChange={setFocusedTab} />
+              <NativeAppHeader />
+              {focusedTab === 'Chat' ? <ChatTabChrome /> : null}
+              <PushNotificationBootstrap />
+              {gating ? (
+                <ContextPickLoader />
+              ) : needsSchoolPick ? (
+                <SchoolPickerScreen />
+              ) : null}
+            </View>
+          </TokenGateProvider>
         </WebViewControlProvider>
       </BiometricGate>
     </SafeAreaProvider>

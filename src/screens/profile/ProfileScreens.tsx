@@ -56,7 +56,7 @@ import {
   type PortfolioSettings,
   type TokenShareLookup,
 } from '../../lib/profileApi';
-import { pollMpesaTopUpStatus, tokensFromKes, topUpViaMpesa } from '../../lib/wallet';
+import { pollMpesaTopUpStatus, tokensFromKes, topUpViaMpesa, TOPUP_PRESETS } from '../../lib/wallet';
 import type { ProfileStackParamList } from '../../navigation/ProfileStack';
 import { navigateDashboard } from '../../navigation/AppNavigator';
 import { useAppTheme } from '../../context/AppThemeContext';
@@ -1163,8 +1163,6 @@ export function ThemesScreen() {
     </ScreenShell>
   );
 }
-
-const TOPUP_PRESETS = [50, 100, 250, 500];
 
 export function BalancesScreen({ navigation }: NativeStackScreenProps<ProfileStackParamList, 'Balances'>) {
   const { profile, session } = useAuth();

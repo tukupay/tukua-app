@@ -35,6 +35,7 @@ import {
 import { formatTokensShort } from '../../components/navigation/TokenBalancePill';
 import { useRegisterTabJumper } from '../../hooks/useRegisterTabJumper';
 import { useAppTheme } from '../../context/AppThemeContext';
+import { useTokenGate } from '../../context/TokenGateContext';
 import type { ThemePalette } from '../../theme/schoolThemes';
 import {
   DashboardAction,
@@ -281,6 +282,7 @@ export function DashboardHomeScreen() {
     schools,
     requestSchoolChange,
   } = useDeskAuth();
+  const { guardDashboardAction } = useTokenGate();
   const heroGreen = palette.primary;
 
   const actions = useMemo(() => actionsForPersona(persona), [persona]);
@@ -402,34 +404,36 @@ export function DashboardHomeScreen() {
 
   const onPressAction = useCallback(
     (action: DashboardAction) => {
-      if (action.nativeScreen) {
-        navigation.navigate(action.nativeScreen);
-        return;
-      }
-      if (action.tukuaPath) {
-        if (action.tukuaTab === 'Courses' || action.tukuaTab === 'Profile') {
-          jumpToTab(action.tukuaTab);
-          navigate(action.tukuaPath, action.tukuaTab === 'Courses' ? '/courses' : '/profile');
+      guardDashboardAction(action, () => {
+        if (action.nativeScreen) {
+          navigation.navigate(action.nativeScreen);
           return;
         }
-        navigate(action.tukuaPath);
-        return;
-      }
-      if (action.deskPath) {
-        navigation.navigate('DeskModule', {
+        if (action.tukuaPath) {
+          if (action.tukuaTab === 'Courses' || action.tukuaTab === 'Profile') {
+            jumpToTab(action.tukuaTab);
+            navigate(action.tukuaPath, action.tukuaTab === 'Courses' ? '/courses' : '/profile');
+            return;
+          }
+          navigate(action.tukuaPath);
+          return;
+        }
+        if (action.deskPath) {
+          navigation.navigate('DeskModule', {
+            title: action.title,
+            deskPath: action.deskPath,
+            description: action.description,
+          });
+          return;
+        }
+        navigation.navigate('FeaturePlaceholder', {
           title: action.title,
-          deskPath: action.deskPath,
           description: action.description,
+          apiHint: action.deskPath,
         });
-        return;
-      }
-      navigation.navigate('FeaturePlaceholder', {
-        title: action.title,
-        description: action.description,
-        apiHint: action.deskPath,
       });
     },
-    [jumpToTab, navigate, navigation],
+    [guardDashboardAction, jumpToTab, navigate, navigation],
   );
 
   const parentFirstName = useMemo(() => {

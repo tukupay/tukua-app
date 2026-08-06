@@ -243,8 +243,10 @@ function resolveContext(
   const storedRole = stored?.activeRole ? String(stored.activeRole).toLowerCase().trim() : null;
   let activeRole = storedRole && schoolRoles.includes(storedRole) ? storedRole : null;
 
-  // ── Step 2: resolve role at school ──
-  if (schoolRoles.length > 1 && !activeRole) {
+  // ── Step 2: resolve role at school (never ask when exactly one role) ──
+  if (schoolRoles.length === 1) {
+    activeRole = schoolRoles[0];
+  } else if (schoolRoles.length > 1 && !activeRole) {
     return {
       schoolId,
       studentId: null,
@@ -253,8 +255,10 @@ function resolveContext(
       pickerMode: 'role',
       schoolRoleOptions: schoolRoles,
     };
+  } else if (schoolRoles.length === 0) {
+    // Membership with no role tags — continue with null role (dashboard may be limited).
+    activeRole = null;
   }
-  if (schoolRoles.length === 1) activeRole = schoolRoles[0];
 
   // ── Step 3: parent → student (block dashboard until an approved child link) ──
   if (activeRole && isParentDeskRole(activeRole)) {

@@ -704,10 +704,10 @@ export function SchoolPickerScreen() {
             ListHeaderComponent={
               <View style={[styles.headerChrome, { paddingTop: floatingHeaderInset(insets.top) }]}>
                 {headerBack}
-                <Text style={styles.title}>Select role</Text>
+                <Text style={styles.title}>Select school and role</Text>
                 <Text style={styles.subtitle}>
-                  Choose how you want to use {selectedSchool?.name ?? 'this school'}. You can switch
-                  anytime from the dashboard.
+                  Choose your role at {selectedSchool?.name ?? 'this school'}. You can switch anytime
+                  from the dashboard.
                 </Text>
               </View>
             }
@@ -846,8 +846,11 @@ export function SchoolPickerScreen() {
             ItemSeparatorComponent={() => <View style={{ height: listGap }} />}
             ListHeaderComponent={
               <View style={[styles.headerChrome, { paddingTop: floatingHeaderInset(insets.top) }]}>
-                <Text style={styles.title}>Select school</Text>
-                <Text style={styles.subtitle}>Choose the school workspace to open.</Text>
+                <Text style={styles.title}>Select school and role</Text>
+                <Text style={styles.subtitle}>
+                  Choose the school (and role next if you have more than one). Skipped automatically
+                  when you belong to only one school with one role.
+                </Text>
                 {schools.length > 0 ? (
                   <TextInput
                     style={styles.searchInput}

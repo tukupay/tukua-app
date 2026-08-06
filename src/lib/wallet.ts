@@ -112,7 +112,12 @@ export function totalSavings(wallets: Wallet[]) {
  * (`price_per_1m_kes: 950`). Org/role-specific tiers live in Supabase `token_pricing_settings`
  * with no Nest REST reader yet, so mobile uses this flat default until that endpoint exists.
  */
-const DEFAULT_PRICE_PER_1M_KES = 950;
+export const DEFAULT_PRICE_PER_1M_KES = 950;
+
+/** Minimum top-up presets — shared with BalancesScreen and zero-token gate modal. */
+export const TOPUP_PRESETS = [50, 100, 250, 500] as const;
+
+export const MIN_TOPUP_KES = TOPUP_PRESETS[0];
 
 export function tokensFromKes(amountKes: number, pricePer1mKes: number = DEFAULT_PRICE_PER_1M_KES): number {
   if (!amountKes || !pricePer1mKes || pricePer1mKes <= 0) return 0;

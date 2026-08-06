@@ -6,6 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import { deskFetch } from '../../lib/deskApi';
 import { Colors } from '../../theme/yana';
 import { useWebViewControl } from '../../context/WebViewControlContext';
+import { useTokenGate } from '../../context/TokenGateContext';
 import { log } from '../../lib/logger';
 
 /** Compact display: 950 → "950", 1200 → "1.2k", 1_500_000 → "1.5M" */
@@ -24,6 +25,7 @@ export function TokenBalancePill() {
   const { isAuthenticated } = useAuth();
   const { deskToken, isDeskAuthenticated } = useDeskAuth();
   const { navigate } = useWebViewControl();
+  const { balanceRevision } = useTokenGate();
   const [balance, setBalance] = useState<number>(0);
   const [loading, setLoading] = useState(false);
 
@@ -58,7 +60,7 @@ export function TokenBalancePill() {
     void load();
     const id = setInterval(() => void load(), 5 * 60_000);
     return () => clearInterval(id);
-  }, [isDeskAuthenticated, load]);
+  }, [isDeskAuthenticated, load, balanceRevision]);
 
   if (!isAuthenticated) return null;
 

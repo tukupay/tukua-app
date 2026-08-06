@@ -66,7 +66,19 @@ export type DashboardAction = {
 
   accent?: string;
 
+  /** When false, zero-token gate allows this tile (e.g. profile, join school). */
+  tokenGated?: boolean;
+
 };
+
+
+
+/** True when a zero balance should block this dashboard tile. */
+export function isDashboardActionTokenGated(action: DashboardAction): boolean {
+  if (action.tokenGated === false) return false;
+  if (action.id === 'profile' || action.id === 'join-school') return false;
+  return true;
+}
 
 
 
@@ -132,7 +144,7 @@ export const PARENT_DASHBOARD_ACTIONS: DashboardAction[] = [
   { id: 'transport', title: 'Transport', description: 'Track bus · live location', icon: 'navigation', nativeScreen: 'Transport', accent: '#0E7490' },
   { id: 'bursary', title: 'Bursary', description: 'Kitty & contributions', icon: 'gift', nativeScreen: 'Bursary', accent: '#EC4899' },
   { id: 'school-info', title: 'School Info', description: 'About your school', icon: 'home', nativeScreen: 'SchoolInfo', accent: '#15411D' },
-  { id: 'join-school', title: 'Join school', description: 'Request to join a school', icon: 'log-in', nativeScreen: 'JoinSchool', accent: '#2563EB' },
+  { id: 'join-school', title: 'Join school', description: 'Request to join a school', icon: 'log-in', nativeScreen: 'JoinSchool', accent: '#2563EB', tokenGated: false },
 ];
 
 
@@ -330,16 +342,17 @@ export const TEACHER_HERO: HeroStat[] = [
 export const TEACHER_DASHBOARD_ACTIONS: DashboardAction[] = [
   { id: 'attendance-scanner', title: 'My gate check-in', description: 'Scan gate QR for yourself', icon: 'camera', nativeScreen: 'GateCheckIn', accent: '#0891B2' },
   { id: 'enter-marks', title: 'Enter Marks', description: 'Grade assessments', icon: 'edit-3', deskPath: '/teacher/enter-marks', accent: '#1F8B4C' },
-  { id: 'class-lists', title: 'Class Lists', description: 'View class rosters', icon: 'users', deskPath: '/teacher/classes', accent: '#2563EB' },
+  { id: 'scan-marks', title: 'Scan marksheet', description: 'Photo → AI extracts & batch-saves marks', icon: 'camera', deskPath: '/teacher/chat?tool=marks_scan', accent: '#059669' },
+  { id: 'class-lists', title: 'Class Lists', description: 'View & enroll (class teacher)', icon: 'users', deskPath: '/teacher/classes', accent: '#2563EB' },
   { id: 'my-timetable', title: 'My Timetable', description: 'Teaching periods', icon: 'calendar', deskPath: '/teacher/calendar/timetable?scope=mine', accent: '#D97706' },
-  { id: 'events', title: 'Events', description: 'School activities', icon: 'calendar', nativeScreen: 'Events', accent: '#EA580C' },
-  { id: 'meetings', title: 'Meetings', description: 'Join school video meetings', icon: 'video', nativeScreen: 'Meetings', accent: '#0284C7' },
+  { id: 'events', title: 'Events', description: 'View & save to calendar', icon: 'calendar', nativeScreen: 'Events', accent: '#EA580C' },
+  { id: 'meetings', title: 'Meetings', description: 'Start & share meeting links', icon: 'video', nativeScreen: 'Meetings', accent: '#0284C7' },
   { id: 'elearning', title: 'E-Learning', description: 'Instructor studio', icon: 'monitor', tukuaPath: '/courses', tukuaTab: 'Courses', accent: '#0D9488' },
   { id: 'library', title: 'Library', description: 'Digital books', icon: 'book', deskPath: '/teacher/library', accent: '#4F46E5' },
-  { id: 'discipline', title: 'Discipline', description: 'My cases', icon: 'shield', nativeScreen: 'Discipline', accent: '#DC2626' },
+  { id: 'discipline', title: 'Discipline', description: 'Record & see my cases', icon: 'shield', deskPath: '/teacher/discipline', accent: '#DC2626' },
   { id: 'reports', title: 'Reports', description: 'Mark sheets & forms', icon: 'file-text', deskPath: '/teacher/assessment/reports', accent: '#4E74F9' },
   { id: 'progress', title: 'Progress', description: 'Fill marks hub', icon: 'trending-up', deskPath: '/teacher/assessment/assessments', accent: '#059669' },
-  { id: 'comms', title: 'Communicate', description: 'SMS / email', icon: 'message-circle', deskPath: '/bulksms', accent: '#7C3AED' },
+  { id: 'exam-generator', title: 'Exam generator', description: 'Coming soon — e-learning exams', icon: 'file-plus', deskPath: '/elearning?tab=exam-generator', accent: '#64748B' },
   { id: 'my-profile', title: 'My Profile', description: 'Account settings', icon: 'user', deskPath: '/teacher/profile', accent: '#059669' },
   { id: 'school-info', title: 'School Info', description: 'About your school', icon: 'info', nativeScreen: 'SchoolInfo', accent: '#0A3D2E' },
   { id: 'join-school', title: 'Join school', description: 'Request to join a school', icon: 'log-in', nativeScreen: 'JoinSchool', accent: '#2563EB' },
@@ -426,18 +439,23 @@ export const SECURITY_DASHBOARD_ACTIONS: DashboardAction[] = [
 
 export const SCHOOL_ADMIN_DASHBOARD_ACTIONS: DashboardAction[] = [
   { id: 'attendance-scanner', title: 'My gate check-in', description: 'Scan gate QR for yourself (staff)', icon: 'camera', nativeScreen: 'GateCheckIn', accent: '#0891B2' },
+  { id: 'approvals', title: 'Approvals', description: 'Join requests pending', icon: 'check-circle', deskPath: '/admin/approvals', accent: '#2563EB' },
+  { id: 'admit', title: 'Admit student', description: 'Quick admit a student', icon: 'user-plus', deskPath: '/admin/students?admit=1', accent: '#1F8B4C' },
   { id: 'meetings', title: 'Meetings', description: 'Schedule & host video meetings', icon: 'video', nativeScreen: 'Meetings', accent: '#0284C7' },
   { id: 'face-enroll', title: 'Face enroll', description: 'Students · teachers · staff', icon: 'user', deskPath: '/transport/face-enroll', accent: '#0E7490' },
-  { id: 'admin', title: 'Admin', description: 'Settings & users', icon: 'settings', deskPath: '/admin', accent: '#0A3D2E' },
+  { id: 'admin', title: 'Admin', description: 'Dashboard & monitoring', icon: 'settings', deskPath: '/admin', accent: '#0A3D2E' },
   { id: 'students', title: 'Students', description: 'Student records', icon: 'book', deskPath: '/admin/students', accent: '#1F8B4C' },
   { id: 'parents', title: 'Parents', description: 'Parent accounts', icon: 'users', deskPath: '/admin/parents', accent: '#2563EB' },
   { id: 'teachers', title: 'Teachers', description: 'Staff & workload', icon: 'user', deskPath: '/admin/teachers', accent: '#D97706' },
   { id: 'classes', title: 'Classes', description: 'Classes & rooms', icon: 'home', deskPath: '/admin/classes', accent: '#7C3AED' },
   { id: 'assessment', title: 'Assessment', description: 'Exams & marks', icon: 'clipboard', deskPath: '/assessment', accent: '#0D9488' },
+  { id: 'exam-generator', title: 'Exam generator', description: 'Coming soon — e-learning exams', icon: 'file-plus', deskPath: '/elearning?tab=exam-generator', accent: '#64748B' },
   { id: 'comms', title: 'Communication', description: 'SMS & email', icon: 'mail', deskPath: '/bulksms', accent: '#4F46E5' },
-  { id: 'accounts', title: 'Accounts', description: 'Fees & finance', icon: 'dollar-sign', deskPath: '/accounts', accent: '#059669' },
-  { id: 'discipline', title: 'Discipline', description: 'Incidents', icon: 'shield', deskPath: '/discipline', accent: '#DC2626' },
-  { id: 'calendar', title: 'Calendar', description: 'Timetable', icon: 'calendar', deskPath: '/calendar', accent: '#EA580C' },
+  { id: 'accounts', title: 'Accounts', description: 'Balances · TB · statements', icon: 'dollar-sign', deskPath: '/accounts', accent: '#059669' },
+  { id: 'accounts-reports', title: 'Finance reports', description: 'Trial balance & reports', icon: 'file-text', deskPath: '/accounts/reports', accent: '#0F766E' },
+  { id: 'discipline', title: 'Discipline', description: 'Record incidents', icon: 'shield', deskPath: '/discipline', accent: '#DC2626' },
+  { id: 'calendar', title: 'Calendar', description: 'Timetable & events', icon: 'calendar', deskPath: '/calendar', accent: '#EA580C' },
+  { id: 'events', title: 'Events', description: 'Add & manage events', icon: 'calendar', deskPath: '/calendar/events', accent: '#F59E0B' },
   { id: 'elearning', title: 'E-Learning', description: 'Courses', icon: 'book-open', tukuaPath: '/courses', tukuaTab: 'Courses', accent: '#0891B2' },
 ];
 
@@ -470,8 +488,11 @@ export const SUPER_ADMIN_DASHBOARD_ACTIONS: DashboardAction[] = [
   { id: 'sms', title: 'SMS', description: 'Bulk SMS', icon: 'message-circle', tukuaPath: '/superadmin/sms', accent: '#7C3AED' },
   // Schools & learning
   { id: 'schools', title: 'Schools', description: 'Registry', icon: 'home', tukuaPath: '/superadmin/schools/list', accent: '#1F8B4C' },
+  { id: 'impersonate', title: 'Impersonate', description: 'Open as school admin', icon: 'user-check', tukuaPath: '/superadmin/schools/list?impersonate=school_admin', accent: '#DC2626' },
+  { id: 'exam-generator', title: 'Exam generator', description: 'Coming soon — e-learning', icon: 'file-plus', tukuaPath: '/superadmin/courses?tab=exam-generator', accent: '#64748B' },
   { id: 'schools-overview', title: 'Schools overview', description: 'Tenant overview', icon: 'grid', tukuaPath: '/superadmin/schools', accent: '#0A3D2E' },
   { id: 'curriculum', title: 'Curriculum', description: 'Levels & learning areas', icon: 'layers', tukuaPath: '/superadmin/curriculum', accent: '#D97706' },
+  { id: 'exam-generator', title: 'Exam generator', description: 'Preview — coming soon', icon: 'file-text', tukuaPath: '/courses?view=exam-generator', accent: '#6366F1' },
   { id: 'elearning', title: 'Courses', description: 'Browse & manage catalog', icon: 'book-open', tukuaPath: '/courses', tukuaTab: 'Courses', accent: '#0D9488' },
   { id: 'admin-courses', title: 'Course admin', description: 'Publish & pricing', icon: 'edit-3', tukuaPath: '/superadmin/courses', accent: '#0891B2' },
   // Settings
@@ -484,9 +505,9 @@ export const INDIVIDUAL_DASHBOARD_ACTIONS: DashboardAction[] = [
 
   { id: 'courses', title: 'Courses', description: 'Browse & learn', icon: 'book-open', tukuaPath: '/courses', tukuaTab: 'Courses', accent: '#0D9488' },
 
-  { id: 'profile', title: 'Profile', description: 'Account & balances', icon: 'user', tukuaPath: '/profile', tukuaTab: 'Profile', accent: '#1F8B4C' },
+  { id: 'profile', title: 'Profile', description: 'Account & balances', icon: 'user', tukuaPath: '/profile', tukuaTab: 'Profile', accent: '#1F8B4C', tokenGated: false },
 
-  { id: 'join-school', title: 'Join school', description: 'Request to join a school', icon: 'log-in', nativeScreen: 'JoinSchool', accent: '#2563EB' },
+  { id: 'join-school', title: 'Join school', description: 'Request to join a school', icon: 'log-in', nativeScreen: 'JoinSchool', accent: '#2563EB', tokenGated: false },
 
 ];
 

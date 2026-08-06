@@ -157,20 +157,52 @@ async function keepSchoolsOnly(hits: JoinSchoolHit[]): Promise<JoinSchoolHit[]> 
   return filtered;
 }
 
-export async function searchJoinSchools(q: string) {
+export async function searchJoinSchools(
+  q: string,
+  opts?: { limit?: number; offset?: number; signal?: AbortSignal },
+) {
   const term = q.trim();
-  if (term.length < 1) return { schools: [] as JoinSchoolHit[], count: 0 };
+  if (term.length < 2) return { schools: [] as JoinSchoolHit[], count: 0, has_more: false };
+  const limit = opts?.limit ?? 25;
+  const offset = opts?.offset ?? 0;
+  const qs = new URLSearchParams({
+    q: term,
+    limit: String(limit),
+    offset: String(offset),
+  });
   try {
-    const res = await nestJoinFetch<{ schools?: JoinSchoolHit[]; count?: number }>(
-      `/parents/join/schools?q=${encodeURIComponent(term)}`,
-    );
-    const raw = Array.isArray(res?.schools) ? res.schools : [];
+    const token = await resolveNestAccessTokenForWebView();
+    if (!token) throw new Error('Sign in required');
+    const base = getNestApiBaseUrl().replace(/\/$/, '');
+    const res = await fetch(`${base}/parents/join/schools?${qs}`, {
+      method: 'GET',
+      headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+      signal: opts?.signal,
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok) {
+      const msg =
+        (typeof json?.message === 'string' && json.message) ||
+        (typeof json?.error === 'string' && json.error) ||
+        `Nest ${res.status}`;
+      throw new Error(msg);
+    }
+    const data =
+      json && typeof json === 'object' && 'data' in json
+        ? (json as { data: { schools?: JoinSchoolHit[]; count?: number; has_more?: boolean } }).data
+        : (json as { schools?: JoinSchoolHit[]; count?: number; has_more?: boolean });
+    const raw = Array.isArray(data?.schools) ? data.schools : [];
     const schools = await keepSchoolsOnly(raw);
-    return { schools, count: schools.length };
+    return {
+      schools,
+      count: schools.length,
+      has_more: Boolean(data?.has_more),
+    };
   } catch (e) {
+    if ((e as Error)?.name === 'AbortError') throw e;
     // Nest parents join unavailable — fall back to public registration school search.
     const schools = await searchSchoolsViaNestRegistration(term);
-    if (schools.length) return { schools, count: schools.length };
+    if (schools.length) return { schools, count: schools.length, has_more: false };
     throw e;
   }
 }
