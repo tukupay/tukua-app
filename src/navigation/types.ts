@@ -51,6 +51,7 @@ export type DashboardStackParamList = {
   FaceSelfEnroll: undefined;
   GateQr: undefined;
   GateCheckIn: undefined;
+  JoinSchool: undefined;
   FeaturePlaceholder: {
     title: string;
     description: string;
@@ -60,7 +61,6 @@ export type DashboardStackParamList = {
 
 export type MainTabParamList = {
   Chat: undefined;
-  Connect: undefined;
   Courses: undefined;
   Dashboard: undefined;
   Profile: NavigatorScreenParams<ProfileStackParamList> | undefined;

@@ -58,6 +58,7 @@ import {
 } from '../../lib/profileApi';
 import { pollMpesaTopUpStatus, tokensFromKes, topUpViaMpesa } from '../../lib/wallet';
 import type { ProfileStackParamList } from '../../navigation/ProfileStack';
+import { navigateDashboard } from '../../navigation/AppNavigator';
 import { useAppTheme } from '../../context/AppThemeContext';
 import { useFontPreference } from '../../context/FontPreferenceContext';
 import { MOBILE_FONT_OPTIONS, findFontOption, resolveNativeFontFamily } from '../../lib/mobileFonts';
@@ -135,12 +136,13 @@ type HomeProps = NativeStackScreenProps<ProfileStackParamList, 'ProfileHome'>;
 type EditProps = NativeStackScreenProps<ProfileStackParamList, 'ProfileEdit'>;
 
 const HOME_LINKS: Array<{
-  screen: keyof ProfileStackParamList;
+  screen: keyof ProfileStackParamList | '__join_school';
   title: string;
   subtitle: string;
   icon: keyof typeof Ionicons.glyphMap;
 }> = [
   { screen: 'ProfileEdit', title: 'Edit profile', subtitle: 'Identity, contact and avatar', icon: 'person-circle-outline' },
+  { screen: '__join_school', title: 'Join school', subtitle: 'Request to join · leave schools', icon: 'school-outline' },
   { screen: 'IdVerification', title: 'ID verification', subtitle: 'Verify your identity document', icon: 'shield-checkmark-outline' },
   { screen: 'Documents', title: 'Documents', subtitle: 'CV, certificates and files', icon: 'document-text-outline' },
   { screen: 'Portfolio', title: 'Portfolio', subtitle: 'Public page and visibility', icon: 'briefcase-outline' },
@@ -366,7 +368,13 @@ export function ProfileHomeScreen({ navigation }: HomeProps) {
             <Pressable
               key={item.screen}
               style={({ pressed }) => [styles.hubCard, pressed && styles.pressed]}
-              onPress={() => navigation.navigate(item.screen as never)}
+              onPress={() => {
+                if (item.screen === '__join_school') {
+                  navigateDashboard('JoinSchool');
+                  return;
+                }
+                navigation.navigate(item.screen as never);
+              }}
             >
               <View style={styles.hubIcon}>
                 <Ionicons name={item.icon} size={23} color={Colors.primary} />

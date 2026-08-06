@@ -60,7 +60,9 @@ export type DashboardAction = {
 
     | 'GateQr'
 
-    | 'GateCheckIn';
+    | 'GateCheckIn'
+
+    | 'JoinSchool';
 
   accent?: string;
 
@@ -89,89 +91,48 @@ export type HeroStat = {
 
 
 export const PARENT_HERO: HeroStat[] = [
-
   {
-
     id: 'total',
-
     title: 'Total Balance',
-
     value: 'KES —',
-
     subtitle: 'Account',
-
     subtitleValue: 'Parent wallet',
-
-    colors: ['#0A3D2E', '#0F5C42'],
-
+    colors: ['#059669', '#0EA5E9'],
     icon: 'credit-card',
-
   },
-
   {
-
     id: 'fees',
-
     title: 'Fee Balance',
-
     value: 'KES —',
-
     subtitle: 'School fees',
-
     subtitleValue: 'Outstanding',
-
-    colors: ['#0F5C42', '#E85D04'],
-
-    icon: 'book',
-
+    colors: ['#0284C7', '#38BDF8'],
+    icon: 'dollar-sign',
   },
-
   {
-
     id: 'pocket',
-
     title: 'Pocket Money',
-
     value: 'KES —',
-
     subtitle: 'Wallet',
-
     subtitleValue: 'Available',
-
-    colors: ['#062820', '#E85D04'],
-
+    colors: ['#F59E0B', '#F97316'],
     icon: 'pocket',
-
   },
-
 ];
 
-
-
 export const PARENT_DASHBOARD_ACTIONS: DashboardAction[] = [
-
-  { id: 'school-fees', title: 'School Fees', description: 'Pay · invoices · bank slips', icon: 'dollar-sign', nativeScreen: 'Accounts', accent: '#1F8B4C' },
-
-  { id: 'assessments', title: 'Exams & assessments', description: 'Exams, report cards & slips', icon: 'book-open', nativeScreen: 'Assessments', accent: '#7C3AED' },
-
-  { id: 'events', title: 'Events', description: 'RSVP, pay & scan check-in', icon: 'calendar', nativeScreen: 'Events', accent: '#EA580C' },
-
+  { id: 'school-fees', title: 'School Fees', description: 'Pay · invoices · bank slips', icon: 'credit-card', nativeScreen: 'Accounts', accent: '#059669' },
+  { id: 'assessments', title: 'Exams & assessments', description: 'Exams, report cards & slips', icon: 'clipboard', nativeScreen: 'Assessments', accent: '#0EA5E9' },
+  { id: 'events', title: 'Events', description: 'RSVP, pay & scan check-in', icon: 'calendar', nativeScreen: 'Events', accent: '#F59E0B' },
   { id: 'meetings', title: 'Meetings', description: 'Join school video meetings', icon: 'video', nativeScreen: 'Meetings', accent: '#0284C7' },
-
-  { id: 'discipline', title: 'Discipline', description: 'Conduct records', icon: 'shield', nativeScreen: 'Discipline', accent: '#DC2626' },
-
-  { id: 'library', title: 'Library', description: 'Borrow & return statement', icon: 'book', nativeScreen: 'Library', accent: '#4F46E5' },
-
-  { id: 'attendance', title: 'Attendance', description: 'View attendance', icon: 'users', nativeScreen: 'Attendance', accent: '#0891B2' },
-
-  { id: 'teachers', title: 'Teachers', description: "Your child's teachers", icon: 'user', nativeScreen: 'Teachers', accent: '#4F46E5' },
-
+  { id: 'discipline', title: 'Discipline', description: 'Conduct records', icon: 'shield', nativeScreen: 'Discipline', accent: '#EF4444' },
+  { id: 'library', title: 'Library', description: 'Borrow & return statement', icon: 'book', nativeScreen: 'Library', accent: '#8B5CF6' },
+  { id: 'attendance', title: 'Attendance', description: 'View attendance', icon: 'check-square', nativeScreen: 'Attendance', accent: '#14B8A6' },
+  { id: 'teachers', title: 'Teachers', description: "Your child's teachers", icon: 'users', nativeScreen: 'Teachers', accent: '#6366F1' },
   { id: 'transport', title: 'Transport', description: 'Track bus · live location', icon: 'navigation', nativeScreen: 'Transport', accent: '#0E7490' },
-
-  { id: 'bursary', title: 'Bursary', description: 'Kitty & contributions', icon: 'heart', nativeScreen: 'Bursary', accent: '#EA580C' },
-
-  { id: 'school-info', title: 'School Info', description: 'About your school', icon: 'info', nativeScreen: 'SchoolInfo', accent: '#0A3D2E' },
-
+  { id: 'bursary', title: 'Bursary', description: 'Kitty & contributions', icon: 'gift', nativeScreen: 'Bursary', accent: '#EC4899' },
+  { id: 'school-info', title: 'School Info', description: 'About your school', icon: 'home', nativeScreen: 'SchoolInfo', accent: '#15411D' },
+  { id: 'join-school', title: 'Join school', description: 'Request to join a school', icon: 'log-in', nativeScreen: 'JoinSchool', accent: '#2563EB' },
 ];
 
 
@@ -300,6 +261,8 @@ export const STUDENT_DASHBOARD_ACTIONS: DashboardAction[] = [
 
   { id: 'school-info', title: 'School Info', description: 'About your school', icon: 'info', nativeScreen: 'SchoolInfo', accent: '#0A3D2E' },
 
+  { id: 'join-school', title: 'Join school', description: 'Request to join a school', icon: 'log-in', nativeScreen: 'JoinSchool', accent: '#2563EB' },
+
 ];
 
 
@@ -379,6 +342,7 @@ export const TEACHER_DASHBOARD_ACTIONS: DashboardAction[] = [
   { id: 'comms', title: 'Communicate', description: 'SMS / email', icon: 'message-circle', deskPath: '/bulksms', accent: '#7C3AED' },
   { id: 'my-profile', title: 'My Profile', description: 'Account settings', icon: 'user', deskPath: '/teacher/profile', accent: '#059669' },
   { id: 'school-info', title: 'School Info', description: 'About your school', icon: 'info', nativeScreen: 'SchoolInfo', accent: '#0A3D2E' },
+  { id: 'join-school', title: 'Join school', description: 'Request to join a school', icon: 'log-in', nativeScreen: 'JoinSchool', accent: '#2563EB' },
 ];
 
 
@@ -454,6 +418,8 @@ export const SECURITY_DASHBOARD_ACTIONS: DashboardAction[] = [
 
   { id: 'school-info', title: 'School', description: 'About your school', icon: 'info', nativeScreen: 'SchoolInfo', accent: '#0A3D2E' },
 
+  { id: 'join-school', title: 'Join school', description: 'Request to join a school', icon: 'log-in', nativeScreen: 'JoinSchool', accent: '#2563EB' },
+
 ];
 
 
@@ -520,6 +486,7 @@ export const INDIVIDUAL_DASHBOARD_ACTIONS: DashboardAction[] = [
 
   { id: 'profile', title: 'Profile', description: 'Account & balances', icon: 'user', tukuaPath: '/profile', tukuaTab: 'Profile', accent: '#1F8B4C' },
 
-];
+  { id: 'join-school', title: 'Join school', description: 'Request to join a school', icon: 'log-in', nativeScreen: 'JoinSchool', accent: '#2563EB' },
 
+];
 

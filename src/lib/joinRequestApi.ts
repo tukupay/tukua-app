@@ -14,6 +14,9 @@ export type JoinSchoolHit = {
   code?: string | null;
   logo_url?: string | null;
   county?: string | null;
+  location?: string | null;
+  description?: string | null;
+  principal_name?: string | null;
 };
 
 export type JoinStudentHit = {
@@ -25,7 +28,18 @@ export type JoinStudentHit = {
   /** @deprecated Prefer admission_number */
   admission_masked?: string | null;
   class_name?: string | null;
+  photo_url?: string | null;
   person_type?: 'student';
+};
+
+export type MembershipHit = {
+  school_id: string;
+  school_name: string;
+  roles: string[];
+  detail?: string;
+  code?: string | null;
+  county?: string | null;
+  logo_url?: string | null;
 };
 
 type PlatformDbFilter = {
@@ -145,7 +159,7 @@ async function keepSchoolsOnly(hits: JoinSchoolHit[]): Promise<JoinSchoolHit[]> 
 
 export async function searchJoinSchools(q: string) {
   const term = q.trim();
-  if (term.length < 2) return { schools: [] as JoinSchoolHit[], count: 0 };
+  if (term.length < 1) return { schools: [] as JoinSchoolHit[], count: 0 };
   try {
     const res = await nestJoinFetch<{ schools?: JoinSchoolHit[]; count?: number }>(
       `/parents/join/schools?q=${encodeURIComponent(term)}`,
@@ -192,8 +206,19 @@ export async function searchJoinStudents(schoolId: string, q: string, limit = 20
 
 export async function createJoinRequest(body: {
   school_id: string;
-  target_student_id: string;
-  role_slug?: 'parent' | 'teacher' | 'student';
+  role_slug?: 'parent' | 'teacher' | 'student' | 'staff';
+  target_student_id?: string;
+  target_class_id?: string;
+  staff_role_slug?: string;
+  staff_role_slugs?: string[];
+  teacher_roles?: string[];
+  is_class_teacher?: boolean;
+  workloads?: Array<{
+    subject_id: string;
+    class_id?: string;
+    lessons_per_week?: number;
+  }>;
+  lessons_per_week?: number;
   relationship?: string;
   note?: string;
 }) {
@@ -204,4 +229,44 @@ export async function createJoinRequest(body: {
     method: 'POST',
     body,
   });
+}
+
+export async function listMyMemberships() {
+  return nestJoinFetch<{ memberships?: MembershipHit[]; count?: number }>(
+    '/parents/me/memberships',
+  );
+}
+
+export async function leaveMyMembership(schoolId: string) {
+  return nestJoinFetch<{ school_id?: string }>('/parents/me/memberships/leave', {
+    method: 'POST',
+    body: { school_id: schoolId },
+  });
+}
+
+export type JoinClassHit = {
+  id: string;
+  name: string;
+  level?: string | null;
+  stream?: string | null;
+};
+
+export type JoinSubjectHit = {
+  id: string;
+  name: string;
+  code?: string | null;
+};
+
+export async function listJoinClasses(schoolId: string) {
+  if (!schoolId) return { classes: [] as JoinClassHit[] };
+  return nestJoinFetch<{ classes?: JoinClassHit[] }>(
+    `/parents/join/classes?school_id=${encodeURIComponent(schoolId)}`,
+  );
+}
+
+export async function listJoinSubjects(schoolId: string) {
+  if (!schoolId) return { subjects: [] as JoinSubjectHit[] };
+  return nestJoinFetch<{ subjects?: JoinSubjectHit[] }>(
+    `/parents/join/subjects?school_id=${encodeURIComponent(schoolId)}`,
+  );
 }

@@ -19,8 +19,7 @@ import { useWebViewControl } from '../../context/WebViewControlContext';
 import { Colors } from '../../theme/yana';
 import { floatingHeaderInset } from '../../constants/layout';
 import { DashboardStackParamList } from '../../navigation/types';
-import { DashboardBackground, GreenPattern } from '../../components/dashboard/DashboardBackground';
-import { GlassPanel } from '../../components/dashboard/Glass';
+import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
 import { ProfileAvatar } from '../../components/navigation/ProfileAvatar';
 import { deskFetch } from '../../lib/deskApi';
 import {
@@ -60,23 +59,52 @@ type ActionSection = {
 };
 
 const HERO_GREEN = '#15411D';
-const TILE_SIZE = 48;
-const ICON_SIZE = 26;
+const TILE_SIZE = 52;
+const ICON_SIZE = 30;
 
-function PlainIcon({
-  name,
-  size,
-  color,
-}: {
-  name: FeatherIconName;
-  size: number;
-  color: string;
-}) {
-  return <Feather name={name} size={size} color={color} />;
-}
+/** Filled Ionicons — heavier weight than Feather strokes for dashboard tiles. */
+const TILE_ICON: Partial<Record<FeatherIconName, keyof typeof Ionicons.glyphMap>> = {
+  info: 'information-circle',
+  'dollar-sign': 'cash',
+  'credit-card': 'card',
+  'plus-circle': 'add-circle',
+  repeat: 'swap-horizontal',
+  'book-open': 'book',
+  monitor: 'laptop',
+  book: 'library',
+  shield: 'shield',
+  users: 'people',
+  calendar: 'calendar',
+  'file-text': 'document-text',
+  layers: 'layers',
+  award: 'ribbon',
+  'trending-up': 'trending-up',
+  'edit-3': 'create',
+  clipboard: 'clipboard',
+  'message-circle': 'chatbubble',
+  user: 'person',
+  settings: 'settings',
+  home: 'home',
+  mail: 'mail',
+  grid: 'grid',
+  pocket: 'wallet',
+  clock: 'time',
+  navigation: 'navigate',
+  upload: 'cloud-upload',
+  camera: 'camera',
+  map: 'map',
+  'map-pin': 'location',
+  'check-square': 'checkbox',
+  gift: 'gift',
+  cpu: 'hardware-chip',
+  globe: 'globe',
+  video: 'videocam',
+  heart: 'heart',
+  'log-in': 'log-in',
+};
 
-/** Map legacy hero BoldIcon names used in hero header only. */
-const BOLD_ICON: Partial<Record<FeatherIconName, keyof typeof Ionicons.glyphMap>> = {
+/** Outline set for hero header (sits on green card). */
+const HERO_ICON: Partial<Record<FeatherIconName, keyof typeof Ionicons.glyphMap>> = {
   info: 'information-circle-outline',
   'dollar-sign': 'cash-outline',
   'credit-card': 'card-outline',
@@ -106,12 +134,28 @@ const BOLD_ICON: Partial<Record<FeatherIconName, keyof typeof Ionicons.glyphMap>
   upload: 'cloud-upload-outline',
   camera: 'camera-outline',
   map: 'map-outline',
+  'map-pin': 'location-outline',
+  'check-square': 'checkbox-outline',
   gift: 'gift-outline',
   cpu: 'hardware-chip-outline',
   globe: 'globe-outline',
   video: 'videocam-outline',
   heart: 'heart-outline',
 };
+
+function PlainIcon({
+  name,
+  size,
+  color,
+}: {
+  name: FeatherIconName;
+  size: number;
+  color: string;
+}) {
+  const ion = TILE_ICON[name];
+  if (ion) return <Ionicons name={ion} size={size} color={color} />;
+  return <Feather name={name} size={size} color={color} />;
+}
 
 function HeroPlainIcon({
   name,
@@ -122,7 +166,7 @@ function HeroPlainIcon({
   size: number;
   color: string;
 }) {
-  const ion = BOLD_ICON[name];
+  const ion = HERO_ICON[name];
   if (ion) return <Ionicons name={ion} size={size} color={color} />;
   return <Feather name={name} size={size} color={color} />;
 }
@@ -576,13 +620,12 @@ export function DashboardHomeScreen() {
             </Pressable>
           </View>
 
-          {/* Hero balances — elevated + green pattern */}
+          {/* Hero balances — compact flat bank card */}
           <View style={styles.heroElevate}>
             <View style={styles.heroCard}>
-              <GreenPattern darker />
               <LinearGradient
                 pointerEvents="none"
-                colors={['rgba(21,65,29,0.35)', 'rgba(0,109,105,0.55)']}
+                colors={['#059669', '#0EA5E9']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={StyleSheet.absoluteFill}
@@ -590,7 +633,7 @@ export function DashboardHomeScreen() {
               <View style={styles.heroContent}>
                 <View style={styles.heroHead}>
                   <View style={styles.heroIconBox}>
-                    <HeroPlainIcon name={primaryHero.icon} size={24} color={HERO_GREEN} />
+                    <HeroPlainIcon name={primaryHero.icon} size={20} color="#FFFFFF" />
                   </View>
                   <View style={styles.heroHeadText}>
                     <Text style={styles.heroKicker}>{primaryHero.title}</Text>
@@ -629,28 +672,26 @@ export function DashboardHomeScreen() {
             </View>
           </View>
 
-          {/* Action grids — elevated single-border cards */}
+          {/* Action grids — icons free of card containers */}
           {sections.map((section) => (
             <View key={section.id} style={styles.sectionBlock}>
               <Text style={styles.sectionTitle}>{section.title}</Text>
-              <GlassPanel tone="frost" radius={16} shine={false}>
-                <View style={styles.sectionInner}>
-                  <View style={styles.tileRow}>
-                    {section.actions.map((action) => (
-                      <ModuleTile
-                        key={action.id}
-                        action={action}
-                        onPress={() => onPressAction(action)}
-                      />
-                    ))}
-                    {section.actions.length < 4
-                      ? Array.from({ length: 4 - section.actions.length }).map((_, i) => (
-                          <View key={`pad-${section.id}-${i}`} style={styles.tilePad} />
-                        ))
-                      : null}
-                  </View>
+              <View style={styles.sectionInner}>
+                <View style={styles.tileRow}>
+                  {section.actions.map((action) => (
+                    <ModuleTile
+                      key={action.id}
+                      action={action}
+                      onPress={() => onPressAction(action)}
+                    />
+                  ))}
+                  {section.actions.length < 4
+                    ? Array.from({ length: 4 - section.actions.length }).map((_, i) => (
+                        <View key={`pad-${section.id}-${i}`} style={styles.tilePad} />
+                      ))
+                    : null}
                 </View>
-              </GlassPanel>
+              </View>
             </View>
           ))}
         </Animated.View>
@@ -779,67 +820,68 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   heroElevate: {
-    borderRadius: 16,
-    marginBottom: 8,
-    shadowColor: '#0A3D2E',
-    shadowOpacity: 0.22,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 7,
+    borderRadius: 18,
+    marginBottom: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.18)',
+    // Flat bank-card look — no heavy elevation
+    shadowOpacity: 0,
+    elevation: 0,
   },
   heroCard: {
-    borderRadius: 16,
+    borderRadius: 18,
     overflow: 'hidden',
-    minHeight: 168,
+    minHeight: 118,
   },
   heroContent: {
-    padding: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
     zIndex: 1,
   },
   heroHead: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    marginBottom: 14,
+    gap: 10,
+    marginBottom: 10,
   },
   heroIconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: Colors.white,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.18)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   heroHeadText: { flex: 1, minWidth: 0 },
   heroKicker: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
     letterSpacing: 0.5,
     textTransform: 'uppercase',
     color: 'rgba(255,255,255,0.72)',
   },
   heroValue: {
-    marginTop: 2,
-    fontSize: 26,
+    marginTop: 1,
+    fontSize: 22,
     fontWeight: '800',
     color: Colors.white,
   },
   heroSub: {
-    marginTop: 2,
-    fontSize: 12,
+    marginTop: 1,
+    fontSize: 11,
     fontWeight: '500',
     color: 'rgba(255,255,255,0.7)',
   },
   heroSplit: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 6,
   },
   heroStat: {
     flex: 1,
     borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 10,
-    backgroundColor: 'rgba(255,255,255,0.14)',
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    backgroundColor: 'rgba(255,255,255,0.12)',
   },
   heroStatLabel: {
     fontSize: 10,
@@ -873,8 +915,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   sectionInner: {
-    paddingHorizontal: 8,
-    paddingVertical: 14,
+    paddingHorizontal: 2,
+    paddingVertical: 6,
   },
   tileRow: {
     flexDirection: 'row',

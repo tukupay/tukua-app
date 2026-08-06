@@ -20,6 +20,7 @@ import { TransportScreen } from '../screens/dashboard/TransportScreen';
 import { AttendanceScreen } from '../screens/dashboard/AttendanceScreen';
 import { BursaryScreen } from '../screens/dashboard/BursaryScreen';
 import { SecurityHomeScreen } from '../screens/dashboard/SecurityHomeScreen';
+import { JoinSchoolScreen } from '../screens/dashboard/JoinSchoolScreen';
 import { DashboardStackParamList } from './types';
 import { Colors } from '../theme/yana';
 import { useAppTheme } from '../context/AppThemeContext';
@@ -168,6 +169,11 @@ export function DashboardStack() {
         name="GateCheckIn"
         getComponent={lazyCamera.GateCheckIn}
         options={{ title: 'Gate check-in', headerShown: false }}
+      />
+      <Stack.Screen
+        name="JoinSchool"
+        component={JoinSchoolScreen}
+        options={{ title: 'Join school', headerShown: false }}
       />
       <Stack.Screen
         name="FeaturePlaceholder"
