@@ -24,14 +24,25 @@ import { NativeChatDrawer } from './NativeChatDrawer';
 import { Colors } from '../../theme/yana';
 import { FLOATING_HEADER_BODY as NATIVE_HEADER_BODY_HEIGHT } from '../../constants/layout';
 import { navigateDashboard, navigateProfile } from '../../navigation/AppNavigator';
+import { useAppTheme } from '../../context/AppThemeContext';
 
 export { NATIVE_HEADER_BODY_HEIGHT };
 
 const SAVAGE_ON_OPACITY = 1;
 const SAVAGE_OFF_OPACITY = 0.35;
 
+function hexToRgba(hex: string, alpha: number): string {
+  const h = hex.replace('#', '');
+  if (h.length !== 6) return `rgba(4,31,24,${alpha})`;
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 export function NativeAppHeader() {
   const insets = useSafeAreaInsets();
+  const { palette } = useAppTheme();
   const { profile, logout, session, savageMode, setSavageMode } = useAuth();
   const { showDialog } = useDialog();
   const { navigate, sendChatCommand, jumpToTab, activeTabPath } = useWebViewControl();
@@ -39,6 +50,9 @@ export function NativeAppHeader() {
   const [chatsOpen, setChatsOpen] = useState(false);
   const savageOpacity = useRef(new Animated.Value(SAVAGE_OFF_OPACITY)).current;
   const showSavageToggle = activeTabPath === '/chat';
+  const fadeTop = hexToRgba(palette.primary, 0.92);
+  const fadeMid = hexToRgba(palette.primary, 0.72);
+  const fadeLow = hexToRgba(palette.primary, 0.35);
 
   useEffect(() => {
     if (!session?.user) {
@@ -240,18 +254,19 @@ export function NativeAppHeader() {
         {/* Soft top fade — content scrolls underneath (compact chrome) */}
         <LinearGradient
           pointerEvents="none"
-          colors={[
-            'rgba(4,31,24,0.92)',
-            'rgba(4,31,24,0.72)',
-            'rgba(4,31,24,0.35)',
-            'transparent',
-          ]}
+          colors={[fadeTop, fadeMid, fadeLow, 'transparent']}
           locations={[0, 0.35, 0.72, 1]}
           style={[styles.fade, { height: insets.top + NATIVE_HEADER_BODY_HEIGHT + 28 }]}
         />
         <View style={[styles.bar, { paddingTop: insets.top + 4 }]}>
           <TouchableOpacity
-            style={styles.chatsBtn}
+            style={[
+              styles.chatsBtn,
+              {
+                borderColor: hexToRgba('#ffffff', 0.28),
+                backgroundColor: hexToRgba(palette.primary, 0.4),
+              },
+            ]}
             onPress={() => setChatsOpen(true)}
             accessibilityLabel="Open chats">
             <Ionicons name="menu" size={20} color={Colors.white} />
@@ -316,7 +331,11 @@ export function NativeAppHeader() {
                       <Ionicons
                         name={item.icon}
                         size={20}
-                        color={'destructive' in item && item.destructive ? Colors.destructive : Colors.primary}
+                        color={
+                          'destructive' in item && item.destructive
+                            ? Colors.destructive
+                            : palette.primary
+                        }
                       />
                       <Text
                         style={[

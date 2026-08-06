@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
 import { ModuleTabPager } from '../../components/dashboard/ModuleTabPager';
-import { ModuleBackBar, ModuleEmpty, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
+import { ModuleBackBar, ModuleEmpty, ModuleGlassCard, ModuleKicker, ModuleScreenHeader } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import { useDeskAuth } from '../../context/DeskAuthContext';
 import {
@@ -297,7 +297,7 @@ export function EventsScreen({ navigation }: Props) {
         showsVerticalScrollIndicator={false}>
         <ModuleBackBar onBack={() => navigation.goBack()} />
         <ModuleKicker>Events</ModuleKicker>
-        <Text style={styles.heading}>School activities</Text>
+        <ModuleScreenHeader title="School activities" description="RSVP, pay & scan check-in." />
 
         <ModuleTabPager
           tabs={[

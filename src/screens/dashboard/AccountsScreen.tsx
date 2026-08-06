@@ -22,7 +22,7 @@ import { GlassPanel } from '../../components/dashboard/Glass';
 import { ModuleTabPager } from '../../components/dashboard/ModuleTabPager';
 import { PaymentBottomSheet } from '../../components/dashboard/PaymentBottomSheet';
 import { PaymentProcessCard } from '../../components/dashboard/PaymentProcessCard';
-import { ModuleBackBar, ModuleEmpty, ModuleKicker } from './ModuleChrome';
+import { ModuleBackBar, ModuleScreenHeader, ModuleEmpty, ModuleKicker } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import { useAuth } from '../../context/AuthContext';
 import { useDeskAuth } from '../../context/DeskAuthContext';
@@ -407,7 +407,7 @@ export function AccountsScreen({ navigation }: Props) {
         showsVerticalScrollIndicator={false}>
         <ModuleBackBar onBack={() => navigation.goBack()} />
         <ModuleKicker>School fees</ModuleKicker>
-        <Text style={styles.title}>Fees & pocket money</Text>
+        <ModuleScreenHeader title="Fees & pocket money" description="Pay fees, view invoices and pocket money." />
         <Text style={styles.sub}>
           {selectedStudent?.name
             ? `For ${selectedStudent.name}`

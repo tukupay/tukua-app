@@ -13,7 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { DashboardBackground, GreenPattern } from '../../components/dashboard/DashboardBackground';
 import { GlassPanel } from '../../components/dashboard/Glass';
-import { ModuleBackBar, ModuleEmpty, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
+import { ModuleBackBar, ModuleScreenHeader, ModuleEmpty, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import { useDeskAuth } from '../../context/DeskAuthContext';
 import {
@@ -118,7 +118,7 @@ export function AttendanceScreen({ navigation }: Props) {
         showsVerticalScrollIndicator={false}>
         <ModuleBackBar onBack={() => navigation.goBack()} />
         <ModuleKicker>Attendance</ModuleKicker>
-        <Text style={styles.title}>Attendance summary</Text>
+        <ModuleScreenHeader title="Attendance summary" description="View attendance for the selected student." />
         <Text style={styles.sub}>
           {selectedStudent?.name
             ? `Recent attendance for ${selectedStudent.name}.`

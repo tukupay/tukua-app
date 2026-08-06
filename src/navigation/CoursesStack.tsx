@@ -26,19 +26,23 @@ function CourseWebScreen({
   const path = route.params?.path || '/courses';
   const navigation = useNavigation<NativeStackNavigationProp<CoursesStackParamList>>();
   const insets = useSafeAreaInsets();
+  const { palette } = useAppTheme();
 
   return (
     <View style={{ flex: 1 }}>
       <WebAppScreen path={path} label={route.params?.title || 'Course'} />
       {navigation.canGoBack() ? (
         <TouchableOpacity
-          style={[courseWebStyles.backBtn, { top: insets.top + FLOATING_HEADER_BODY + 8 }]}
+          style={[
+            courseWebStyles.backBtn,
+            { top: insets.top + FLOATING_HEADER_BODY + 8, borderColor: `${palette.primary}99` },
+          ]}
           onPress={() => navigation.goBack()}
           accessibilityLabel="Back to courses"
           accessibilityRole="button"
           hitSlop={8}
         >
-          <Ionicons name="chevron-back" size={24} color={Colors.ink || Colors.primary} />
+          <Ionicons name="chevron-back" size={24} color={palette.primary} />
         </TouchableOpacity>
       ) : null}
     </View>
@@ -86,7 +90,7 @@ export function CoursesStack() {
                 hitSlop={10}
                 style={styles.back}
               >
-                <Ionicons name="chevron-back" size={24} color={Colors.foreground} />
+                <Ionicons name="chevron-back" size={24} color={palette.primary} />
               </TouchableOpacity>
             )
           : undefined,

@@ -26,6 +26,9 @@ import { biometricEnableMessage, enableBiometrics, setupBiometricsAfterLogin } f
 import { getBiometricCredentials } from '../lib/biometricStorage';
 import { SchoolPickerScreen, ContextPickLoader } from '../screens/SchoolPickerScreen';
 import { PushNotificationBootstrap } from '../components/notifications/PushNotificationBootstrap';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { navigateDashboard } from './AppNavigator';
+import { JOIN_PROMPT_SEEN_KEY } from '../screens/dashboard/JoinSchoolScreen';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
@@ -148,7 +151,6 @@ function MainTabNavigator({
             return <AiTabIcon focused={focused} size={size} />;
           }
           const icons: Record<string, keyof typeof Ionicons.glyphMap> = {
-            Connect: 'chatbubbles',
             Courses: 'book-outline',
             Dashboard: 'grid-outline',
             Profile: 'person-outline',
@@ -164,14 +166,7 @@ function MainTabNavigator({
           </>
         )}
       </Tab.Screen>
-      <Tab.Screen
-        name="Connect"
-        options={{
-          title: 'Connect',
-          tabBarAccessibilityLabel: 'Connect chats',
-        }}>
-        {() => <WebAppScreen path="/connect" label="Connect" />}
-      </Tab.Screen>
+      {/* Tukua Connect parked for next release — tab hidden */}
       <Tab.Screen name="Courses" options={{ title: 'Courses' }} component={CoursesStack} />
       <Tab.Screen name="Dashboard" options={{ title: 'Dashboard' }} component={DashboardStack} />
       <Tab.Screen name="Profile" options={{ title: 'Profile' }} component={ProfileStack} />
@@ -181,12 +176,30 @@ function MainTabNavigator({
 
 export function MainTabs() {
   const { session } = useAuth();
-  const { needsSchoolPick, schoolsReady, deskReady } = useDeskAuth();
+  const { needsSchoolPick, schoolsReady, deskReady, schools } = useDeskAuth();
   const { palette } = useAppTheme();
   const gating = Boolean(session) && (!deskReady || !schoolsReady);
   // Tracks the real focused bottom-tab route (Dashboard/Courses/Profile have no
   // web path, so WebViewControl's activeTabPath alone can't gate chat-only chrome).
   const [focusedTab, setFocusedTab] = useState<keyof MainTabParamList>('Chat');
+
+  useEffect(() => {
+    if (!session || gating || needsSchoolPick || !schoolsReady) return;
+    if (schools.length > 0) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const seen = await AsyncStorage.getItem(JOIN_PROMPT_SEEN_KEY);
+        if (cancelled || seen) return;
+        navigateDashboard('JoinSchool', { firstLogin: true });
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [session, gating, needsSchoolPick, schoolsReady, schools.length]);
 
   return (
     <SafeAreaProvider>

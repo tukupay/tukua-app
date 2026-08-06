@@ -52,7 +52,7 @@ export function ProfileStack() {
                 hitSlop={10}
                 style={styles.back}
               >
-                <Ionicons name="chevron-back" size={24} color={Colors.foreground} />
+                <Ionicons name="chevron-back" size={24} color={palette.primary} />
               </TouchableOpacity>
             )
           : undefined,

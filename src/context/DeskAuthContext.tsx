@@ -84,6 +84,8 @@ type DeskAuthContextType = {
   backInPicker: () => Promise<void>;
   /** Clear selection and show picker again. */
   requestSchoolChange: () => Promise<void>;
+  /** Reload school/student links for the signed-in user (e.g. after leave/join). */
+  refreshSchools: (opts?: { quiet?: boolean; forcePick?: boolean }) => Promise<void>;
   connectDesk: (email: string, password: string) => Promise<DeskLoginResult>;
   refreshDeskUser: () => Promise<void>;
   clearDesk: () => Promise<void>;
@@ -113,6 +115,7 @@ const DeskAuthContext = createContext<DeskAuthContextType>({
   selectRole: async () => {},
   backInPicker: async () => {},
   requestSchoolChange: async () => {},
+  refreshSchools: async () => {},
   connectDesk: async () => {
     throw new Error('DeskAuth not ready');
   },
@@ -762,6 +765,17 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
     log.info('DeskAuth', 'context change requested');
   }, [authUserId, linkedStudents.length, schools, schoolRoleOptions.length, selectedSchool?.roles]);
 
+  const refreshSchools = useCallback(
+    async (opts?: { quiet?: boolean; forcePick?: boolean }) => {
+      if (!authUserId) return;
+      await applySchoolsForUser(authUserId, {
+        quiet: opts?.quiet ?? true,
+        forcePick: opts?.forcePick,
+      });
+    },
+    [authUserId, applySchoolsForUser],
+  );
+
   const syncSupabaseAsDesk = useCallback(
     async (session: Session | null, opts?: { quiet?: boolean; forceSchoolPick?: boolean }) => {
       if (!session?.access_token || !session.user) {
@@ -1092,6 +1106,7 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
       selectRole,
       backInPicker,
       requestSchoolChange,
+      refreshSchools,
       connectDesk,
       refreshDeskUser,
       clearDesk,
@@ -1117,6 +1132,7 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
       selectRole,
       backInPicker,
       requestSchoolChange,
+      refreshSchools,
       connectDesk,
       refreshDeskUser,
       clearDesk,

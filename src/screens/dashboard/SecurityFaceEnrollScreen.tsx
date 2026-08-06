@@ -14,7 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
-import { ModuleBackBar, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
+import { ModuleBackBar, ModuleGlassCard, ModuleKicker, ModuleScreenHeader } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
@@ -266,10 +266,10 @@ export function SecurityFaceEnrollScreen({ navigation }: Props) {
         keyboardShouldPersistTaps="handled"
       >
         <ModuleKicker>Security</ModuleKicker>
-        <Text style={styles.h1}>Save faces</Text>
-        <Text style={styles.sub}>
-          Enroll students, teachers, or staff for future boarding match. Trips & board is a separate screen.
-        </Text>
+        <ModuleScreenHeader
+          title="Save faces"
+          description="Enroll students, teachers, or staff for boarding match."
+        />
 
         <View style={styles.tabs}>
           {(['student', 'teacher', 'staff'] as PersonType[]).map((t) => (

@@ -4,7 +4,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
-import { ModuleBackBar, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
+import { ModuleBackBar, ModuleGlassCard, ModuleKicker, ModuleScreenHeader } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
@@ -94,11 +94,10 @@ export function FaceSelfEnrollScreen({ navigation }: Props) {
         ]}
       >
         <ModuleKicker>Boarding</ModuleKicker>
-        <Text style={styles.h1}>Enroll face</Text>
-        <Text style={styles.sub}>
-          For {displayName}
-          {adm ? ` (${adm})` : ''}. Used when security boards the student on the bus.
-        </Text>
+        <ModuleScreenHeader
+          title="Enroll face"
+          description={`For ${displayName}${adm ? ` (${adm})` : ''}. Used when boarding the bus.`}
+        />
         <ModuleGlassCard>
           {!permission?.granted ? (
             <Pressable style={styles.btn} onPress={() => void requestPermission()}>

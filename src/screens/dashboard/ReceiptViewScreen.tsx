@@ -12,7 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
 import { GlassPanel } from '../../components/dashboard/Glass';
-import { ModuleBackBar, ModuleKicker } from './ModuleChrome';
+import { ModuleBackBar, ModuleScreenHeader, ModuleKicker } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import { useDialog } from '../../context/DialogContext';
 import { DashboardStackParamList } from '../../navigation/types';
@@ -90,7 +90,7 @@ export function ReceiptViewScreen({ navigation, route }: Props) {
         showsVerticalScrollIndicator={false}>
         <ModuleBackBar onBack={() => navigation.goBack()} />
         <ModuleKicker>Accounts</ModuleKicker>
-        <Text style={styles.title}>Receipt</Text>
+        <ModuleScreenHeader title="Receipt" description="Official fee receipt — download as PDF." />
         <Text style={styles.sub}>Official fee receipt · download as PDF</Text>
 
         <View style={styles.actions}>

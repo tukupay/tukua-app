@@ -13,6 +13,8 @@ import { DashboardStackParamList } from '../../navigation/types';
 import { getWebViewMediaProps, WEBVIEW_MEDIA_INJECT_JS } from '../../lib/webViewMedia';
 import { buildPreloadSessionScript } from '../../lib/webviewAuth';
 import { log } from '../../lib/logger';
+import { useAppTheme } from '../../context/AppThemeContext';
+import { ModuleScreenHeader } from './ModuleChrome';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'DeskModule'>;
 
@@ -32,10 +34,11 @@ function buildDeskSessionInject(token: string, userJson: string) {
 }
 
 export function DeskModuleWebScreen({ route, navigation }: Props) {
-  const { title, deskPath } = route.params;
+  const { title, deskPath, description } = route.params;
   const { deskToken, deskUser, deskApiUrl, selectedStudentId, selectedSchoolId, selectedStudent } =
     useDeskAuth();
   const { session } = useAuth();
+  const { palette } = useAppTheme();
   const insets = useSafeAreaInsets();
   const webRef = useRef<WebView>(null);
   const [loading, setLoading] = useState(true);
@@ -92,10 +95,10 @@ export function DeskModuleWebScreen({ route, navigation }: Props) {
     return (
       <View style={[styles.centered, { paddingTop: floatingHeaderInset(insets.top) }]}>
         <Pressable style={styles.back} onPress={() => navigation.goBack()} hitSlop={10}>
-          <Ionicons name="chevron-back" size={22} color={Colors.foreground} />
-          <Text style={styles.backText}>Dashboard</Text>
+          <Ionicons name="chevron-back" size={22} color={palette.primary} />
+          <Text style={[styles.backText, { color: palette.primary }]}>Dashboard</Text>
         </Pressable>
-        <Text style={styles.title}>{title}</Text>
+        <ModuleScreenHeader title={title} description={description || 'Open this Desk module.'} />
         <Text style={styles.msg}>Sign in to open this module.</Text>
       </View>
     );
@@ -105,12 +108,17 @@ export function DeskModuleWebScreen({ route, navigation }: Props) {
     <View style={styles.root}>
       <View style={[styles.topBar, { paddingTop: floatingHeaderInset(insets.top) - 6 }]}>
         <Pressable style={styles.back} onPress={() => navigation.goBack()} hitSlop={10}>
-          <Ionicons name="chevron-back" size={22} color={Colors.foreground} />
-          <Text style={styles.backText} numberOfLines={1}>
+          <Ionicons name="chevron-back" size={22} color={palette.primary} />
+          <Text style={[styles.backText, { color: palette.primary }]} numberOfLines={1}>
             {title}
           </Text>
         </Pressable>
       </View>
+      {description ? (
+        <View style={styles.descWrap}>
+          <Text style={styles.moduleDesc}>{description}</Text>
+        </View>
+      ) : null}
       {loading ? (
         <View style={styles.loader}>
           <ActivityIndicator color={Colors.primary} />
@@ -166,4 +174,6 @@ const styles = StyleSheet.create({
   title: { fontSize: 20, fontWeight: '700', color: Colors.foreground, marginBottom: 10 },
   msg: { fontSize: 14, color: Colors.mutedForeground, lineHeight: 20 },
   errorBox: { padding: 12, backgroundColor: '#FFF7ED' },
+  descWrap: { paddingHorizontal: 16, paddingBottom: 6 },
+  moduleDesc: { fontSize: 11, lineHeight: 15, color: Colors.mutedForeground },
 });

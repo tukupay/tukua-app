@@ -16,7 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
 import { PaymentBottomSheet } from '../../components/dashboard/PaymentBottomSheet';
 import { PaymentProcessCard } from '../../components/dashboard/PaymentProcessCard';
-import { ModuleBackBar, ModuleEmpty, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
+import { ModuleBackBar, ModuleEmpty, ModuleGlassCard, ModuleKicker, ModuleScreenHeader } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import { useAuth } from '../../context/AuthContext';
 import { useDeskAuth } from '../../context/DeskAuthContext';
@@ -140,10 +140,10 @@ export function TeachersScreen({ navigation }: Props) {
         showsVerticalScrollIndicator={false}>
         <ModuleBackBar onBack={() => navigation.goBack()} />
         <ModuleKicker>Teachers</ModuleKicker>
-        <Text style={styles.title}>
-          {childName ? `${childName}'s teachers` : 'Class teachers'}
-        </Text>
-        <Text style={styles.sub}>From school workload — tap email to write.</Text>
+        <ModuleScreenHeader
+          title={childName ? `${childName}'s teachers` : 'Class teachers'}
+          description="Teachers linked to this class — tap email to write."
+        />
 
         {loading ? (
           <ActivityIndicator color={Colors.brandGreenMid} style={{ marginTop: 24 }} />

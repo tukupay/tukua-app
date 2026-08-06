@@ -11,7 +11,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
 import { ModuleTabPager } from '../../components/dashboard/ModuleTabPager';
-import { ModuleBackBar, ModuleEmpty, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
+import { ModuleBackBar, ModuleScreenHeader, ModuleEmpty, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import { useDeskAuth } from '../../context/DeskAuthContext';
 import { fetchParentLibraryStatement, seedParentDemoData } from '../../lib/parentPortalApi';
@@ -169,7 +169,7 @@ export function LibraryScreen({ navigation }: Props) {
         showsVerticalScrollIndicator={false}>
         <ModuleBackBar onBack={() => navigation.goBack()} />
         <ModuleKicker>Library</ModuleKicker>
-        <Text style={styles.title}>Books</Text>
+        <ModuleScreenHeader title="Books" description="Borrow and return library books." />
         <Text style={styles.sub}>
           {selectedStudent?.name
             ? `Borrowed and returned by ${selectedStudent.name}.`

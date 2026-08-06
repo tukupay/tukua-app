@@ -17,7 +17,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
-import { ModuleBackBar, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
+import { ModuleBackBar, ModuleGlassCard, ModuleKicker, ModuleScreenHeader } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
@@ -487,11 +487,10 @@ export function SecurityDailyAttendanceScreen({ navigation }: Props) {
         ListHeaderComponent={
           <View style={{ gap: 12 }}>
         <ModuleKicker>Security</ModuleKicker>
-        <Text style={styles.h1}>Daily attendance</Text>
-        <Text style={styles.sub}>
-          Mark students, teachers, or parents/staff — face, QR, or search. (Staff self check-in uses Gate QR
-          scanner.)
-        </Text>
+        <ModuleScreenHeader
+          title="Daily attendance"
+          description="Mark students · teachers · staff (face · QR · search)."
+        />
 
             <View style={styles.dateRow}>
               <Pressable style={styles.dateBtn} onPress={() => setSessionDate((d) => shiftDate(d, -1))}>

@@ -14,7 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
 import { PaymentBottomSheet } from '../../components/dashboard/PaymentBottomSheet';
 import { PaymentProcessCard } from '../../components/dashboard/PaymentProcessCard';
-import { ModuleBackBar, ModuleEmpty, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
+import { ModuleBackBar, ModuleScreenHeader, ModuleEmpty, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import {
   fetchParentBursary,
@@ -94,7 +94,7 @@ export function BursaryScreen({ navigation }: Props) {
         showsVerticalScrollIndicator={false}>
         <ModuleBackBar onBack={() => navigation.goBack()} />
         <ModuleKicker>Bursary</ModuleKicker>
-        <Text style={styles.title}>Vulnerable student kitty</Text>
+        <ModuleScreenHeader title="Vulnerable student kitty" description="Kitty & contributions for learners in need." />
         <Text style={styles.sub}>
           Contribute to support learners in need. Funds are reviewed and distributed by the school’s bursary
           committee — not automatically by the app.

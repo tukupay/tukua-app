@@ -17,7 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
 import { ModuleTabPager } from '../../components/dashboard/ModuleTabPager';
-import { ModuleBackBar, ModuleEmpty, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
+import { ModuleBackBar, ModuleScreenHeader, ModuleEmpty, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import { useDeskAuth } from '../../context/DeskAuthContext';
 import { useDialog } from '../../context/DialogContext';
@@ -368,7 +368,7 @@ export function TransportScreen({ navigation }: Props) {
         showsVerticalScrollIndicator={false}>
         <ModuleBackBar onBack={() => navigation.goBack()} />
         <ModuleKicker>Transport</ModuleKicker>
-        <Text style={styles.title}>School bus</Text>
+        <ModuleScreenHeader title="School bus" description="Track bus and live location." />
         <Text style={styles.sub}>
           {selectedStudent?.name
             ? `Live tracking and trip history for ${selectedStudent.name}.`

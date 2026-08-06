@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../theme/yana';
+import { useAppTheme } from '../../context/AppThemeContext';
 import { GlassPanel } from '../../components/dashboard/Glass';
 
 /** Shared back chrome for native dashboard module screens. */
@@ -12,16 +13,33 @@ export function ModuleBackBar({
   label?: string;
   onBack: () => void;
 }) {
+  const { palette } = useAppTheme();
   return (
     <Pressable style={styles.back} onPress={onBack} hitSlop={10}>
-      <Ionicons name="chevron-back" size={22} color={Colors.ink} />
-      <Text style={styles.backText}>{label}</Text>
+      <Ionicons name="chevron-back" size={22} color={palette.primary} />
+      <Text style={[styles.backText, { color: palette.primary }]}>{label}</Text>
     </Pressable>
   );
 }
 
 export function ModuleKicker({ children }: { children: string }) {
   return <Text style={styles.kicker}>{children}</Text>;
+}
+
+/** Title + tiny module blurb under the back bar. */
+export function ModuleScreenHeader({
+  title,
+  description,
+}: {
+  title: string;
+  description?: string;
+}) {
+  return (
+    <View style={styles.headerBlock}>
+      <Text style={styles.title}>{title}</Text>
+      {description ? <Text style={styles.moduleDesc}>{description}</Text> : null}
+    </View>
+  );
 }
 
 export function ModuleEmpty({
@@ -33,13 +51,14 @@ export function ModuleEmpty({
   body: string;
   onRetry?: () => void;
 }) {
+  const { palette } = useAppTheme();
   return (
     <GlassPanel tone="frost" intensity={42} radius={16}>
       <View style={styles.cardInner}>
         <Text style={styles.emptyTitle}>{title}</Text>
         <Text style={styles.emptyBody}>{body}</Text>
         {onRetry ? (
-          <Pressable style={styles.retry} onPress={onRetry}>
+          <Pressable style={[styles.retry, { backgroundColor: palette.primary }]} onPress={onRetry}>
             <Text style={styles.retryText}>Try again</Text>
           </Pressable>
         ) : null}
@@ -65,7 +84,15 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     marginBottom: 12,
   },
-  backText: { color: Colors.ink, fontWeight: '600', fontSize: 15 },
+  backText: { fontWeight: '600', fontSize: 15 },
+  headerBlock: { marginBottom: 12 },
+  title: { fontSize: 22, fontWeight: '800', color: Colors.ink },
+  moduleDesc: {
+    marginTop: 4,
+    fontSize: 11,
+    lineHeight: 15,
+    color: Colors.mutedForeground,
+  },
   kicker: {
     fontSize: 12,
     fontWeight: '800',
@@ -87,7 +114,6 @@ const styles = StyleSheet.create({
   },
   retry: {
     marginTop: 14,
-    backgroundColor: Colors.brandGreenMid,
     borderRadius: 12,
     paddingVertical: 12,
     alignItems: 'center',

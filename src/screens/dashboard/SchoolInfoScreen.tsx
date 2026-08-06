@@ -14,7 +14,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
 import { GlassPanel } from '../../components/dashboard/Glass';
-import { ModuleBackBar, ModuleEmpty, ModuleKicker } from './ModuleChrome';
+import { ModuleBackBar, ModuleEmpty, ModuleKicker, ModuleScreenHeader } from './ModuleChrome';
 import { useDeskAuth } from '../../context/DeskAuthContext';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import { deskFetch } from '../../lib/deskApi';
@@ -279,6 +279,7 @@ export function SchoolInfoScreen({ navigation }: Props) {
         showsVerticalScrollIndicator={false}>
         <ModuleBackBar onBack={() => navigation.goBack()} />
         <ModuleKicker>School information</ModuleKicker>
+        <ModuleScreenHeader title="About your school" description="Contact, location and school details." />
 
         {loading ? (
           <ActivityIndicator color={Colors.brandGreenMid} style={{ marginTop: 28 }} />

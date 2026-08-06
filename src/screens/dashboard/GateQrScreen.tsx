@@ -11,7 +11,7 @@ import {
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
-import { ModuleBackBar, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
+import { ModuleBackBar, ModuleScreenHeader, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
@@ -117,7 +117,7 @@ export function GateQrScreen({ navigation }: Props) {
         showsVerticalScrollIndicator={false}>
         <ModuleBackBar onBack={() => navigation.goBack()} />
         <ModuleKicker>Security</ModuleKicker>
-        <Text style={styles.title}>Gate check-in QR</Text>
+        <ModuleScreenHeader title="Gate check-in QR" description="Show rotating QR for staff check-in." />
         <Text style={styles.sub}>Refreshes every 5 seconds for staff to scan.</Text>
 
         {!schoolId ? (

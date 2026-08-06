@@ -14,7 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
-import { ModuleBackBar, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
+import { ModuleBackBar, ModuleGlassCard, ModuleKicker, ModuleScreenHeader } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
@@ -293,8 +293,10 @@ export function SecurityHomeScreen({ navigation }: Props) {
         ListHeaderComponent={
           <View style={{ gap: 12 }}>
             <ModuleKicker>Ops</ModuleKicker>
-            <Text style={styles.h1}>{schoolName}</Text>
-            <Text style={styles.sub}>Start trip · GPS · board students. Face enroll is a separate tile.</Text>
+            <ModuleScreenHeader
+              title={schoolName || 'Trips & board'}
+              description="Start trip · GPS · board students."
+            />
 
             {loading ? (
               <ActivityIndicator color={Colors.brandGreenDark} style={{ marginTop: 24 }} />

@@ -34,6 +34,8 @@ import {
 } from '../../lib/transportApi';
 import { formatTokensShort } from '../../components/navigation/TokenBalancePill';
 import { useRegisterTabJumper } from '../../hooks/useRegisterTabJumper';
+import { useAppTheme } from '../../context/AppThemeContext';
+import type { ThemePalette } from '../../theme/schoolThemes';
 import {
   DashboardAction,
   FeatherIconName,
@@ -58,9 +60,23 @@ type ActionSection = {
   actions: DashboardAction[];
 };
 
-const HERO_GREEN = '#15411D';
 const TILE_SIZE = 52;
 const ICON_SIZE = 30;
+
+/** Mostly dark theme hues + occasional bright accent. */
+function tileAccentFor(palette: ThemePalette, index: number): string {
+  const darks = [
+    palette.primary,
+    palette.tertiary,
+    '#1e293b',
+    '#334155',
+    '#0f172a',
+    '#1f2937',
+  ];
+  const brights = [palette.secondary, '#F59E0B', '#0EA5E9'];
+  if (index % 4 === 3) return brights[Math.floor(index / 4) % brights.length];
+  return darks[index % darks.length];
+}
 
 /** Filled Ionicons — heavier weight than Feather strokes for dashboard tiles. */
 const TILE_ICON: Partial<Record<FeatherIconName, keyof typeof Ionicons.glyphMap>> = {
@@ -220,11 +236,12 @@ function sectionsForActions(actions: DashboardAction[]): ActionSection[] {
 function ModuleTile({
   action,
   onPress,
+  accent,
 }: {
   action: DashboardAction;
   onPress: () => void;
+  accent: string;
 }) {
-  const accent = action.accent || HERO_GREEN;
   return (
     <Pressable
       style={({ pressed }) => [styles.tile, pressed && styles.tilePressed]}
@@ -247,6 +264,7 @@ function ModuleTile({
 export function DashboardHomeScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<DashboardStackParamList>>();
+  const { palette } = useAppTheme();
   const { profile, session } = useAuth();
   const { navigate, jumpToTab } = useWebViewControl();
   useRegisterTabJumper();
@@ -263,6 +281,7 @@ export function DashboardHomeScreen() {
     schools,
     requestSchoolChange,
   } = useDeskAuth();
+  const heroGreen = palette.primary;
 
   const actions = useMemo(() => actionsForPersona(persona), [persona]);
   const sections = useMemo(() => sectionsForActions(actions), [actions]);
@@ -400,6 +419,7 @@ export function DashboardHomeScreen() {
         navigation.navigate('DeskModule', {
           title: action.title,
           deskPath: action.deskPath,
+          description: action.description,
         });
         return;
       }
@@ -521,7 +541,7 @@ export function DashboardHomeScreen() {
     return (
       <View style={styles.centered}>
         <DashboardBackground patternOnly liquid />
-        <ActivityIndicator color={HERO_GREEN} size="large" />
+        <ActivityIndicator color={heroGreen} size="large" />
       </View>
     );
   }
@@ -565,7 +585,7 @@ export function DashboardHomeScreen() {
                 onPress={() => navigation.navigate('Notifications')}
                 accessibilityRole="button"
                 accessibilityLabel="Notifications">
-                <Ionicons name="notifications-outline" size={18} color={HERO_GREEN} />
+                <Ionicons name="notifications-outline" size={18} color={heroGreen} />
               </Pressable>
               {showSwitch ? (
                 <>
@@ -579,7 +599,7 @@ export function DashboardHomeScreen() {
                     <Ionicons
                       name={linkedStudents.length > 0 ? 'people-outline' : 'school-outline'}
                       size={18}
-                      color={HERO_GREEN}
+                      color={heroGreen}
                     />
                   </Pressable>
                   <Pressable
@@ -587,7 +607,7 @@ export function DashboardHomeScreen() {
                     onPress={() => void requestSchoolChange()}
                     accessibilityRole="button"
                     accessibilityLabel="Switch context">
-                    <Ionicons name="swap-horizontal" size={18} color={HERO_GREEN} />
+                    <Ionicons name="swap-horizontal" size={18} color={heroGreen} />
                   </Pressable>
                 </>
               ) : null}
@@ -611,9 +631,9 @@ export function DashboardHomeScreen() {
               onPress={() => navigate('/profile/balances', '/profile')}
               accessibilityRole="button"
               accessibilityLabel={`Tokens ${tokensLabel}`}>
-              <Ionicons name="diamond" size={12} color={Colors.orangeAccent} />
+              <Ionicons name="diamond" size={12} color={palette.secondary} />
               {tokensLoading ? (
-                <ActivityIndicator size="small" color={HERO_GREEN} />
+                <ActivityIndicator size="small" color={heroGreen} />
               ) : (
                 <Text style={styles.tokenChipText}>{tokensLabel}</Text>
               )}
@@ -625,7 +645,7 @@ export function DashboardHomeScreen() {
             <View style={styles.heroCard}>
               <LinearGradient
                 pointerEvents="none"
-                colors={['#059669', '#0EA5E9']}
+                colors={[palette.primary, palette.tertiary]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={StyleSheet.absoluteFill}
@@ -673,15 +693,16 @@ export function DashboardHomeScreen() {
           </View>
 
           {/* Action grids — icons free of card containers */}
-          {sections.map((section) => (
+          {sections.map((section, sectionIndex) => (
             <View key={section.id} style={styles.sectionBlock}>
               <Text style={styles.sectionTitle}>{section.title}</Text>
               <View style={styles.sectionInner}>
                 <View style={styles.tileRow}>
-                  {section.actions.map((action) => (
+                  {section.actions.map((action, actionIndex) => (
                     <ModuleTile
                       key={action.id}
                       action={action}
+                      accent={tileAccentFor(palette, sectionIndex * 4 + actionIndex)}
                       onPress={() => onPressAction(action)}
                     />
                   ))}
@@ -794,7 +815,7 @@ const styles = StyleSheet.create({
   roleChipText: {
     fontSize: 11,
     fontWeight: '700',
-    color: HERO_GREEN,
+    color: Colors.brandGreen,
     textTransform: 'capitalize',
   },
   tokenChip: {

@@ -11,7 +11,7 @@ import {
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
-import { ModuleBackBar, ModuleEmpty, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
+import { ModuleBackBar, ModuleScreenHeader, ModuleEmpty, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import { fetchJoinableMeetings, memberEnterMeeting, SchoolMeeting } from '../../lib/meetingsApi';
 import { useDeskAuth } from '../../context/DeskAuthContext';
@@ -127,10 +127,7 @@ export function MeetingsScreen({ navigation }: Props) {
         }>
         <ModuleBackBar onBack={() => navigation.goBack()} />
         <ModuleKicker>Tukua Meet</ModuleKicker>
-        <Text style={styles.title}>Meetings</Text>
-        <Text style={styles.sub}>
-          Join in the app with your profile name and phone. Guests without an account use the public Tukua Meet link.
-        </Text>
+        <ModuleScreenHeader title="Meetings" description="Join school video meetings in the app." />
 
         {loading ? (
           <ActivityIndicator color={Colors.primary} style={{ marginTop: 40 }} />

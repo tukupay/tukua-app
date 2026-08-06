@@ -13,7 +13,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
-import { ModuleBackBar, ModuleEmpty, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
+import { ModuleBackBar, ModuleEmpty, ModuleGlassCard, ModuleKicker, ModuleScreenHeader } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import { useDeskAuth } from '../../context/DeskAuthContext';
 import { fetchParentAssessmentReports } from '../../lib/parentPortalApi';
@@ -208,9 +208,10 @@ export function AssessmentsScreen({ navigation }: Props) {
         showsVerticalScrollIndicator={false}>
         <ModuleBackBar onBack={() => navigation.goBack()} />
         <ModuleKicker>Assessments</ModuleKicker>
-        <Text style={styles.heading}>
-          {selectedStudent?.name ? selectedStudent.name : 'Exam results'}
-        </Text>
+        <ModuleScreenHeader
+          title={selectedStudent?.name ? selectedStudent.name : 'Exam results'}
+          description="Exams, report cards & slips."
+        />
 
         {!loading && !error ? (
           <View style={styles.pickers}>

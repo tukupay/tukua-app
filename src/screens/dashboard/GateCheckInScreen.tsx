@@ -12,7 +12,7 @@ import * as Location from 'expo-location';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
-import { ModuleBackBar, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
+import { ModuleBackBar, ModuleScreenHeader, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
@@ -128,7 +128,7 @@ export function GateCheckInScreen({ navigation }: Props) {
         showsVerticalScrollIndicator={false}>
         <ModuleBackBar onBack={() => navigation.goBack()} />
         <ModuleKicker>Staff</ModuleKicker>
-        <Text style={styles.title}>My gate check-in</Text>
+        <ModuleScreenHeader title="My gate check-in" description="Scan the school gate QR to check yourself in." />
         <Text style={styles.sub}>
           For teachers and staff only — scan the school gate QR to check yourself in or out. Security marks
           students via Daily attendance.

@@ -25,6 +25,7 @@ export type DashboardStackParamList = {
   DeskModule: {
     title: string;
     deskPath: string;
+    description?: string;
   };
   SchoolInfo: undefined;
   Discipline: undefined;
@@ -51,7 +52,7 @@ export type DashboardStackParamList = {
   FaceSelfEnroll: undefined;
   GateQr: undefined;
   GateCheckIn: undefined;
-  JoinSchool: undefined;
+  JoinSchool: { firstLogin?: boolean } | undefined;
   FeaturePlaceholder: {
     title: string;
     description: string;
