@@ -267,7 +267,7 @@ export const STUDENT_DASHBOARD_ACTIONS: DashboardAction[] = [
   { id: 'face-enroll', title: 'My face', description: 'Enroll your face for boarding', icon: 'user', nativeScreen: 'FaceSelfEnroll', accent: '#0E7490' },
 
   { id: 'my-grades', title: 'My Grades', description: 'View assessments & grades', icon: 'award', nativeScreen: 'StudentGrades', accent: '#1F8B4C' },
-
+  { id: 'my-assignments', title: 'Assignments', description: 'Homework & classwork', icon: 'clipboard', nativeScreen: 'StudentAssignments', accent: '#6366F1' },
   { id: 'my-timetable', title: 'My Timetable', description: 'Class schedules', icon: 'calendar', nativeScreen: 'TeacherTimetable', accent: '#D97706' },
 
   { id: 'elearning', title: 'E-Learning', description: 'Courses & materials', icon: 'book-open', tukuaPath: '/courses', tukuaTab: 'Courses', accent: '#0D9488' },
@@ -505,7 +505,7 @@ export const SUPER_ADMIN_DASHBOARD_ACTIONS: DashboardAction[] = [
   // Schools & learning
   { id: 'schools', title: 'Schools', description: 'Registry', icon: 'home', nativeScreen: 'SuperAdminSchools', accent: '#1F8B4C' },
   { id: 'impersonate', title: 'Impersonate', description: 'Open as school admin', icon: 'user-check', nativeScreen: 'SuperAdminSchools', nativeParams: { impersonate: true }, accent: '#DC2626' },
-  { id: 'exam-generator', title: 'Exam generator', description: 'Coming soon — e-learning', icon: 'file-plus', tukuaPath: '/superadmin/courses?tab=exam-generator', accent: '#64748B' },
+  { id: 'exam-generator', title: 'Exam generator', description: 'Coming soon — e-learning exams', icon: 'file-plus', accent: '#64748B', tokenGated: false },
   { id: 'schools-overview', title: 'Schools overview', description: 'Tenant overview', icon: 'grid', nativeScreen: 'SuperAdminSchools', accent: '#0A3D2E' },
   { id: 'curriculum', title: 'Curriculum', description: 'Levels & learning areas', icon: 'layers', tukuaPath: '/superadmin/curriculum', accent: '#D97706' },
   { id: 'elearning', title: 'Courses', description: 'Browse & manage catalog', icon: 'book-open', tukuaPath: '/courses', tukuaTab: 'Courses', accent: '#0D9488' },

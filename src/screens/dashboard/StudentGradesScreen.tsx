@@ -1,11 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 
 import {
-
   ActivityIndicator,
-
   Pressable,
-
   RefreshControl,
 
   ScrollView,
@@ -229,8 +226,15 @@ export function StudentGradesScreen({ navigation }: Props) {
         ) : (
 
           items.map(({ exam, summary }) => (
-
-            <ModuleGlassCard key={exam.id}>
+            <Pressable
+              key={exam.id}
+              onPress={() =>
+                navigation.navigate('StudentExamDetail', {
+                  examId: exam.id,
+                  title: examLabel(exam),
+                })
+              }>
+            <ModuleGlassCard>
 
               <Text style={styles.examTitle}>{examLabel(exam)}</Text>
 
@@ -279,13 +283,10 @@ export function StudentGradesScreen({ navigation }: Props) {
                 </View>
 
               ) : (
-
                 <Text style={styles.noReport}>No report published for this exam yet.</Text>
-
               )}
-
             </ModuleGlassCard>
-
+            </Pressable>
           ))
 
         )}

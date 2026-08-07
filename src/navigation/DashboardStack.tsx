@@ -27,6 +27,7 @@ import { EnterMarksEntryScreen } from '../screens/dashboard/EnterMarksEntryScree
 import { TeacherClassesScreen } from '../screens/dashboard/TeacherClassesScreen';
 import { TeacherReportsScreen } from '../screens/dashboard/TeacherReportsScreen';
 import { StudentGradesScreen } from '../screens/dashboard/StudentGradesScreen';
+import { StudentExamDetailScreen } from '../screens/dashboard/StudentExamDetailScreen';
 import { StudentAssignmentsScreen } from '../screens/dashboard/StudentAssignmentsScreen';
 import { StudentAttendanceScreen } from '../screens/dashboard/StudentAttendanceScreen';
 import { StudentPocketMoneyScreen } from '../screens/dashboard/StudentPocketMoneyScreen';
@@ -227,6 +228,11 @@ export function DashboardStack() {
         name="StudentGrades"
         component={StudentGradesScreen}
         options={{ title: 'My grades', headerShown: false }}
+      />
+      <Stack.Screen
+        name="StudentExamDetail"
+        component={StudentExamDetailScreen}
+        options={{ title: 'Exam detail', headerShown: false }}
       />
       <Stack.Screen
         name="StudentAssignments"

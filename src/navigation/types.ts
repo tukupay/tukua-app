@@ -64,6 +64,7 @@ export type DashboardStackParamList = {
   TeacherClasses: undefined;
   TeacherReports: undefined;
   StudentGrades: undefined;
+  StudentExamDetail: { examId: string; title: string };
   StudentAssignments: undefined;
   StudentAttendance: undefined;
   StudentPocketMoney: undefined;

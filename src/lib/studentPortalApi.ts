@@ -207,12 +207,55 @@ export async function fetchStudentRecentAttendance(studentId: string, days = 14)
 
 
 
-/** Assignments — no dedicated student API yet; returns empty until Nest adds one. */
-
+/** Assignments — Nest student self-service (S11); honest empty until homework module. */
 export async function fetchStudentAssignments(_studentId: string) {
+  try {
+    const data = await deskFetch<{ assignments?: Array<Record<string, unknown>>; total?: number }>(
+      '/students/me/assignments',
+    );
+    const assignments = unwrapList<Record<string, unknown>>(data, ['assignments', 'items']);
+    return { assignments };
+  } catch {
+    return { assignments: [] as Array<Record<string, unknown>> };
+  }
+}
 
-  return { assignments: [] as Array<Record<string, unknown>> };
+export type StudentExamMarksheetRow = {
+  student_id?: string;
+  total_marks?: number | null;
+  mean?: number | null;
+  overall_grade?: string | null;
+  rank_in_class?: number | null;
+  rank_out_of_class?: number | null;
+  rank_in_level?: number | null;
+  rank_out_of_level?: number | null;
+  subjects?: Array<Record<string, unknown>>;
+};
 
+/** Per-subject marks + rank for one exam (S09). */
+export async function fetchStudentExamMarksheet(examId: string): Promise<{
+  row: StudentExamMarksheetRow | null;
+  subjectColumns: Array<{ id?: string; name?: string; code?: string }>;
+  exam: Record<string, unknown> | null;
+}> {
+  const data = await deskFetch<{
+    data?: {
+      row?: StudentExamMarksheetRow;
+      subject_columns?: Array<{ id?: string; name?: string; code?: string }>;
+      exam?: Record<string, unknown>;
+    };
+    row?: StudentExamMarksheetRow;
+    subject_columns?: Array<{ id?: string; name?: string; code?: string }>;
+    exam?: Record<string, unknown>;
+  }>(`/students/me/exams/${encodeURIComponent(examId)}/marksheet`);
+  const payload = (data as { data?: Record<string, unknown> })?.data ?? data;
+  return {
+    row: (payload as { row?: StudentExamMarksheetRow })?.row ?? null,
+    subjectColumns:
+      (payload as { subject_columns?: Array<{ id?: string; name?: string; code?: string }> })
+        ?.subject_columns ?? [],
+    exam: (payload as { exam?: Record<string, unknown> })?.exam ?? null,
+  };
 }
 
 /** Student pocket wallet — manager-only on Nest; returns null on 403 (honest hide in hero). */

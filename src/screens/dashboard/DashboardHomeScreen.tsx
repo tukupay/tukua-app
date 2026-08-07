@@ -66,7 +66,6 @@ import {
   resolveStudentRecordId,
   tryFetchStudentPocketBalance,
 } from '../../lib/studentPortalApi';
-import { isDeskWebModuleAvailable } from '../../lib/localHost';
 
 type ActionSection = {
   id: string;
@@ -568,7 +567,7 @@ export function DashboardHomeScreen() {
               ? `KES ${Number(feeBal).toLocaleString()}`
               : 'See School Fees',
           assignmentsLabel:
-            assignmentRows.length > 0 ? String(assignmentRows.length) : 'No assignments API',
+            assignmentRows.length > 0 ? String(assignmentRows.length) : '0',
         });
       } catch {
         setStudentHero(null);
@@ -783,7 +782,7 @@ export function DashboardHomeScreen() {
       if (pending && studentHero.assignmentsLabel) {
         pending.value = studentHero.assignmentsLabel;
         pending.subtitleValue =
-          studentHero.assignmentsLabel === 'No assignments API' ? 'Deferred' : 'Due soon';
+          studentHero.assignmentsLabel === '0' ? 'None yet' : 'Due soon';
       }
     }
     return next;
