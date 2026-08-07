@@ -61,8 +61,13 @@ export function RecordDisciplineScreen({ navigation }: Props) {
     void (async () => {
       try {
         const cats = await fetchDisciplineCategories();
-        setCategories(cats);
-        if (cats[0]?.name && !category) setCategory(cats[0].name);
+        if (cats.length) {
+          setCategories(cats);
+          if (!category) setCategory(cats[0].name);
+        } else {
+          setCategories([{ id: 'general', name: 'General' }]);
+          if (!category) setCategory('General');
+        }
       } catch {
         setCategories([{ id: 'general', name: 'General' }]);
         if (!category) setCategory('General');
