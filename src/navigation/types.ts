@@ -58,6 +58,14 @@ export type DashboardStackParamList = {
     description: string;
     apiHint?: string;
   };
+  EnterMarks: undefined;
+  TeacherMarksheet: { examId: string; title: string; classId?: string };
+  TeacherClasses: undefined;
+  TeacherReports: undefined;
+  StudentGrades: undefined;
+  StudentAssignments: undefined;
+  StudentAttendance: undefined;
+  Approvals: undefined;
 };
 
 export type MainTabParamList = {

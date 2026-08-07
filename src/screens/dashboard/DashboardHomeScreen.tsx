@@ -411,7 +411,7 @@ export function DashboardHomeScreen() {
     (action: DashboardAction) => {
       guardDashboardAction(action, () => {
         if (action.nativeScreen) {
-          navigation.navigate(action.nativeScreen as keyof DashboardStackParamList);
+          navigation.navigate({ name: action.nativeScreen, params: undefined } as never);
           return;
         }
         if (action.tukuaPath) {

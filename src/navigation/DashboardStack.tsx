@@ -21,6 +21,14 @@ import { AttendanceScreen } from '../screens/dashboard/AttendanceScreen';
 import { BursaryScreen } from '../screens/dashboard/BursaryScreen';
 import { SecurityHomeScreen } from '../screens/dashboard/SecurityHomeScreen';
 import { JoinSchoolScreen } from '../screens/dashboard/JoinSchoolScreen';
+import { EnterMarksScreen } from '../screens/dashboard/EnterMarksScreen';
+import { TeacherMarksheetScreen } from '../screens/dashboard/TeacherMarksheetScreen';
+import { TeacherClassesScreen } from '../screens/dashboard/TeacherClassesScreen';
+import { TeacherReportsScreen } from '../screens/dashboard/TeacherReportsScreen';
+import { StudentGradesScreen } from '../screens/dashboard/StudentGradesScreen';
+import { StudentAssignmentsScreen } from '../screens/dashboard/StudentAssignmentsScreen';
+import { StudentAttendanceScreen } from '../screens/dashboard/StudentAttendanceScreen';
+import { ApprovalsScreen } from '../screens/dashboard/ApprovalsScreen';
 import { DashboardStackParamList } from './types';
 import { Colors } from '../theme/yana';
 import { useAppTheme } from '../context/AppThemeContext';
@@ -174,6 +182,46 @@ export function DashboardStack() {
         name="JoinSchool"
         component={JoinSchoolScreen}
         options={{ title: 'Join school', headerShown: false }}
+      />
+      <Stack.Screen
+        name="EnterMarks"
+        component={EnterMarksScreen}
+        options={{ title: 'Enter marks', headerShown: false }}
+      />
+      <Stack.Screen
+        name="TeacherMarksheet"
+        component={TeacherMarksheetScreen}
+        options={({ route }) => ({ title: route.params.title, headerShown: false })}
+      />
+      <Stack.Screen
+        name="TeacherClasses"
+        component={TeacherClassesScreen}
+        options={{ title: 'My classes', headerShown: false }}
+      />
+      <Stack.Screen
+        name="TeacherReports"
+        component={TeacherReportsScreen}
+        options={{ title: 'Reports', headerShown: false }}
+      />
+      <Stack.Screen
+        name="StudentGrades"
+        component={StudentGradesScreen}
+        options={{ title: 'My grades', headerShown: false }}
+      />
+      <Stack.Screen
+        name="StudentAssignments"
+        component={StudentAssignmentsScreen}
+        options={{ title: 'Assignments', headerShown: false }}
+      />
+      <Stack.Screen
+        name="StudentAttendance"
+        component={StudentAttendanceScreen}
+        options={{ title: 'Attendance', headerShown: false }}
+      />
+      <Stack.Screen
+        name="Approvals"
+        component={ApprovalsScreen}
+        options={{ title: 'Approvals', headerShown: false }}
       />
       <Stack.Screen
         name="FeaturePlaceholder"
