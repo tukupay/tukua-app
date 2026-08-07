@@ -204,19 +204,19 @@ export const STUDENT_HERO: HeroStat[] = [
 
   {
 
-    id: 'assignments',
+    id: 'pending-fees',
 
-    title: 'Assignments',
+    title: 'School fees',
 
     value: '—',
 
-    subtitle: 'Completed',
+    subtitle: 'Balance',
 
-    subtitleValue: 'This term',
+    subtitleValue: 'View in School Fees',
 
     colors: ['#062820', '#0F5C42'],
 
-    icon: 'file-text',
+    icon: 'dollar-sign',
 
   },
 
@@ -266,13 +266,11 @@ export const STUDENT_DASHBOARD_ACTIONS: DashboardAction[] = [
 
   { id: 'my-grades', title: 'My Grades', description: 'View assessments & grades', icon: 'award', nativeScreen: 'StudentGrades', accent: '#1F8B4C' },
 
-  { id: 'my-assignments', title: 'My Assignments', description: 'View & submit work', icon: 'file-text', nativeScreen: 'StudentAssignments', accent: '#2563EB' },
-
   { id: 'my-timetable', title: 'My Timetable', description: 'Class schedules', icon: 'calendar', nativeScreen: 'TeacherTimetable', accent: '#D97706' },
 
   { id: 'elearning', title: 'E-Learning', description: 'Courses & materials', icon: 'book-open', tukuaPath: '/courses', tukuaTab: 'Courses', accent: '#0D9488' },
 
-  { id: 'my-progress', title: 'My Progress', description: 'Track performance', icon: 'trending-up', nativeScreen: 'StudentGrades', accent: '#059669' },
+  { id: 'my-progress', title: 'My Progress', description: 'Grades & rank summary', icon: 'trending-up', nativeScreen: 'StudentGrades', accent: '#059669' },
 
   { id: 'my-attendance', title: 'My Attendance', description: 'View attendance', icon: 'users', nativeScreen: 'StudentAttendance', accent: '#0891B2' },
 

@@ -56,7 +56,7 @@ import {
 } from './dashboardActions';
 import { DeskPersona } from '../../lib/deskRoles';
 import { fetchClasses, fetchMyTeacherWorkloads, fetchTeacherStats } from '../../lib/teacherPortalApi';
-import { fetchStudentExams, fetchStudentRecentAttendance } from '../../lib/studentPortalApi';
+import { fetchStudentExams, fetchStudentProfile, fetchStudentRecentAttendance, fetchStudentExamSummary } from '../../lib/studentPortalApi';
 
 type ActionSection = {
   id: string;
@@ -311,7 +311,9 @@ export function DashboardHomeScreen() {
   const [studentHero, setStudentHero] = useState<{
     grade?: string;
     attendancePct?: number | null;
-    assignmentCount?: number | null;
+    admissionLabel?: string | null;
+    className?: string | null;
+    pendingFeesLabel?: string | null;
   } | null>(null);
 
   const baseActions = useMemo(() => actionsForPersona(persona), [persona]);
@@ -508,17 +510,36 @@ export function DashboardHomeScreen() {
     const sid = String(selectedStudentId ?? deskUser?.id ?? '').trim();
     void (async () => {
       try {
-        const [exams, marks] = await Promise.allSettled([
+        const [profile, exams, marks] = await Promise.allSettled([
+          sid ? fetchStudentProfile(sid) : Promise.resolve(null),
           fetchStudentExams(5),
           sid ? fetchStudentRecentAttendance(sid, 14) : Promise.resolve([]),
         ]);
+        const prof = profile.status === 'fulfilled' ? profile.value : null;
         const examList = exams.status === 'fulfilled' ? exams.value : [];
         const att = marks.status === 'fulfilled' ? marks.value : [];
         const presentDays = new Set(att.map((m) => String(m.marked_at ?? '').slice(0, 10))).size;
+        let gradeLabel = examList.length ? 'See grades' : 'No grades yet';
+        if (examList[0]?.id && sid) {
+          try {
+            const { summary } = await fetchStudentExamSummary(examList[0].id, sid);
+            const mean = summary?.mean_grade ?? summary?.mean_mark;
+            if (mean != null && String(mean).trim()) {
+              gradeLabel = String(mean).trim();
+            }
+          } catch {
+            /* keep fallback */
+          }
+        }
         setStudentHero({
-          grade: examList.length ? 'See grades' : 'No grades yet',
+          grade: gradeLabel,
           attendancePct: att.length ? Math.round((presentDays / 14) * 100) : null,
-          assignmentCount: null,
+          admissionLabel:
+            prof?.student_number || prof?.admission_number
+              ? `#${prof.student_number || prof.admission_number}`
+              : null,
+          className: prof?.class_name || prof?.current_class || null,
+          pendingFeesLabel: 'Ask parent to pay',
         });
       } catch {
         setStudentHero(null);
@@ -705,13 +726,24 @@ export function DashboardHomeScreen() {
     if (persona === 'student' && studentHero) {
       const grade = next.find((s) => s.id === 'grade');
       const attendance = next.find((s) => s.id === 'attendance');
-      const assignments = next.find((s) => s.id === 'assignments');
+      const pendingFees = next.find((s) => s.id === 'pending-fees');
+      const pocket = next.find((s) => s.id === 'pocket');
       if (grade && studentHero.grade) grade.value = studentHero.grade;
+      if (grade && studentHero.admissionLabel) {
+        grade.subtitleValue = studentHero.admissionLabel;
+      }
+      if (grade && studentHero.className) {
+        grade.subtitle = studentHero.className;
+      }
       if (attendance && studentHero.attendancePct != null) {
         attendance.value = `${studentHero.attendancePct}%`;
       }
-      if (assignments && studentHero.assignmentCount != null) {
-        assignments.value = String(studentHero.assignmentCount);
+      if (pendingFees && studentHero.pendingFeesLabel) {
+        pendingFees.value = studentHero.pendingFeesLabel;
+      }
+      if (pocket) {
+        pocket.value = 'KES —';
+        pocket.subtitleValue = 'Ask school office';
       }
     }
     return next;

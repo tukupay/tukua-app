@@ -91,7 +91,7 @@ function yearLabel(raw: string | null): string {
 export function AccountsScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const { profile } = useAuth();
-  const { selectedStudentId, selectedStudent, selectedSchool } = useDeskAuth();
+  const { selectedStudentId, selectedStudent, selectedSchool, persona } = useDeskAuth();
   const { showDialog } = useDialog();
   const [feeCards, setFeeCards] = useState<FeeCard[]>([]);
   const [pockets, setPockets] = useState<PocketCard[]>([]);
@@ -119,6 +119,17 @@ export function AccountsScreen({ navigation }: Props) {
 
   const load = useCallback(
     async (soft = false) => {
+      if (persona === 'student') {
+        setLoading(false);
+        setRefreshing(false);
+        setError(null);
+        setFeeCards([]);
+        setPockets([]);
+        setInvoices([]);
+        setSlips([]);
+        setReceipts([]);
+        return;
+      }
       if (!soft) setLoading(true);
       setError(null);
       setPartialWarn(null);
@@ -230,7 +241,7 @@ export function AccountsScreen({ navigation }: Props) {
         setRefreshing(false);
       }
     },
-    [selectedStudentId, selectedStudent?.name],
+    [persona, selectedStudentId, selectedStudent?.name],
   );
 
   useEffect(() => {
@@ -382,6 +393,34 @@ export function AccountsScreen({ navigation }: Props) {
       log.warn('Accounts', 'export failed', String(e));
     }
   }, [receipts, selectedStudent?.name, selectedStudentId, showDialog]);
+
+  if (persona === 'student') {
+    return (
+      <View style={styles.root}>
+        <DashboardBackground patternOnly liquid />
+        <ScrollView
+          contentContainerStyle={[
+            styles.content,
+            {
+              paddingTop: floatingHeaderInset(insets.top),
+              paddingBottom: moduleScrollBottomPad(insets.bottom),
+            },
+          ]}
+          showsVerticalScrollIndicator={false}>
+          <ModuleBackBar onBack={() => navigation.goBack()} />
+          <ModuleKicker>School fees</ModuleKicker>
+          <ModuleScreenHeader
+            title="Your fees"
+            description="Students view balances here — payments are made by a parent or the school office."
+          />
+          <ModuleEmpty
+            title="Ask a parent to pay"
+            body="Fee balances and M-Pesa pay are on the parent app. If you need help, talk to the school bursar or your guardian."
+          />
+        </ScrollView>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.root}>
