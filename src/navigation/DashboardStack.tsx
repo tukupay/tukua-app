@@ -29,6 +29,12 @@ import { StudentGradesScreen } from '../screens/dashboard/StudentGradesScreen';
 import { StudentAssignmentsScreen } from '../screens/dashboard/StudentAssignmentsScreen';
 import { StudentAttendanceScreen } from '../screens/dashboard/StudentAttendanceScreen';
 import { ApprovalsScreen } from '../screens/dashboard/ApprovalsScreen';
+import { AdminStudentsScreen } from '../screens/dashboard/AdminStudentsScreen';
+import { AdminTeachersScreen } from '../screens/dashboard/AdminTeachersScreen';
+import { SchoolOverviewScreen } from '../screens/dashboard/SchoolOverviewScreen';
+import { AdminAccountsScreen } from '../screens/dashboard/AdminAccountsScreen';
+import { SuperAdminHubScreen } from '../screens/dashboard/SuperAdminHubScreen';
+import { SuperAdminSchoolsScreen } from '../screens/dashboard/SuperAdminSchoolsScreen';
 import { DashboardStackParamList } from './types';
 import { Colors } from '../theme/yana';
 import { useAppTheme } from '../context/AppThemeContext';
@@ -222,6 +228,36 @@ export function DashboardStack() {
         name="Approvals"
         component={ApprovalsScreen}
         options={{ title: 'Approvals', headerShown: false }}
+      />
+      <Stack.Screen
+        name="AdminStudents"
+        component={AdminStudentsScreen}
+        options={{ title: 'Students', headerShown: false }}
+      />
+      <Stack.Screen
+        name="AdminTeachers"
+        component={AdminTeachersScreen}
+        options={{ title: 'Teachers', headerShown: false }}
+      />
+      <Stack.Screen
+        name="SchoolOverview"
+        component={SchoolOverviewScreen}
+        options={{ title: 'School overview', headerShown: false }}
+      />
+      <Stack.Screen
+        name="AdminAccounts"
+        component={AdminAccountsScreen}
+        options={{ title: 'Accounts', headerShown: false }}
+      />
+      <Stack.Screen
+        name="SuperAdminHub"
+        component={SuperAdminHubScreen}
+        options={{ title: 'Platform hub', headerShown: false }}
+      />
+      <Stack.Screen
+        name="SuperAdminSchools"
+        component={SuperAdminSchoolsScreen}
+        options={{ title: 'Schools', headerShown: false }}
       />
       <Stack.Screen
         name="FeaturePlaceholder"

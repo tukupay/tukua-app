@@ -411,7 +411,15 @@ export function DashboardHomeScreen() {
     (action: DashboardAction) => {
       guardDashboardAction(action, () => {
         if (action.nativeScreen) {
-          navigation.navigate({ name: action.nativeScreen, params: undefined } as never);
+          const screen = action.nativeScreen;
+          if (screen === 'SuperAdminSchools') {
+            navigation.navigate(
+              'SuperAdminSchools',
+              (action.nativeParams ?? undefined) as { impersonate?: boolean } | undefined,
+            );
+          } else {
+            navigation.navigate(screen as never);
+          }
           return;
         }
         if (action.tukuaPath) {

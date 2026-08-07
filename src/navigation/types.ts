@@ -66,6 +66,12 @@ export type DashboardStackParamList = {
   StudentAssignments: undefined;
   StudentAttendance: undefined;
   Approvals: undefined;
+  AdminStudents: undefined;
+  AdminTeachers: undefined;
+  SchoolOverview: undefined;
+  AdminAccounts: undefined;
+  SuperAdminHub: undefined;
+  SuperAdminSchools: { impersonate?: boolean } | undefined;
 };
 
 export type MainTabParamList = {
