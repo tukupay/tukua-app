@@ -487,7 +487,7 @@ export const SUPER_ADMIN_DASHBOARD_ACTIONS: DashboardAction[] = [
   { id: 'analytics', title: 'Analytics', description: 'Platform metrics', icon: 'trending-up', tukuaPath: '/superadmin/analytics', accent: '#2563EB' },
   { id: 'registration', title: 'Registration', description: 'Signup monitor', icon: 'shield', tukuaPath: '/superadmin/registration-monitor', accent: '#DC2626' },
   // People
-  { id: 'users', title: 'Users', description: 'Accounts & roles', icon: 'users', tukuaPath: '/superadmin/users', deskPath: '/superadmin/schools/users', accent: '#D97706' },
+  { id: 'users', title: 'Users', description: 'Accounts & roles', icon: 'users', deskPath: '/superadmin/schools/users', accent: '#D97706' },
   { id: 'course-staff', title: 'Course mentors', description: 'Instructors & guests', icon: 'user', tukuaPath: '/superadmin/course-staff', accent: '#7C3AED' },
   { id: 'feedback', title: 'Feedback', description: 'User feedback', icon: 'message-circle', tukuaPath: '/superadmin/feedback', accent: '#0284C7' },
   // Money

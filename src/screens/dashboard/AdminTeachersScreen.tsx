@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Linking,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -12,7 +11,6 @@ import {
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
 import { ModuleBackBar, ModuleEmpty, ModuleGlassCard, ModuleKicker, ModuleScreenHeader } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
@@ -24,9 +22,17 @@ import { isDeskWebModuleAvailable } from '../../lib/localHost';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'AdminTeachers'>;
 
+const PAGE_SIZE = 40;
+
 function teacherName(row: AdminTeacherRow): string {
   if (row.full_name?.trim()) return row.full_name.trim();
   return [row.first_name, row.last_name].filter(Boolean).join(' ').trim() || 'Teacher';
+}
+
+function teacherMeta(row: AdminTeacherRow): string {
+  const phone = String(row.phone_number || '').trim();
+  if (phone) return phone;
+  return row.status || (row.user_is_active === 0 ? 'inactive' : 'active');
 }
 
 export function AdminTeachersScreen({ navigation }: Props) {
@@ -35,7 +41,10 @@ export function AdminTeachersScreen({ navigation }: Props) {
   const [debounced, setDebounced] = useState('');
   const [teachers, setTeachers] = useState<AdminTeacherRow[]>([]);
   const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -44,23 +53,34 @@ export function AdminTeachersScreen({ navigation }: Props) {
     return () => clearTimeout(t);
   }, [query]);
 
-  const load = useCallback(async (soft = false) => {
-    if (!soft) setLoading(true);
-    setError(null);
-    try {
-      const res = await fetchAdminTeachers(debounced || undefined, 1, 40);
-      setTeachers(res.teachers);
-      setTotal(res.total || res.teachers.length);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      log.warn('AdminTeachers', msg);
-      setError(msg);
-      setTeachers([]);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [debounced]);
+  const load = useCallback(
+    async (soft = false, nextPage = 1, append = false) => {
+      if (append) setLoadingMore(true);
+      else if (!soft) setLoading(true);
+      setError(null);
+      try {
+        const res = await fetchAdminTeachers(debounced || undefined, nextPage, PAGE_SIZE);
+        const batch = res.teachers;
+        setTeachers((prev) => (append ? [...prev, ...batch] : batch));
+        const reported = res.total || 0;
+        if (reported > 0) setTotal(reported);
+        else if (!append) setTotal(batch.length);
+        else setTotal((prev) => prev + batch.length);
+        setHasMore(batch.length >= PAGE_SIZE && (reported <= 0 || nextPage * PAGE_SIZE < reported));
+        setPage(nextPage);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        log.warn('AdminTeachers', msg);
+        setError(msg);
+        if (!append) setTeachers([]);
+      } finally {
+        setLoading(false);
+        setLoadingMore(false);
+        setRefreshing(false);
+      }
+    },
+    [debounced],
+  );
 
   useEffect(() => {
     void load();
@@ -82,7 +102,7 @@ export function AdminTeachersScreen({ navigation }: Props) {
             refreshing={refreshing}
             onRefresh={() => {
               setRefreshing(true);
-              void load(true);
+              void load(true, 1, false);
             }}
             tintColor={Colors.brandGreenMid}
           />
@@ -144,7 +164,7 @@ export function AdminTeachersScreen({ navigation }: Props) {
               <Text style={[styles.th, styles.colNum]}>#</Text>
               <Text style={[styles.th, styles.colCode]}>Code</Text>
               <Text style={[styles.th, styles.colName]}>Full name</Text>
-              <Text style={[styles.th, styles.colMeta]}>Status</Text>
+              <Text style={[styles.th, styles.colMeta]}>Phone</Text>
             </View>
             {teachers.map((t, idx) => (
               <ModuleGlassCard key={t.id} style={styles.tableRow}>
@@ -156,10 +176,22 @@ export function AdminTeachersScreen({ navigation }: Props) {
                   {teacherName(t)}
                 </Text>
                 <Text style={[styles.td, styles.colMeta]} numberOfLines={1}>
-                  {t.status || (t.user_is_active === 0 ? 'inactive' : 'active')}
+                  {teacherMeta(t)}
                 </Text>
               </ModuleGlassCard>
             ))}
+            {hasMore ? (
+              <Pressable
+                style={styles.loadMore}
+                disabled={loadingMore}
+                onPress={() => void load(true, page + 1, true)}>
+                {loadingMore ? (
+                  <ActivityIndicator color={Colors.white} />
+                ) : (
+                  <Text style={styles.loadMoreText}>Load more</Text>
+                )}
+              </Pressable>
+            ) : null}
           </>
         )}
       </ScrollView>
@@ -182,10 +214,14 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     backgroundColor: 'rgba(255,255,255,0.85)',
   },
-  title: { fontSize: 15, fontWeight: '700', color: Colors.brandGreenDark },
-  meta: { marginTop: 4, fontSize: 12, color: Colors.mutedForeground },
-  emailRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
-  email: { flex: 1, fontSize: 13, fontWeight: '600', color: Colors.primary },
+  tableHead: { flexDirection: 'row', gap: 6, paddingHorizontal: 4, marginBottom: 6 },
+  tableRow: { flexDirection: 'row', gap: 6, alignItems: 'center', marginBottom: 8 },
+  th: { fontSize: 10, fontWeight: '800', color: Colors.mutedForeground, textTransform: 'uppercase' },
+  td: { fontSize: 13, color: Colors.brandGreenDark },
+  colNum: { width: 24 },
+  colCode: { width: 64 },
+  colName: { flex: 1, fontWeight: '700' },
+  colMeta: { width: 88, fontSize: 11, color: Colors.mutedForeground },
   deskBtn: {
     alignSelf: 'flex-start',
     marginBottom: 12,
@@ -196,4 +232,16 @@ const styles = StyleSheet.create({
   },
   deskBtnText: { color: Colors.white, fontSize: 13, fontWeight: '700' },
   deskHint: { fontSize: 12, color: Colors.mutedForeground, marginBottom: 10 },
+  loadMore: {
+    alignSelf: 'center',
+    marginTop: 8,
+    marginBottom: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: Colors.brandGreenMid,
+    minWidth: 120,
+    alignItems: 'center',
+  },
+  loadMoreText: { color: Colors.white, fontSize: 13, fontWeight: '700' },
 });

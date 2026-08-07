@@ -22,7 +22,7 @@ import { DashboardStackParamList } from '../../navigation/types';
 import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
 import { ProfileAvatar } from '../../components/navigation/ProfileAvatar';
 import { deskFetch } from '../../lib/deskApi';
-import { isDeskErpPath, isDeskWebModuleAvailable } from '../../lib/localHost';
+import { isDeskErpPath, isDeskWebModuleAvailable, getWebBaseUrl } from '../../lib/localHost';
 import {
   fetchParentAccountsStatement,
   fetchParentPocketMoney,
@@ -603,6 +603,34 @@ export function DashboardHomeScreen() {
           } else {
             navigation.navigate(screen as never);
           }
+          return;
+        }
+        // SA Users: Desk /superadmin/schools/users when Desk Web is up; else Nest JWT SPA
+        // on non-Amplify hosts only (tukua.ai live Amplify 401s staging Nest JWT).
+        if (action.id === 'users' && action.deskPath) {
+          if (isDeskWebModuleAvailable()) {
+            navigation.navigate('DeskModule', {
+              title: action.title,
+              deskPath: action.deskPath,
+              description: action.description,
+            });
+            return;
+          }
+          try {
+            const host = new URL(getWebBaseUrl()).hostname.toLowerCase();
+            if (host !== 'tukua.ai' && host !== 'www.tukua.ai') {
+              navigate('/superadmin/users');
+              return;
+            }
+          } catch {
+            /* fall through */
+          }
+          navigation.navigate('FeaturePlaceholder', {
+            title: action.title,
+            description:
+              'Users needs Desk Web (EXPO_PUBLIC_DESK_WEB_URL → :3250) for Schools → Users, or EXPO_PUBLIC_WEB_URL pointing at a Nest JWT SPA. Live tukua.ai returns 401 with staging tokens.',
+            apiHint: action.deskPath,
+          });
           return;
         }
         if (action.deskPath && isDeskWebModuleAvailable()) {

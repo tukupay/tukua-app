@@ -155,6 +155,7 @@ export function MeetingsScreen({ navigation }: Props) {
           title: m.title || 'Tukua Meet',
           roomUrl,
           meetingId: m.id,
+          participantId: entered?.participant_session_id,
         });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);

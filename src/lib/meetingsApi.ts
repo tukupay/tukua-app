@@ -88,7 +88,12 @@ export async function createSchoolMeeting(body: {
 
 export async function hostEnterMeeting(meetingId: string, displayName?: string) {
   return deskFetch<
-    SchoolMeeting & { host_room_path?: string; room_url?: string; jitsi_join_url?: string }
+    SchoolMeeting & {
+      host_room_path?: string;
+      room_url?: string;
+      jitsi_join_url?: string;
+      participant_session_id?: string;
+    }
   >(`/meetings/${encodeURIComponent(meetingId)}/host-enter`, {
     method: 'POST',
     body: { display_name: displayName },

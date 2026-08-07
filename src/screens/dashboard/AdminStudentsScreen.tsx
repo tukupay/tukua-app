@@ -22,6 +22,8 @@ import { isDeskWebModuleAvailable } from '../../lib/localHost';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'AdminStudents'>;
 
+const PAGE_SIZE = 40;
+
 function studentName(row: AdminStudentRow): string {
   if (row.full_name?.trim()) return row.full_name.trim();
   return [row.first_name, row.last_name].filter(Boolean).join(' ').trim() || 'Student';
@@ -33,7 +35,10 @@ export function AdminStudentsScreen({ navigation }: Props) {
   const [debounced, setDebounced] = useState('');
   const [students, setStudents] = useState<AdminStudentRow[]>([]);
   const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,23 +47,34 @@ export function AdminStudentsScreen({ navigation }: Props) {
     return () => clearTimeout(t);
   }, [query]);
 
-  const load = useCallback(async (soft = false) => {
-    if (!soft) setLoading(true);
-    setError(null);
-    try {
-      const res = await fetchAdminStudents(debounced || undefined, 1, 40);
-      setStudents(res.students);
-      setTotal(res.total || res.students.length);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      log.warn('AdminStudents', msg);
-      setError(msg);
-      setStudents([]);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [debounced]);
+  const load = useCallback(
+    async (soft = false, nextPage = 1, append = false) => {
+      if (append) setLoadingMore(true);
+      else if (!soft) setLoading(true);
+      setError(null);
+      try {
+        const res = await fetchAdminStudents(debounced || undefined, nextPage, PAGE_SIZE);
+        const batch = res.students;
+        setStudents((prev) => (append ? [...prev, ...batch] : batch));
+        const reported = res.total || 0;
+        if (reported > 0) setTotal(reported);
+        else if (!append) setTotal(batch.length);
+        else setTotal((prev) => prev + batch.length);
+        setHasMore(batch.length >= PAGE_SIZE && (reported <= 0 || nextPage * PAGE_SIZE < reported));
+        setPage(nextPage);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        log.warn('AdminStudents', msg);
+        setError(msg);
+        if (!append) setStudents([]);
+      } finally {
+        setLoading(false);
+        setLoadingMore(false);
+        setRefreshing(false);
+      }
+    },
+    [debounced],
+  );
 
   useEffect(() => {
     void load();
@@ -80,7 +96,7 @@ export function AdminStudentsScreen({ navigation }: Props) {
             refreshing={refreshing}
             onRefresh={() => {
               setRefreshing(true);
-              void load(true);
+              void load(true, 1, false);
             }}
             tintColor={Colors.brandGreenMid}
           />
@@ -154,6 +170,18 @@ export function AdminStudentsScreen({ navigation }: Props) {
                 </ModuleGlassCard>
               </Pressable>
             ))}
+            {hasMore ? (
+              <Pressable
+                style={styles.loadMore}
+                disabled={loadingMore}
+                onPress={() => void load(true, page + 1, true)}>
+                {loadingMore ? (
+                  <ActivityIndicator color={Colors.white} />
+                ) : (
+                  <Text style={styles.loadMoreText}>Load more</Text>
+                )}
+              </Pressable>
+            ) : null}
           </>
         )}
       </ScrollView>
@@ -197,4 +225,16 @@ const styles = StyleSheet.create({
   admitBtnText: { color: Colors.white, fontSize: 13, fontWeight: '700' },
   deskHint: { fontSize: 12, color: Colors.mutedForeground, marginBottom: 10 },
   openDesk: { marginTop: 6, fontSize: 11, color: Colors.primary, fontWeight: '600' },
+  loadMore: {
+    alignSelf: 'center',
+    marginTop: 8,
+    marginBottom: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: Colors.brandGreenMid,
+    minWidth: 120,
+    alignItems: 'center',
+  },
+  loadMoreText: { color: Colors.white, fontSize: 13, fontWeight: '700' },
 });

@@ -22,6 +22,8 @@ import { isDeskWebModuleAvailable } from '../../lib/localHost';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'AdminParents'>;
 
+const PAGE_SIZE = 40;
+
 function parentName(row: AdminParentRow): string {
   if (row.full_name?.trim()) return row.full_name.trim();
   return [row.first_name, row.last_name].filter(Boolean).join(' ').trim() || 'Parent';
@@ -33,7 +35,10 @@ export function AdminParentsScreen({ navigation }: Props) {
   const [debounced, setDebounced] = useState('');
   const [parents, setParents] = useState<AdminParentRow[]>([]);
   const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,23 +47,34 @@ export function AdminParentsScreen({ navigation }: Props) {
     return () => clearTimeout(t);
   }, [query]);
 
-  const load = useCallback(async (soft = false) => {
-    if (!soft) setLoading(true);
-    setError(null);
-    try {
-      const res = await fetchAdminParents(debounced || undefined, 1, 40);
-      setParents(res.parents);
-      setTotal(res.total || res.parents.length);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      log.warn('AdminParents', msg);
-      setError(msg);
-      setParents([]);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [debounced]);
+  const load = useCallback(
+    async (soft = false, nextPage = 1, append = false) => {
+      if (append) setLoadingMore(true);
+      else if (!soft) setLoading(true);
+      setError(null);
+      try {
+        const res = await fetchAdminParents(debounced || undefined, nextPage, PAGE_SIZE);
+        const batch = res.parents;
+        setParents((prev) => (append ? [...prev, ...batch] : batch));
+        const reported = res.total || 0;
+        if (reported > 0) setTotal(reported);
+        else if (!append) setTotal(batch.length);
+        else setTotal((prev) => prev + batch.length);
+        setHasMore(batch.length >= PAGE_SIZE && (reported <= 0 || nextPage * PAGE_SIZE < reported));
+        setPage(nextPage);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        log.warn('AdminParents', msg);
+        setError(msg);
+        if (!append) setParents([]);
+      } finally {
+        setLoading(false);
+        setLoadingMore(false);
+        setRefreshing(false);
+      }
+    },
+    [debounced],
+  );
 
   useEffect(() => {
     void load();
@@ -84,7 +100,7 @@ export function AdminParentsScreen({ navigation }: Props) {
             refreshing={refreshing}
             onRefresh={() => {
               setRefreshing(true);
-              void load(true);
+              void load(true, 1, false);
             }}
             tintColor={Colors.brandGreenMid}
           />
@@ -94,7 +110,11 @@ export function AdminParentsScreen({ navigation }: Props) {
         <ModuleKicker>Parents</ModuleKicker>
         <ModuleScreenHeader
           title="Parent directory"
-          description={`Native list from Nest GET /parents. ${deskHint}`}
+          description={
+            total
+              ? `${total} parents · Nest GET /parents. ${deskHint}`
+              : `Native list from Nest GET /parents. ${deskHint}`
+          }
         />
 
         <TextInput
@@ -119,7 +139,6 @@ export function AdminParentsScreen({ navigation }: Props) {
           <>
             <View style={styles.tableHead}>
               <Text style={[styles.th, styles.colNum]}>#</Text>
-              <Text style={[styles.th, styles.colCode]}>Code</Text>
               <Text style={[styles.th, styles.colName]}>Full name</Text>
               <Text style={[styles.th, styles.colMeta]}>Phone</Text>
             </View>
@@ -136,18 +155,27 @@ export function AdminParentsScreen({ navigation }: Props) {
                 }}>
                 <ModuleGlassCard style={styles.tableRow}>
                   <Text style={[styles.td, styles.colNum]}>{idx + 1}</Text>
-                  <Text style={[styles.td, styles.colCode]} numberOfLines={1}>
-                    {row.phone_number || '—'}
-                  </Text>
                   <Text style={[styles.td, styles.colName]} numberOfLines={1}>
                     {parentName(row)}
                   </Text>
                   <Text style={[styles.td, styles.colMeta]} numberOfLines={1}>
-                    {row.relationship || row.email || '—'}
+                    {row.phone_number || row.email || '—'}
                   </Text>
                 </ModuleGlassCard>
               </Pressable>
             ))}
+            {hasMore ? (
+              <Pressable
+                style={styles.loadMore}
+                disabled={loadingMore}
+                onPress={() => void load(true, page + 1, true)}>
+                {loadingMore ? (
+                  <ActivityIndicator color={Colors.white} />
+                ) : (
+                  <Text style={styles.loadMoreText}>Load more</Text>
+                )}
+              </Pressable>
+            ) : null}
           </>
         )}
       </ScrollView>
@@ -170,10 +198,23 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.white,
   },
   loader: { paddingVertical: 40, alignItems: 'center' },
-  count: { fontSize: 12, color: Colors.mutedForeground, marginBottom: 8 },
-  name: { fontSize: 15, fontWeight: '700', color: Colors.brandGreenDark },
-  meta: { marginTop: 4, fontSize: 12, color: Colors.mutedForeground },
-  linked: { marginTop: 6, fontSize: 12, color: Colors.brandGreen },
-  linkedMuted: { marginTop: 6, fontSize: 12, color: Colors.mutedForeground, fontStyle: 'italic' },
-  openDesk: { marginTop: 8, fontSize: 11, color: Colors.primary, fontWeight: '600' },
+  tableHead: { flexDirection: 'row', gap: 6, paddingHorizontal: 4, marginBottom: 6 },
+  tableRow: { flexDirection: 'row', gap: 6, alignItems: 'center', marginBottom: 8 },
+  th: { fontSize: 10, fontWeight: '800', color: Colors.mutedForeground, textTransform: 'uppercase' },
+  td: { fontSize: 13, color: Colors.brandGreenDark },
+  colNum: { width: 24 },
+  colName: { flex: 1, fontWeight: '700' },
+  colMeta: { width: 100, fontSize: 11, color: Colors.mutedForeground },
+  loadMore: {
+    alignSelf: 'center',
+    marginTop: 8,
+    marginBottom: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: Colors.brandGreenMid,
+    minWidth: 120,
+    alignItems: 'center',
+  },
+  loadMoreText: { color: Colors.white, fontSize: 13, fontWeight: '700' },
 });
