@@ -215,4 +215,26 @@ export async function fetchStudentAssignments(_studentId: string) {
 
 }
 
+/** Student pocket wallet — manager-only on Nest; returns null on 403 (honest hide in hero). */
+export async function tryFetchStudentPocketBalance(studentId: string): Promise<number | null> {
+  if (!studentId) return null;
+  try {
+    const data = await deskFetch<{ wallet?: { balance?: number }; balance?: number }>(
+      `/pocket-money/wallets/${encodeURIComponent(studentId)}`,
+    );
+    const raw =
+      (data as { wallet?: { balance?: number } })?.wallet?.balance ??
+      (data as { balance?: number })?.balance;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
 
+/** Resolve admin_students id for the signed-in student JWT. */
+export function resolveStudentRecordId(
+  deskUser: { id?: string; user_id?: string } | null | undefined,
+): string {
+  return String(deskUser?.id ?? deskUser?.user_id ?? '').trim();
+}

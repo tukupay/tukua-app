@@ -201,11 +201,7 @@ export function TeacherReportsScreen({ navigation }: Props) {
               onPress={() => {
                 if (s.id === 'progress') navigation.navigate('TeacherProgress');
                 else if (s.id === 'discipline') navigation.navigate('Discipline');
-                else if (s.id === 'attendance')
-                  navigation.navigate('FeaturePlaceholder', {
-                    title: 'Attendance reports',
-                    description: 'Class attendance summaries open on Desk for now.',
-                  });
+                else if (s.id === 'attendance') navigation.navigate('Attendance');
               }}
               style={{
                 paddingHorizontal: 12,

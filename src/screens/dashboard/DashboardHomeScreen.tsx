@@ -56,7 +56,16 @@ import {
 } from './dashboardActions';
 import { DeskPersona } from '../../lib/deskRoles';
 import { fetchClasses, fetchMyTeacherWorkloads, fetchTeacherStats } from '../../lib/teacherPortalApi';
-import { fetchStudentExams, fetchStudentProfile, fetchStudentRecentAttendance, fetchStudentExamSummary } from '../../lib/studentPortalApi';
+import {
+  fetchStudentAssignments,
+  fetchStudentExams,
+  fetchStudentProfile,
+  fetchStudentRecentAttendance,
+  fetchStudentExamSummary,
+  resolveStudentRecordId,
+  tryFetchStudentPocketBalance,
+} from '../../lib/studentPortalApi';
+import { isDeskWebModuleAvailable } from '../../lib/localHost';
 
 type ActionSection = {
   id: string;
@@ -313,7 +322,10 @@ export function DashboardHomeScreen() {
     attendancePct?: number | null;
     admissionLabel?: string | null;
     className?: string | null;
-    pendingFeesLabel?: string | null;
+    pocketBalance?: number | null;
+    pocketLabel?: string | null;
+    feesLabel?: string | null;
+    assignmentsLabel?: string | null;
   } | null>(null);
 
   const baseActions = useMemo(() => actionsForPersona(persona), [persona]);
@@ -507,18 +519,23 @@ export function DashboardHomeScreen() {
       setStudentHero(null);
       return;
     }
-    const sid = String(selectedStudentId ?? deskUser?.id ?? '').trim();
+    const sid = resolveStudentRecordId(deskUser) || String(selectedStudentId ?? '').trim();
     void (async () => {
       try {
-        const [profile, exams, marks] = await Promise.allSettled([
+        const [profile, exams, att, pocket, assignments] = await Promise.allSettled([
           sid ? fetchStudentProfile(sid) : Promise.resolve(null),
           fetchStudentExams(5),
           sid ? fetchStudentRecentAttendance(sid, 14) : Promise.resolve([]),
+          sid ? tryFetchStudentPocketBalance(sid) : Promise.resolve(null),
+          sid ? fetchStudentAssignments(sid) : Promise.resolve({ assignments: [] }),
         ]);
         const prof = profile.status === 'fulfilled' ? profile.value : null;
         const examList = exams.status === 'fulfilled' ? exams.value : [];
-        const att = marks.status === 'fulfilled' ? marks.value : [];
-        const presentDays = new Set(att.map((m) => String(m.marked_at ?? '').slice(0, 10))).size;
+        const attRows = att.status === 'fulfilled' ? att.value : [];
+        const pocketBal = pocket.status === 'fulfilled' ? pocket.value : null;
+        const assignmentRows =
+          assignments.status === 'fulfilled' ? assignments.value?.assignments ?? [] : [];
+        const presentDays = new Set(attRows.map((m) => String(m.marked_at ?? '').slice(0, 10))).size;
         let gradeLabel = examList.length ? 'See grades' : 'No grades yet';
         if (examList[0]?.id && sid) {
           try {
@@ -533,19 +550,24 @@ export function DashboardHomeScreen() {
         }
         setStudentHero({
           grade: gradeLabel,
-          attendancePct: att.length ? Math.round((presentDays / 14) * 100) : null,
+          attendancePct: attRows.length ? Math.round((presentDays / 14) * 100) : null,
           admissionLabel:
             prof?.student_number || prof?.admission_number
               ? `#${prof.student_number || prof.admission_number}`
               : null,
           className: prof?.class_name || prof?.current_class || null,
-          pendingFeesLabel: 'Ask parent to pay',
+          pocketBalance: pocketBal,
+          pocketLabel:
+            pocketBal != null ? `KES ${pocketBal.toLocaleString()}` : 'Office / parent only',
+          feesLabel: 'Via parent app',
+          assignmentsLabel:
+            assignmentRows.length > 0 ? String(assignmentRows.length) : 'No assignments API',
         });
       } catch {
         setStudentHero(null);
       }
     })();
-  }, [deskToken, deskUser?.id, persona, selectedStudentId]);
+  }, [deskToken, deskUser, persona, selectedStudentId]);
 
   useEffect(() => {
     Animated.parallel([
@@ -728,6 +750,7 @@ export function DashboardHomeScreen() {
       const attendance = next.find((s) => s.id === 'attendance');
       const pendingFees = next.find((s) => s.id === 'pending-fees');
       const pocket = next.find((s) => s.id === 'pocket');
+      const pending = next.find((s) => s.id === 'pending');
       if (grade && studentHero.grade) grade.value = studentHero.grade;
       if (grade && studentHero.admissionLabel) {
         grade.subtitleValue = studentHero.admissionLabel;
@@ -737,13 +760,23 @@ export function DashboardHomeScreen() {
       }
       if (attendance && studentHero.attendancePct != null) {
         attendance.value = `${studentHero.attendancePct}%`;
+      } else if (attendance) {
+        attendance.value = '—%';
+        attendance.subtitleValue = 'No marks yet';
       }
-      if (pendingFees && studentHero.pendingFeesLabel) {
-        pendingFees.value = studentHero.pendingFeesLabel;
+      if (pendingFees && studentHero.feesLabel) {
+        pendingFees.value = studentHero.feesLabel;
+        pendingFees.subtitleValue = 'No student fees API';
       }
-      if (pocket) {
-        pocket.value = 'KES —';
-        pocket.subtitleValue = 'Ask school office';
+      if (pocket && studentHero.pocketLabel) {
+        pocket.value = studentHero.pocketLabel;
+        pocket.subtitleValue =
+          studentHero.pocketBalance != null ? 'Wallet balance' : 'Manager-only on Nest';
+      }
+      if (pending && studentHero.assignmentsLabel) {
+        pending.value = studentHero.assignmentsLabel;
+        pending.subtitleValue =
+          studentHero.assignmentsLabel === 'No assignments API' ? 'Deferred' : 'Due soon';
       }
     }
     return next;
@@ -916,6 +949,28 @@ export function DashboardHomeScreen() {
               </View>
             </View>
           </View>
+
+          {persona === 'student' && studentHero ? (
+            <View style={styles.studentMetricsRow}>
+              {[
+                { label: 'Pocket', value: studentHero.pocketLabel ?? '—' },
+                { label: 'Assignments', value: studentHero.assignmentsLabel ?? '—' },
+                {
+                  label: 'Attendance',
+                  value:
+                    studentHero.attendancePct != null ? `${studentHero.attendancePct}%` : '—%',
+                },
+                { label: 'Fees', value: studentHero.feesLabel ?? 'Via parent' },
+              ].map((m) => (
+                <View key={m.label} style={styles.studentMetric}>
+                  <Text style={styles.studentMetricLabel}>{m.label}</Text>
+                  <Text style={styles.studentMetricValue} numberOfLines={1}>
+                    {m.value}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
 
           {/* Action grids — icons free of card containers */}
           {sections.map((section, sectionIndex) => (
@@ -1193,5 +1248,34 @@ const styles = StyleSheet.create({
     color: Colors.ink,
     textAlign: 'center',
     lineHeight: 13,
+  },
+  studentMetricsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+    paddingHorizontal: 2,
+  },
+  studentMetric: {
+    flexGrow: 1,
+    flexBasis: '22%',
+    minWidth: 72,
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    backgroundColor: 'rgba(10,61,46,0.06)',
+  },
+  studentMetricLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+    color: Colors.mutedForeground,
+  },
+  studentMetricValue: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '800',
+    color: Colors.ink,
   },
 });
