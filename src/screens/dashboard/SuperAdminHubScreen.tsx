@@ -111,7 +111,8 @@ export function SuperAdminHubScreen({ navigation }: Props) {
         )}
 
         <Text style={styles.hint}>
-          Detailed analytics, user admin, and impersonation remain on Tukua web super-admin tiles.
+          U22 revenue deep-dive and platform analytics stay on the Revenue / Analytics tiles (Tukua web)
+          until staging super-admin JWT is reset — this hub shows registry + token balance only.
         </Text>
       </ScrollView>
     </View>
