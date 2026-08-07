@@ -59,9 +59,11 @@ export type DashboardAction = {
     | 'StudentGrades'
     | 'StudentAssignments'
     | 'StudentAttendance'
+    | 'StudentPocketMoney'
     | 'Approvals'
     | 'AdminStudents'
     | 'AdminTeachers'
+    | 'AdminParents'
     | 'SchoolOverview'
     | 'AdminAccounts'
     | 'SuperAdminHub'
@@ -276,13 +278,13 @@ export const STUDENT_DASHBOARD_ACTIONS: DashboardAction[] = [
 
   { id: 'my-discipline', title: 'My Discipline', description: 'Conduct records', icon: 'shield', nativeScreen: 'Discipline', accent: '#DC2626' },
 
-  { id: 'pocket-money', title: 'Pocket Money', description: 'Wallet & transactions', icon: 'pocket', deskPath: '/student/pocket-money', accent: '#7C3AED' },
+  { id: 'pocket-money', title: 'Pocket Money', description: 'Wallet (read-only)', icon: 'pocket', nativeScreen: 'StudentPocketMoney', accent: '#7C3AED' },
 
   { id: 'school-fees', title: 'School Fees', description: 'Pay fees online', icon: 'dollar-sign', nativeScreen: 'Accounts', accent: '#059669' },
 
-  { id: 'school-events', title: 'School Events', description: 'Upcoming activities', icon: 'calendar', nativeScreen: 'Events', accent: '#EA580C' },
+  { id: 'school-events', title: 'School Events', description: 'RSVP, pay & scan check-in', icon: 'calendar', nativeScreen: 'Events', accent: '#EA580C' },
 
-  { id: 'meetings', title: 'Meetings', description: 'Join school video meetings', icon: 'video', nativeScreen: 'Meetings', accent: '#0284C7' },
+  { id: 'meetings', title: 'Meetings', description: 'Video calls — not event QR scan', icon: 'video', nativeScreen: 'Meetings', accent: '#0284C7' },
 
   { id: 'school-info', title: 'School Info', description: 'About your school', icon: 'info', nativeScreen: 'SchoolInfo', accent: '#0A3D2E', tokenGated: false },
 
@@ -459,7 +461,7 @@ export const SCHOOL_ADMIN_DASHBOARD_ACTIONS: DashboardAction[] = [
   { id: 'face-enroll', title: 'Face enroll', description: 'Students · teachers · staff', icon: 'user', nativeScreen: 'SecurityFaceEnroll', accent: '#0E7490' },
   { id: 'admin', title: 'Admin', description: 'Dashboard & monitoring', icon: 'settings', nativeScreen: 'SchoolOverview', accent: '#0A3D2E' },
   { id: 'students', title: 'Students', description: 'Student records', icon: 'book', nativeScreen: 'AdminStudents', accent: '#1F8B4C' },
-  { id: 'parents', title: 'Parents', description: 'Parent accounts', icon: 'users', deskPath: '/admin/parents', accent: '#2563EB' },
+  { id: 'parents', title: 'Parents', description: 'Parent accounts', icon: 'users', nativeScreen: 'AdminParents', accent: '#2563EB' },
   { id: 'teachers', title: 'Teachers', description: 'Staff & workload', icon: 'user', nativeScreen: 'AdminTeachers', accent: '#D97706' },
   { id: 'classes', title: 'Classes', description: 'Classes & rooms', icon: 'home', deskPath: '/admin/classes', accent: '#7C3AED' },
   { id: 'assessment', title: 'Assessment', description: 'Exams & marks', icon: 'clipboard', deskPath: '/assessment', accent: '#0D9488' },

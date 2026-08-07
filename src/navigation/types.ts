@@ -66,9 +66,11 @@ export type DashboardStackParamList = {
   StudentGrades: undefined;
   StudentAssignments: undefined;
   StudentAttendance: undefined;
+  StudentPocketMoney: undefined;
   Approvals: undefined;
   AdminStudents: undefined;
   AdminTeachers: undefined;
+  AdminParents: undefined;
   SchoolOverview: undefined;
   AdminAccounts: undefined;
   SuperAdminHub: undefined;

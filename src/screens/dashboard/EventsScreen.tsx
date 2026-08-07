@@ -109,7 +109,11 @@ function dayKey(iso?: string) {
 
 export function EventsScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
-  const { selectedStudentId } = useDeskAuth();
+  const { selectedStudentId, persona, deskUser } = useDeskAuth();
+  const studentContextId =
+    persona === 'student'
+      ? String(selectedStudentId ?? deskUser?.id ?? deskUser?.user_id ?? '').trim()
+      : selectedStudentId;
   const { showDialog } = useDialog();
   const [permission, requestPermission] = useCameraPermissions();
   const [items, setItems] = useState<SchoolEvent[]>([]);
@@ -148,7 +152,7 @@ export function EventsScreen({ navigation }: Props) {
       setError(null);
       try {
         const data = await fetchParentEvents({
-          studentId: selectedStudentId,
+          studentId: studentContextId,
         });
         setItems(unwrapEvents(data));
       } catch (e) {
@@ -161,7 +165,7 @@ export function EventsScreen({ navigation }: Props) {
         setRefreshing(false);
       }
     },
-    [selectedStudentId],
+    [studentContextId],
   );
 
   useEffect(() => {
@@ -197,7 +201,7 @@ export function EventsScreen({ navigation }: Props) {
     try {
       await rsvpParentEvent(ev.id, {
         status: 'attending',
-        student_id: selectedStudentId ?? undefined,
+        student_id: studentContextId ?? undefined,
       });
       showDialog({
         title: 'RSVP saved',
@@ -224,7 +228,8 @@ export function EventsScreen({ navigation }: Props) {
       try {
         const res = await scanParentRegister({
           qr_payload: raw,
-          person_type: 'parent',
+          person_type: persona === 'student' ? 'student' : 'parent',
+          person_id: studentContextId ?? undefined,
           direction,
         });
         const scanType = String(res?.scan_type ?? 'visit');
@@ -253,7 +258,7 @@ export function EventsScreen({ navigation }: Props) {
     setBusyId(ev.id);
     try {
       await payParentEvent(ev.id, {
-        student_id: selectedStudentId ?? undefined,
+        student_id: studentContextId ?? undefined,
         method: 'mobile',
       });
       await load(true);

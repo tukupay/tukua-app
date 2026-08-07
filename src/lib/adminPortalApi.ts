@@ -40,6 +40,21 @@ export type AdminTeacherRow = {
   user_is_active?: number;
 };
 
+export type AdminParentRow = {
+  id: string;
+  first_name?: string;
+  last_name?: string;
+  full_name?: string;
+  email?: string;
+  phone_number?: string;
+  relationship?: string | null;
+  students?: Array<{
+    student_id?: string;
+    full_name?: string;
+    admission_number?: string | null;
+  }>;
+};
+
 export type SchoolRegistryRow = {
   id: string;
   name: string;
@@ -143,6 +158,22 @@ export async function fetchAdminTeachers(q?: string, page = 1, limit = 30) {
   const data = await deskFetch<unknown>(`/teachers?${params}`);
   return {
     teachers: unwrapList<AdminTeacherRow>(data, ['teachers', 'items', 'data']),
+    total: unwrapTotal(data),
+    page,
+    limit,
+  };
+}
+
+export async function fetchAdminParents(q?: string, page = 1, limit = 30) {
+  const params = new URLSearchParams({
+    page: String(page),
+    limit: String(limit),
+    get_students: 'true',
+  });
+  if (q?.trim()) params.set('q', q.trim());
+  const data = await deskFetch<unknown>(`/parents?${params}`);
+  return {
+    parents: unwrapList<AdminParentRow>(data, ['parents', 'items', 'data']),
     total: unwrapTotal(data),
     page,
     limit,

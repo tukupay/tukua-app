@@ -29,9 +29,11 @@ import { TeacherReportsScreen } from '../screens/dashboard/TeacherReportsScreen'
 import { StudentGradesScreen } from '../screens/dashboard/StudentGradesScreen';
 import { StudentAssignmentsScreen } from '../screens/dashboard/StudentAssignmentsScreen';
 import { StudentAttendanceScreen } from '../screens/dashboard/StudentAttendanceScreen';
+import { StudentPocketMoneyScreen } from '../screens/dashboard/StudentPocketMoneyScreen';
 import { ApprovalsScreen } from '../screens/dashboard/ApprovalsScreen';
 import { AdminStudentsScreen } from '../screens/dashboard/AdminStudentsScreen';
 import { AdminTeachersScreen } from '../screens/dashboard/AdminTeachersScreen';
+import { AdminParentsScreen } from '../screens/dashboard/AdminParentsScreen';
 import { SchoolOverviewScreen } from '../screens/dashboard/SchoolOverviewScreen';
 import { AdminAccountsScreen } from '../screens/dashboard/AdminAccountsScreen';
 import { SuperAdminHubScreen } from '../screens/dashboard/SuperAdminHubScreen';
@@ -237,6 +239,11 @@ export function DashboardStack() {
         options={{ title: 'Attendance', headerShown: false }}
       />
       <Stack.Screen
+        name="StudentPocketMoney"
+        component={StudentPocketMoneyScreen}
+        options={{ title: 'Pocket money', headerShown: false }}
+      />
+      <Stack.Screen
         name="Approvals"
         component={ApprovalsScreen}
         options={{ title: 'Approvals', headerShown: false }}
@@ -250,6 +257,11 @@ export function DashboardStack() {
         name="AdminTeachers"
         component={AdminTeachersScreen}
         options={{ title: 'Teachers', headerShown: false }}
+      />
+      <Stack.Screen
+        name="AdminParents"
+        component={AdminParentsScreen}
+        options={{ title: 'Parents', headerShown: false }}
       />
       <Stack.Screen
         name="SchoolOverview"

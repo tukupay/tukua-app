@@ -90,7 +90,11 @@ function extractAnalysisText(res: unknown): string {
 
 export function DisciplineScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
-  const { selectedStudent, selectedStudentId, persona } = useDeskAuth();
+  const { selectedStudent, selectedStudentId, persona, deskUser } = useDeskAuth();
+  const isStudent = persona === 'student';
+  const selfStudentId = isStudent
+    ? String(selectedStudentId ?? deskUser?.id ?? deskUser?.user_id ?? '').trim()
+    : selectedStudentId;
   const canRecord = persona === 'teacher' || persona === 'school_admin' || persona === 'super_admin';
   const [items, setItems] = useState<Incident[]>([]);
   const [loading, setLoading] = useState(true);
@@ -123,7 +127,7 @@ export function DisciplineScreen({ navigation }: Props) {
         setRefreshing(false);
       }
     },
-    [persona, selectedStudentId],
+    [persona, selfStudentId],
   );
 
   useEffect(() => {
@@ -132,11 +136,11 @@ export function DisciplineScreen({ navigation }: Props) {
 
   const visible = useMemo(() => {
     const list = Array.isArray(items) ? items : [];
-    if (!selectedStudentId) return list;
+    if (!selfStudentId) return list;
     return list.filter((inc) =>
-      (inc.students ?? []).some((s) => String(s.student_id ?? '') === selectedStudentId),
+      (inc.students ?? []).some((s) => String(s.student_id ?? '') === selfStudentId),
     );
-  }, [items, selectedStudentId]);
+  }, [items, selfStudentId]);
 
   const seed = async () => {
     setSeeding(true);
@@ -229,11 +233,19 @@ export function DisciplineScreen({ navigation }: Props) {
         <ModuleBackBar onBack={() => navigation.goBack()} />
         <ModuleKicker>Discipline</ModuleKicker>
         <ModuleScreenHeader
-          title={selectedStudent?.name ? `${selectedStudent.name}'s cases` : 'Discipline cases'}
+          title={
+            isStudent
+              ? 'My conduct record'
+              : selectedStudent?.name
+                ? `${selectedStudent.name}'s cases`
+                : 'Discipline cases'
+          }
           description={
-            selectedStudent?.name
-              ? 'Conduct records for the selected student.'
-              : 'Cases you recorded or linked to your account. Tap Record to open a new case.'
+            isStudent
+              ? 'Cases the school logged for you. Empty means no incidents on file.'
+              : selectedStudent?.name
+                ? 'Conduct records for the selected student.'
+                : 'Cases you recorded or linked to your account. Tap Record to open a new case.'
           }
         />
         {canRecord ? (
@@ -268,7 +280,11 @@ export function DisciplineScreen({ navigation }: Props) {
         ) : visible.length === 0 ? (
           <ModuleEmpty
             title="No cases on record"
-            body="When the school logs a discipline incident for your child, it will show up here."
+            body={
+              isStudent
+                ? 'When the school logs a discipline incident for you, it will show up here.'
+                : 'When the school logs a discipline incident for your child, it will show up here.'
+            }
             onRetry={seeding ? undefined : () => void seed()}
           />
         ) : (

@@ -232,6 +232,40 @@ export async function tryFetchStudentPocketBalance(studentId: string): Promise<n
   }
 }
 
+/** Read-only pocket screen — surfaces 403 without throwing. */
+export async function fetchStudentPocketMoneyReadOnly(studentId: string): Promise<{
+  forbidden: boolean;
+  balance: number | null;
+  transactions: Array<Record<string, unknown>>;
+}> {
+  if (!studentId) {
+    return { forbidden: false, balance: null, transactions: [] };
+  }
+  try {
+    const data = await deskFetch<{
+      wallet?: { balance?: number };
+      balance?: number;
+      transactions?: Array<Record<string, unknown>>;
+    }>(`/pocket-money/wallets/${encodeURIComponent(studentId)}`);
+    const raw =
+      (data as { wallet?: { balance?: number } })?.wallet?.balance ??
+      (data as { balance?: number })?.balance;
+    const n = Number(raw);
+    const txns = unwrapList<Record<string, unknown>>(data, ['transactions', 'items']);
+    return {
+      forbidden: false,
+      balance: Number.isFinite(n) ? n : null,
+      transactions: txns,
+    };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/403|forbidden|permission/i.test(msg)) {
+      return { forbidden: true, balance: null, transactions: [] };
+    }
+    throw e;
+  }
+}
+
 /** Resolve admin_students id for the signed-in student JWT. */
 export function resolveStudentRecordId(
   deskUser: { id?: string; user_id?: string } | null | undefined,
