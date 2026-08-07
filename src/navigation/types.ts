@@ -60,6 +60,7 @@ export type DashboardStackParamList = {
   };
   EnterMarks: undefined;
   TeacherMarksheet: { examId: string; title: string; classId?: string };
+  EnterMarksEntry: { examId: string; title: string; classId?: string };
   TeacherClasses: undefined;
   TeacherReports: undefined;
   StudentGrades: undefined;
@@ -72,6 +73,13 @@ export type DashboardStackParamList = {
   AdminAccounts: undefined;
   SuperAdminHub: undefined;
   SuperAdminSchools: { impersonate?: boolean } | undefined;
+  TukuaPayHome: undefined;
+  TukuaPayDeposit: undefined;
+  TukuaPaySend: undefined;
+  TukuaPayBank: undefined;
+  TeacherTimetable: undefined;
+  RecordDiscipline: undefined;
+  TeacherProgress: undefined;
 };
 
 export type MainTabParamList = {

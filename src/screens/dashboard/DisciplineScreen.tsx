@@ -17,6 +17,7 @@ import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layo
 import { useDeskAuth } from '../../context/DeskAuthContext';
 import { deskFetch } from '../../lib/deskApi';
 import { seedParentDemoData } from '../../lib/parentPortalApi';
+import { fetchTeacherDisciplineIncidents } from '../../lib/teacherPortalApi';
 import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
 import { log } from '../../lib/logger';
@@ -89,7 +90,8 @@ function extractAnalysisText(res: unknown): string {
 
 export function DisciplineScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
-  const { selectedStudent, selectedStudentId } = useDeskAuth();
+  const { selectedStudent, selectedStudentId, persona } = useDeskAuth();
+  const canRecord = persona === 'teacher' || persona === 'school_admin' || persona === 'super_admin';
   const [items, setItems] = useState<Incident[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -106,7 +108,10 @@ export function DisciplineScreen({ navigation }: Props) {
       if (!soft) setLoading(true);
       setError(null);
       try {
-        const data = await deskFetch<unknown>('/discipline/incidents');
+        const data =
+          persona === 'teacher'
+            ? await fetchTeacherDisciplineIncidents()
+            : await deskFetch<unknown>('/discipline/incidents');
         setItems(unwrapList(data));
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -118,7 +123,7 @@ export function DisciplineScreen({ navigation }: Props) {
         setRefreshing(false);
       }
     },
-    [selectedStudentId],
+    [persona, selectedStudentId],
   );
 
   useEffect(() => {
@@ -224,9 +229,27 @@ export function DisciplineScreen({ navigation }: Props) {
         <ModuleBackBar onBack={() => navigation.goBack()} />
         <ModuleKicker>Discipline</ModuleKicker>
         <ModuleScreenHeader
-          title={selectedStudent?.name ? `${selectedStudent.name}'s cases` : "Your children's cases"}
-          description="Conduct records for the selected student."
+          title={selectedStudent?.name ? `${selectedStudent.name}'s cases` : 'Discipline cases'}
+          description={
+            selectedStudent?.name
+              ? 'Conduct records for the selected student.'
+              : 'Cases you recorded or linked to your account. Tap Record to open a new case.'
+          }
         />
+        {canRecord ? (
+          <Pressable
+            style={{
+              alignSelf: 'flex-start',
+              backgroundColor: Colors.primary,
+              borderRadius: 12,
+              paddingHorizontal: 14,
+              paddingVertical: 10,
+              marginBottom: 12,
+            }}
+            onPress={() => navigation.navigate('RecordDiscipline')}>
+            <Text style={{ color: '#fff', fontWeight: '800' }}>Record case</Text>
+          </Pressable>
+        ) : null}
 
         {loading ? (
           <View style={styles.loader}>
@@ -482,4 +505,13 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   analysisErr: { marginTop: 4, fontSize: 12, color: Colors.orange },
+  recordFab: {
+    alignSelf: 'flex-start',
+    marginBottom: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: Colors.brandGreenDark,
+  },
+  recordFabText: { color: Colors.white, fontWeight: '700', fontSize: 14 },
 });

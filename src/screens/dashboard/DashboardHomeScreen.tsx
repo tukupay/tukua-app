@@ -55,6 +55,8 @@ import {
   TEACHER_HERO,
 } from './dashboardActions';
 import { DeskPersona } from '../../lib/deskRoles';
+import { fetchClasses, fetchMyTeacherWorkloads, fetchTeacherStats } from '../../lib/teacherPortalApi';
+import { fetchStudentExams, fetchStudentRecentAttendance } from '../../lib/studentPortalApi';
 
 type ActionSection = {
   id: string;
@@ -286,11 +288,50 @@ export function DashboardHomeScreen() {
     linkedStudents,
     schools,
     requestSchoolChange,
+    selectedRole,
   } = useDeskAuth();
   const { guardDashboardAction } = useTokenGate();
   const heroGreen = palette.primary;
 
-  const actions = useMemo(() => actionsForPersona(persona), [persona]);
+  const activeRoles = useMemo(() => {
+    const fromSchool = selectedSchool?.roles ?? schools[0]?.roles ?? [];
+    const list = selectedRole ? [selectedRole] : fromSchool;
+    const fromUser = deskUser?.user_roles;
+    const extra = Array.isArray(fromUser) ? fromUser : fromUser ? [fromUser] : [];
+    return [...list, ...extra].map((r) => String(r).toLowerCase());
+  }, [deskUser?.user_roles, schools, selectedRole, selectedSchool?.roles]);
+
+  const [isClassTeacher, setIsClassTeacher] = useState(false);
+  const [teacherHero, setTeacherHero] = useState<{
+    class_count?: number;
+    student_count?: number;
+    workload_count?: number;
+    school_name?: string;
+  } | null>(null);
+  const [studentHero, setStudentHero] = useState<{
+    grade?: string;
+    attendancePct?: number | null;
+    assignmentCount?: number | null;
+  } | null>(null);
+
+  const baseActions = useMemo(() => actionsForPersona(persona), [persona]);
+  const actions = useMemo(() => {
+    return baseActions.filter((action) => {
+      if (action.requireAnyRole?.length) {
+        const ok = action.requireAnyRole.some((need) =>
+          activeRoles.some((r) => r.includes(need.toLowerCase())),
+        );
+        if (!ok) return false;
+      }
+      if (action.requireClassTeacher && !isClassTeacher) {
+        const hasRole = activeRoles.some(
+          (r) => r.includes('class_teacher') || r.includes('class-teacher'),
+        );
+        if (!hasRole) return false;
+      }
+      return true;
+    });
+  }, [activeRoles, baseActions, isClassTeacher]);
   const sections = useMemo(() => sectionsForActions(actions), [actions]);
   const baseHero = useMemo(() => heroForPersona(persona), [persona]);
 
@@ -401,6 +442,91 @@ export function DashboardHomeScreen() {
   }, [loadSecurityHero]);
 
   useEffect(() => {
+    if (!deskToken || persona !== 'teacher') {
+      setTeacherHero(null);
+      setIsClassTeacher(false);
+      return;
+    }
+    const teacherId = String(deskUser?.id ?? deskUser?.user_id ?? '').trim();
+    void (async () => {
+      try {
+        const [stats, workloads, classes] = await Promise.allSettled([
+          fetchTeacherStats(),
+          teacherId ? fetchMyTeacherWorkloads(teacherId) : Promise.resolve([]),
+          fetchClasses(80),
+        ]);
+        const raw =
+          stats.status === 'fulfilled'
+            ? ((stats.value as { stats?: Record<string, unknown> })?.stats ??
+                (stats.value as Record<string, unknown>))
+            : {};
+        const wl = workloads.status === 'fulfilled' ? workloads.value : [];
+        const cls = classes.status === 'fulfilled' ? classes.value : [];
+        const classIds = new Set(wl.map((w) => w.class_id).filter(Boolean));
+        const classCount = Number(raw.class_count ?? classIds.size) || classIds.size;
+        const workloadCount = Number(raw.workload_count ?? wl.length) || wl.length;
+        const studentCount =
+          Number(raw.student_count ?? 0) ||
+          0;
+        setTeacherHero({
+          class_count: classCount,
+          student_count: studentCount,
+          workload_count: workloadCount,
+          school_name: selectedSchool?.name || selectedSchool?.school_name,
+        });
+        const ct = cls.some((c) => {
+          const tid = String(
+            (c as { class_teacher_user_id?: string; class_teacher_id?: string }).class_teacher_user_id ||
+              (c as { class_teacher_id?: string }).class_teacher_id ||
+              '',
+          );
+          return tid && teacherId && tid === teacherId;
+        });
+        const roleCt = activeRoles.some(
+          (r) => r.includes('class_teacher') || r.includes('class-teacher'),
+        );
+        setIsClassTeacher(ct || roleCt);
+      } catch {
+        setTeacherHero(null);
+      }
+    })();
+  }, [
+    activeRoles,
+    deskToken,
+    deskUser?.id,
+    deskUser?.user_id,
+    persona,
+    selectedSchool?.name,
+    selectedSchool?.school_name,
+  ]);
+
+  useEffect(() => {
+    if (!deskToken || persona !== 'student') {
+      setStudentHero(null);
+      return;
+    }
+    const sid = String(selectedStudentId ?? deskUser?.id ?? '').trim();
+    void (async () => {
+      try {
+        const [exams, marks] = await Promise.allSettled([
+          fetchStudentExams(5),
+          sid ? fetchStudentRecentAttendance(sid, 14) : Promise.resolve([]),
+        ]);
+        const examList = exams.status === 'fulfilled' ? exams.value : [];
+        const att = marks.status === 'fulfilled' ? marks.value : [];
+        const presentDays = new Set(att.map((m) => String(m.marked_at ?? '').slice(0, 10))).size;
+        setStudentHero({
+          grade: examList.length ? 'See grades' : 'No grades yet',
+          attendancePct: att.length ? Math.round((presentDays / 14) * 100) : null,
+          assignmentCount: null,
+        });
+      } catch {
+        setStudentHero(null);
+      }
+    })();
+  }, [deskToken, deskUser?.id, persona, selectedStudentId]);
+
+  useEffect(() => {
     Animated.parallel([
       Animated.timing(fade, { toValue: 1, duration: 380, useNativeDriver: true }),
       Animated.spring(slide, { toValue: 0, friction: 9, tension: 64, useNativeDriver: true }),
@@ -409,6 +535,13 @@ export function DashboardHomeScreen() {
 
   const onPressAction = useCallback(
     (action: DashboardAction) => {
+      if (action.id === 'exam-generator') {
+        navigation.navigate('FeaturePlaceholder', {
+          title: action.title,
+          description: 'Exam generator is coming soon — e-learning exams will land here.',
+        });
+        return;
+      }
       guardDashboardAction(action, () => {
         if (action.nativeScreen) {
           const screen = action.nativeScreen;
@@ -550,6 +683,37 @@ export function DashboardHomeScreen() {
         assignmentStat.subtitleValue = securityAssignment?.route_name ?? 'Unassigned';
       }
     }
+    if (persona === 'teacher' && teacherHero) {
+      const classes = next.find((s) => s.id === 'classes');
+      const students = next.find((s) => s.id === 'students');
+      const workload = next.find((s) => s.id === 'workload');
+      if (classes) {
+        classes.value =
+          teacherHero.class_count != null ? String(teacherHero.class_count) : '—';
+        classes.subtitleValue = teacherHero.school_name || 'Assigned';
+      }
+      if (students) {
+        students.value =
+          teacherHero.student_count != null ? String(teacherHero.student_count) : '—';
+      }
+      if (workload) {
+        workload.value =
+          teacherHero.workload_count != null ? String(teacherHero.workload_count) : '—';
+        workload.subtitleValue = 'Class × Subject';
+      }
+    }
+    if (persona === 'student' && studentHero) {
+      const grade = next.find((s) => s.id === 'grade');
+      const attendance = next.find((s) => s.id === 'attendance');
+      const assignments = next.find((s) => s.id === 'assignments');
+      if (grade && studentHero.grade) grade.value = studentHero.grade;
+      if (attendance && studentHero.attendancePct != null) {
+        attendance.value = `${studentHero.attendancePct}%`;
+      }
+      if (assignments && studentHero.assignmentCount != null) {
+        assignments.value = String(studentHero.assignmentCount);
+      }
+    }
     return next;
   }, [
     baseHero,
@@ -559,6 +723,8 @@ export function DashboardHomeScreen() {
     selectedStudent?.name,
     securityActiveTrip,
     securityAssignment,
+    teacherHero,
+    studentHero,
   ]);
 
   const primaryHero = heroStats[0];

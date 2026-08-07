@@ -19,6 +19,8 @@ import {
   createSchoolMeeting,
   hostEnterMeeting,
   memberEnterMeeting,
+  resolveHostRoomUrl,
+  resolveMemberRoomUrl,
   SchoolMeeting,
 } from '../../lib/meetingsApi';
 import { useDeskAuth } from '../../context/DeskAuthContext';
@@ -61,6 +63,9 @@ export function MeetingsScreen({ navigation }: Props) {
   const [showCreate, setShowCreate] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [profileGate, setProfileGate] = useState<SchoolMeeting | null>(null);
+  const [gateName, setGateName] = useState('');
+  const [gatePhone, setGatePhone] = useState('');
 
   const canSchedule = persona === 'school_admin' || persona === 'super_admin';
 
@@ -88,22 +93,17 @@ export function MeetingsScreen({ navigation }: Props) {
     void load();
   }, [load]);
 
-  const onJoin = useCallback(
-    async (m: SchoolMeeting) => {
-      if (!canJoin(m)) return;
-
-      if (!inAppJoin) {
-        setError('Complete your profile name and phone to join meetings in the app.');
-        return;
-      }
-
+  const enterMember = useCallback(
+    async (m: SchoolMeeting, body?: { display_name?: string; phone?: string }) => {
       setJoiningId(m.id);
+      setError(null);
       try {
-        const entered = await memberEnterMeeting(m.id);
-        const roomUrl = entered?.room_url;
+        const entered = await memberEnterMeeting(m.id, body);
+        const roomUrl = resolveMemberRoomUrl(entered);
         if (!roomUrl) {
           throw new Error('Could not open the meeting room. Try again.');
         }
+        setProfileGate(null);
         navigation.navigate('MeetingRoom', {
           title: m.title || 'Tukua Meet',
           roomUrl,
@@ -111,12 +111,32 @@ export function MeetingsScreen({ navigation }: Props) {
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         log.warn('Meetings', 'member-enter', msg);
-        setError(msg);
+        if (/name and phone|phone|full name|profile/i.test(msg)) {
+          setProfileGate(m);
+          setError('Add your name and phone to join this meeting.');
+        } else {
+          setError(msg);
+        }
       } finally {
         setJoiningId(null);
       }
     },
-    [inAppJoin, navigation],
+    [navigation],
+  );
+
+  const onJoin = useCallback(
+    async (m: SchoolMeeting) => {
+      if (!canJoin(m)) return;
+
+      if (!inAppJoin) {
+        setError('Add your name and phone to join this meeting.');
+        setProfileGate(m);
+        return;
+      }
+
+      await enterMember(m);
+    },
+    [enterMember, inAppJoin],
   );
 
   const onHost = useCallback(
@@ -125,10 +145,7 @@ export function MeetingsScreen({ navigation }: Props) {
       setError(null);
       try {
         const entered = await hostEnterMeeting(m.id);
-        const roomUrl =
-          entered?.room_url ||
-          (entered as { jitsi_join_url?: string })?.jitsi_join_url ||
-          entered?.join_url;
+        const roomUrl = resolveHostRoomUrl(entered);
         if (!roomUrl) {
           throw new Error('Could not open the host room. Try again.');
         }
@@ -296,6 +313,45 @@ export function MeetingsScreen({ navigation }: Props) {
         )}
         {error && items.length > 0 ? <Text style={styles.inlineErr}>{error}</Text> : null}
       </ScrollView>
+
+      {profileGate ? (
+        <View style={styles.gateOverlay}>
+          <View style={styles.gateCard}>
+            <Text style={styles.gateTitle}>Add your name and phone to join</Text>
+            <Text style={styles.gateBody}>Needed once so the meeting room can show who you are.</Text>
+            <TextInput
+              value={gateName}
+              onChangeText={setGateName}
+              placeholder="Full name"
+              placeholderTextColor={Colors.mutedForeground}
+              style={styles.input}
+            />
+            <TextInput
+              value={gatePhone}
+              onChangeText={setGatePhone}
+              placeholder="07XX XXX XXX"
+              keyboardType="phone-pad"
+              placeholderTextColor={Colors.mutedForeground}
+              style={styles.input}
+            />
+            <View style={styles.createActions}>
+              <Pressable
+                style={styles.joinBtn}
+                onPress={() =>
+                  void enterMember(profileGate, {
+                    display_name: gateName.trim(),
+                    phone: gatePhone.trim(),
+                  })
+                }>
+                <Text style={styles.joinText}>Join meeting</Text>
+              </Pressable>
+              <Pressable style={styles.secondaryBtn} onPress={() => setProfileGate(null)}>
+                <Text style={styles.secondaryText}>Cancel</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -358,4 +414,17 @@ const styles = StyleSheet.create({
   joinBtnDisabled: { opacity: 0.45 },
   joinText: { color: '#fff', fontWeight: '700', fontSize: 13 },
   inlineErr: { marginTop: 12, color: '#b42318', fontSize: 13 },
+  gateOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  gateCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 18,
+  },
+  gateTitle: { fontSize: 17, fontWeight: '800', color: Colors.ink, marginBottom: 6 },
+  gateBody: { fontSize: 13, color: Colors.mutedForeground, marginBottom: 12, lineHeight: 18 },
 });

@@ -23,6 +23,7 @@ import { SecurityHomeScreen } from '../screens/dashboard/SecurityHomeScreen';
 import { JoinSchoolScreen } from '../screens/dashboard/JoinSchoolScreen';
 import { EnterMarksScreen } from '../screens/dashboard/EnterMarksScreen';
 import { TeacherMarksheetScreen } from '../screens/dashboard/TeacherMarksheetScreen';
+import { EnterMarksEntryScreen } from '../screens/dashboard/EnterMarksEntryScreen';
 import { TeacherClassesScreen } from '../screens/dashboard/TeacherClassesScreen';
 import { TeacherReportsScreen } from '../screens/dashboard/TeacherReportsScreen';
 import { StudentGradesScreen } from '../screens/dashboard/StudentGradesScreen';
@@ -35,6 +36,13 @@ import { SchoolOverviewScreen } from '../screens/dashboard/SchoolOverviewScreen'
 import { AdminAccountsScreen } from '../screens/dashboard/AdminAccountsScreen';
 import { SuperAdminHubScreen } from '../screens/dashboard/SuperAdminHubScreen';
 import { SuperAdminSchoolsScreen } from '../screens/dashboard/SuperAdminSchoolsScreen';
+import { TukuaPayHomeScreen } from '../screens/pay/TukuaPayHomeScreen';
+import { TukuaPayDepositScreen } from '../screens/pay/TukuaPayDepositScreen';
+import { TukuaPaySendScreen } from '../screens/pay/TukuaPaySendScreen';
+import { TukuaPayBankScreen } from '../screens/pay/TukuaPayBankScreen';
+import { TeacherTimetableScreen } from '../screens/dashboard/TeacherTimetableScreen';
+import { RecordDisciplineScreen } from '../screens/dashboard/RecordDisciplineScreen';
+import { TeacherProgressScreen } from '../screens/dashboard/TeacherProgressScreen';
 import { DashboardStackParamList } from './types';
 import { Colors } from '../theme/yana';
 import { useAppTheme } from '../context/AppThemeContext';
@@ -197,6 +205,10 @@ export function DashboardStack() {
       <Stack.Screen
         name="TeacherMarksheet"
         component={TeacherMarksheetScreen}
+      />
+      <Stack.Screen
+        name="EnterMarksEntry"
+        component={EnterMarksEntryScreen}
         options={({ route }) => ({ title: route.params.title, headerShown: false })}
       />
       <Stack.Screen
@@ -258,6 +270,41 @@ export function DashboardStack() {
         name="SuperAdminSchools"
         component={SuperAdminSchoolsScreen}
         options={{ title: 'Schools', headerShown: false }}
+      />
+      <Stack.Screen
+        name="TukuaPayHome"
+        component={TukuaPayHomeScreen}
+        options={{ title: 'Tukua Pay', headerShown: false }}
+      />
+      <Stack.Screen
+        name="TukuaPayDeposit"
+        component={TukuaPayDepositScreen}
+        options={{ title: 'Deposit', headerShown: false }}
+      />
+      <Stack.Screen
+        name="TukuaPaySend"
+        component={TukuaPaySendScreen}
+        options={{ title: 'Send', headerShown: false }}
+      />
+      <Stack.Screen
+        name="TukuaPayBank"
+        component={TukuaPayBankScreen}
+        options={{ title: 'Bank', headerShown: false }}
+      />
+      <Stack.Screen
+        name="TeacherTimetable"
+        component={TeacherTimetableScreen}
+        options={{ title: 'My timetable', headerShown: false }}
+      />
+      <Stack.Screen
+        name="RecordDiscipline"
+        component={RecordDisciplineScreen}
+        options={{ title: 'Record case', headerShown: false }}
+      />
+      <Stack.Screen
+        name="TeacherProgress"
+        component={TeacherProgressScreen}
+        options={{ title: 'Progress', headerShown: false }}
       />
       <Stack.Screen
         name="FeaturePlaceholder"
