@@ -27,6 +27,8 @@ import {
   topUpViaMpesa,
   TOPUP_PRESETS,
 } from '../../lib/wallet';
+import { fetchMyKyc } from '../../lib/profileApi';
+import { humanizeError } from '../../lib/humanizeError';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'TukuaPayDeposit'>;
 
@@ -38,14 +40,31 @@ export function TukuaPayDepositScreen({ navigation }: Props) {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [kycOk, setKycOk] = useState<boolean | null>(null);
 
   useEffect(() => {
-    if (profile?.phone && !phone) setPhone(profile.phone);
-  }, [profile?.phone, phone]);
+    const fromProfile = String(profile?.phone || profile?.phone_number || '').trim();
+    if (fromProfile && !phone) setPhone(fromProfile);
+  }, [profile?.phone, profile?.phone_number, phone]);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const kyc = await fetchMyKyc();
+        setKycOk(Boolean(kyc.approved));
+      } catch {
+        setKycOk(false);
+      }
+    })();
+  }, []);
 
   const submit = async () => {
     const kes = Number(amount);
     setError(null);
+    if (!kycOk) {
+      setError('Complete identity verification before depositing.');
+      return;
+    }
     if (!phone.trim()) {
       setError('Enter the M-Pesa number to charge.');
       return;
@@ -79,7 +98,7 @@ export function TukuaPayDepositScreen({ navigation }: Props) {
         setStatus('Still processing — check Tukua Pay shortly.');
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(humanizeError(e));
       setStatus('');
     } finally {
       setBusy(false);
@@ -98,37 +117,58 @@ export function TukuaPayDepositScreen({ navigation }: Props) {
         }}>
         <ModuleBackBar onBack={() => navigation.goBack()} />
         <ModuleKicker>Tukua Pay</ModuleKicker>
-        <ModuleScreenHeader title="Deposit with M-Pesa" description="Min KES 1. You’ll get an STK prompt on your phone." />
-        <ModuleGlassCard>
-          <Text style={styles.label}>Phone</Text>
-          <TextInput
-            value={phone}
-            onChangeText={setPhone}
-            keyboardType="phone-pad"
-            placeholder="07XX XXX XXX"
-            placeholderTextColor={Colors.mutedForeground}
-            style={styles.input}
-          />
-          <Text style={styles.label}>Amount (KES)</Text>
-          <TextInput
-            value={amount}
-            onChangeText={setAmount}
-            keyboardType="numeric"
-            style={styles.input}
-          />
-          <View style={styles.presets}>
-            {TOPUP_PRESETS.map((p) => (
-              <Pressable key={p} style={styles.chip} onPress={() => setAmount(String(p))}>
-                <Text style={styles.chipText}>{p}</Text>
-              </Pressable>
-            ))}
-          </View>
-          {error ? <Text style={styles.err}>{error}</Text> : null}
-          {status ? <Text style={styles.status}>{status}</Text> : null}
-          <Pressable style={[styles.btn, busy && { opacity: 0.7 }]} onPress={() => void submit()} disabled={busy}>
-            {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Pay with M-Pesa</Text>}
-          </Pressable>
-        </ModuleGlassCard>
+        <ModuleScreenHeader
+          title="Deposit with M-Pesa"
+          description="Phone is prefilled from your profile and always editable. Min KES 1."
+        />
+        {kycOk === false ? (
+          <ModuleGlassCard>
+            <Text style={styles.err}>Verify your identity before depositing.</Text>
+            <Pressable style={styles.btn} onPress={() => navigation.navigate('TukuaPayKyc')}>
+              <Text style={styles.btnText}>Open KYC</Text>
+            </Pressable>
+          </ModuleGlassCard>
+        ) : (
+          <ModuleGlassCard>
+            <Text style={styles.label}>M-Pesa phone</Text>
+            <TextInput
+              value={phone}
+              onChangeText={setPhone}
+              keyboardType="phone-pad"
+              placeholder="07XX XXX XXX"
+              placeholderTextColor={Colors.mutedForeground}
+              style={styles.input}
+              editable={!busy}
+            />
+            <Text style={styles.label}>Amount (KES)</Text>
+            <TextInput
+              value={amount}
+              onChangeText={setAmount}
+              keyboardType="numeric"
+              style={styles.input}
+              editable={!busy}
+            />
+            <View style={styles.presets}>
+              {TOPUP_PRESETS.map((p) => (
+                <Pressable key={p} style={styles.chip} onPress={() => setAmount(String(p))}>
+                  <Text style={styles.chipText}>{p}</Text>
+                </Pressable>
+              ))}
+            </View>
+            {error ? <Text style={styles.err}>{error}</Text> : null}
+            {status ? <Text style={styles.status}>{status}</Text> : null}
+            <Pressable
+              style={[styles.btn, busy && { opacity: 0.7 }]}
+              onPress={() => void submit()}
+              disabled={busy || kycOk === null}>
+              {busy ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.btnText}>Pay with M-Pesa</Text>
+              )}
+            </Pressable>
+          </ModuleGlassCard>
+        )}
       </View>
     </View>
   );

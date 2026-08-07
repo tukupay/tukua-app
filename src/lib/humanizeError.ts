@@ -2,6 +2,11 @@
 
 const MAP: Array<{ test: RegExp; message: string }> = [
   {
+    test: /mpesa_not_configured|school fee m-pesa is not configured|callback url is not configured/i,
+    message:
+      "School fee M-Pesa isn't configured on this server/staging. This isn't about your phone being unreachable — ask an admin to set Daraja keys.",
+  },
+  {
     test: /authentication required|please login|unauthorized|invalid or expired session|invalid_jwt|auth_required/i,
     message:
       "We couldn't reach the registration service. Check you're online, or try again in a moment. If this keeps happening, restart the app.",
@@ -60,6 +65,16 @@ function extractRaw(err: unknown): string {
 
 /** Never show raw HTTP/JSON to the user. */
 export function humanizeError(err: unknown, fallback = DEFAULT): string {
+  const code =
+    err && typeof err === 'object' && 'code' in err
+      ? String((err as { code?: unknown }).code || '')
+      : '';
+  if (code && /mpesa_not_configured/i.test(code)) {
+    return MAP[0].message;
+  }
+  if (code && /kyc_required/i.test(code)) {
+    return 'Complete identity verification (KYC) before depositing or sending.';
+  }
   const raw = extractRaw(err).trim();
   if (!raw) return fallback;
   for (const row of MAP) {

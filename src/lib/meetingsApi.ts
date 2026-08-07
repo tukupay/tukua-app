@@ -41,7 +41,10 @@ function absoluteMeetUrl(pathOrUrl?: string | null): string | null {
   return `${base}${raw.startsWith('/') ? raw : `/${raw}`}`;
 }
 
-/** Prefer Nest signed host room path over public Jitsi / guest join_url. */
+/**
+ * Prefer Nest HMAC host_room_path / room_url for in-app join.
+ * Never fall through to bare meet.jit.si `jitsi_join_url` (stale public lobby links).
+ */
 export function resolveHostRoomUrl(entered: {
   host_room_path?: string;
   room_url?: string;
@@ -49,12 +52,13 @@ export function resolveHostRoomUrl(entered: {
   join_url?: string;
 } | null | undefined): string | null {
   if (!entered) return null;
-  return (
-    absoluteMeetUrl(entered.host_room_path) ||
-    absoluteMeetUrl(entered.room_url) ||
-    absoluteMeetUrl(entered.jitsi_join_url) ||
-    absoluteMeetUrl(entered.join_url)
-  );
+  const nest =
+    absoluteMeetUrl(entered.host_room_path) || absoluteMeetUrl(entered.room_url);
+  if (nest) return nest;
+  // Guest join_url may still be Nest /m/... path — allow absoluteMeetUrl on Nest-shaped URLs only.
+  const join = absoluteMeetUrl(entered.join_url);
+  if (join && !/meet\.jit\.si/i.test(join)) return join;
+  return null;
 }
 
 export function resolveMemberRoomUrl(entered: {

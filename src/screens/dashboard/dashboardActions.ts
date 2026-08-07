@@ -57,6 +57,7 @@ export type DashboardAction = {
     | 'TukuaPayDeposit'
     | 'TukuaPaySend'
     | 'TukuaPayBank'
+    | 'TukuaPayKyc'
     | 'StudentGrades'
     | 'StudentAssignments'
     | 'StudentAttendance'
@@ -282,6 +283,8 @@ export const STUDENT_DASHBOARD_ACTIONS: DashboardAction[] = [
 
   { id: 'pocket-money', title: 'Pocket Money', description: 'Wallet (read-only)', icon: 'pocket', nativeScreen: 'StudentPocketMoney', accent: '#7C3AED' },
 
+  { id: 'bursary', title: 'Bursary', description: 'Kitty & programs', icon: 'gift', nativeScreen: 'Bursary', accent: '#EC4899' },
+
   { id: 'school-fees', title: 'School Fees', description: 'Pay fees online', icon: 'dollar-sign', nativeScreen: 'Accounts', accent: '#059669' },
 
   { id: 'school-events', title: 'School Events', description: 'RSVP, pay & scan check-in', icon: 'calendar', nativeScreen: 'Events', accent: '#EA580C' },
@@ -368,6 +371,7 @@ export const TEACHER_DASHBOARD_ACTIONS: DashboardAction[] = [
   { id: 'elearning', title: 'E-Learning', description: 'Instructor studio', icon: 'monitor', tukuaPath: '/courses', tukuaTab: 'Courses', accent: '#0D9488' },
   { id: 'library', title: 'Library', description: 'Digital books', icon: 'book', nativeScreen: 'Library', accent: '#4F46E5', requireAnyRole: ['librarian'] },
   { id: 'discipline', title: 'Discipline', description: 'Record & see my cases', icon: 'shield', nativeScreen: 'Discipline', accent: '#DC2626' },
+  { id: 'bursary', title: 'Bursary', description: 'Kitty & programs', icon: 'gift', nativeScreen: 'Bursary', accent: '#EC4899' },
   { id: 'reports', title: 'Reports', description: 'Mark sheets & forms', icon: 'file-text', nativeScreen: 'TeacherReports', accent: '#4E74F9' },
   { id: 'progress', title: 'Progress', description: 'Outstanding mark entry', icon: 'trending-up', nativeScreen: 'TeacherProgress', accent: '#059669' },
   { id: 'exam-generator', title: 'Exam generator', description: 'Coming soon — e-learning exams', icon: 'file-plus', accent: '#64748B', tokenGated: false },
@@ -447,6 +451,8 @@ export const SECURITY_DASHBOARD_ACTIONS: DashboardAction[] = [
 
   { id: 'face-enroll', title: 'Face enroll', description: 'Save faces for students · staff · teachers', icon: 'user', nativeScreen: 'SecurityFaceEnroll', accent: '#2563EB' },
 
+  { id: 'bursary', title: 'Bursary', description: 'Kitty & programs', icon: 'gift', nativeScreen: 'Bursary', accent: '#EC4899' },
+
   { id: 'school-info', title: 'School', description: 'About your school', icon: 'info', nativeScreen: 'SchoolInfo', accent: '#0A3D2E', tokenGated: false },
 
   { id: 'join-school', title: 'Join school', description: 'Request to join a school', icon: 'log-in', nativeScreen: 'JoinSchool', accent: '#2563EB', tokenGated: false },
@@ -473,6 +479,7 @@ export const SCHOOL_ADMIN_DASHBOARD_ACTIONS: DashboardAction[] = [
   { id: 'accounts', title: 'Accounts', description: 'Balances · TB · statements', icon: 'dollar-sign', nativeScreen: 'AdminAccounts', accent: '#059669' },
   { id: 'accounts-reports', title: 'Finance reports', description: 'Trial balance & reports', icon: 'file-text', deskPath: '/accounts/reports', accent: '#0F766E' },
   { id: 'discipline', title: 'Discipline', description: 'Record incidents', icon: 'shield', nativeScreen: 'Discipline', accent: '#DC2626' },
+  { id: 'bursary', title: 'Bursary', description: 'Kitty & programs', icon: 'gift', nativeScreen: 'Bursary', accent: '#EC4899' },
   { id: 'calendar', title: 'Calendar', description: 'Timetable & events', icon: 'calendar', nativeScreen: 'Events', accent: '#EA580C' },
   { id: 'events', title: 'Events', description: 'Add & manage events', icon: 'calendar', nativeScreen: 'Events', accent: '#F59E0B' },
   { id: 'elearning', title: 'E-Learning', description: 'Courses', icon: 'book-open', tukuaPath: '/courses', tukuaTab: 'Courses', accent: '#0891B2' },
@@ -503,6 +510,7 @@ export const SUPER_ADMIN_DASHBOARD_ACTIONS: DashboardAction[] = [
   { id: 'content', title: 'Content sources', description: 'Scraping & ops', icon: 'globe', tukuaPath: '/superadmin/content', accent: '#0D9488' },
   { id: 'org-access', title: 'Org roles', description: 'Roles & modules', icon: 'settings', tukuaPath: '/superadmin/org-access', accent: '#0A3D2E' },
   { id: 'meetings', title: 'Meetings', description: 'All school meetings', icon: 'video', nativeScreen: 'Meetings', accent: '#0284C7' },
+  { id: 'bursary', title: 'Bursary', description: 'Kitty & programs', icon: 'gift', nativeScreen: 'Bursary', accent: '#EC4899' },
   { id: 'emails', title: 'Emails', description: 'Bulk email', icon: 'mail', tukuaPath: '/superadmin/emails', accent: '#4F46E5' },
   { id: 'sms', title: 'SMS', description: 'Bulk SMS', icon: 'message-circle', tukuaPath: '/superadmin/sms', accent: '#7C3AED' },
   // Schools & learning
@@ -520,6 +528,10 @@ export const SUPER_ADMIN_DASHBOARD_ACTIONS: DashboardAction[] = [
 
 
 export const INDIVIDUAL_DASHBOARD_ACTIONS: DashboardAction[] = [
+
+  { id: 'tukua-pay', title: 'Tukua Pay', description: 'Wallets · deposit · send', icon: 'smartphone', nativeScreen: 'TukuaPayHome', tokenGated: false, accent: '#0A3D2E' },
+
+  { id: 'bursary', title: 'Bursary', description: 'Kitty & programs', icon: 'gift', nativeScreen: 'Bursary', accent: '#EC4899' },
 
   { id: 'courses', title: 'Courses', description: 'Browse & learn', icon: 'book-open', tukuaPath: '/courses', tukuaTab: 'Courses', accent: '#0D9488' },
 

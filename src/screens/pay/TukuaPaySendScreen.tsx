@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -19,57 +19,91 @@ import {
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
-import { lookupTokenShareRecipient, transferTokens } from '../../lib/profileApi';
+import {
+  fetchMyKyc,
+  lookupTokenShareRecipient,
+  transferTokens,
+  type TokenShareLookup,
+} from '../../lib/profileApi';
 import { tokensFromKes } from '../../lib/wallet';
+import { humanizeError } from '../../lib/humanizeError';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'TukuaPaySend'>;
 
 export function TukuaPaySendScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
-  const [tab, setTab] = useState<'email' | 'phone'>('email');
   const [recipient, setRecipient] = useState('');
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  const [looking, setLooking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
+  const [found, setFound] = useState<TokenShareLookup | null>(null);
+  const [kycOk, setKycOk] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const kyc = await fetchMyKyc();
+        setKycOk(Boolean(kyc.approved));
+      } catch {
+        setKycOk(false);
+      }
+    })();
+  }, []);
+
+  const lookup = useCallback(async () => {
+    setError(null);
+    setOk(null);
+    setFound(null);
+    const q = recipient.trim();
+    if (!q) {
+      setError('Enter a recipient email or phone number.');
+      return;
+    }
+    setLooking(true);
+    try {
+      const row = await lookupTokenShareRecipient(q);
+      if (!row?.user_id) throw new Error('Recipient not found on Tukua.');
+      setFound(row);
+    } catch (e) {
+      setError(humanizeError(e));
+    } finally {
+      setLooking(false);
+    }
+  }, [recipient]);
 
   const submit = async () => {
     setError(null);
     setOk(null);
+    if (!kycOk) {
+      setError('Complete identity verification before sending.');
+      return;
+    }
     const kes = Number(amount);
     if (!(kes > 0)) {
       setError('Enter an amount greater than 0.');
       return;
     }
-    if (tab === 'phone') {
-      setError('Send by phone is not available yet — use Tukua email ID.');
-      return;
-    }
-    const email = recipient.trim().toLowerCase();
-    if (!email.includes('@')) {
-      setError('Enter a valid recipient email.');
+    if (!found?.user_id) {
+      setError('Look up a recipient first.');
       return;
     }
     setBusy(true);
     try {
-      const lookup = await lookupTokenShareRecipient(email);
-      const userId = String(
-        (lookup as { user_id?: string; id?: string })?.user_id ||
-          (lookup as { id?: string })?.id ||
-          '',
-      ).trim();
-      if (!userId) throw new Error('Recipient not found on Tukua.');
       const tokens = tokensFromKes(kes);
       await transferTokens({
-        to_user_id: userId,
+        to_user_id: found.user_id,
         tokens,
         note: note.trim() || undefined,
       });
       setOk(`Sent ${tokens.toLocaleString()} tokens (≈ KES ${kes}).`);
       setAmount('');
+      setFound(null);
+      setRecipient('');
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = humanizeError(e);
       if (/insufficient|not enough|balance/i.test(msg)) {
         setError('Not enough in this wallet.');
       } else {
@@ -92,69 +126,99 @@ export function TukuaPaySendScreen({ navigation }: Props) {
         }}>
         <ModuleBackBar onBack={() => navigation.goBack()} />
         <ModuleKicker>Tukua Pay</ModuleKicker>
-        <ModuleScreenHeader title="Send" description="Transfer tokens to another Tukua account." />
-        <ModuleGlassCard>
-          <View style={styles.tabs}>
-            <Pressable
-              style={[styles.tab, tab === 'email' && styles.tabOn]}
-              onPress={() => setTab('email')}>
-              <Text style={[styles.tabText, tab === 'email' && styles.tabTextOn]}>Tukua ID</Text>
+        <ModuleScreenHeader
+          title="Send"
+          description="Find someone by email or phone, confirm the masked card, then send."
+        />
+        {kycOk === false ? (
+          <ModuleGlassCard>
+            <Text style={styles.err}>Verify your identity before sending.</Text>
+            <Pressable style={styles.btn} onPress={() => navigation.navigate('TukuaPayKyc')}>
+              <Text style={styles.btnText}>Open KYC</Text>
             </Pressable>
+          </ModuleGlassCard>
+        ) : (
+          <ModuleGlassCard>
+            <Text style={styles.label}>Email or phone</Text>
+            <TextInput
+              value={recipient}
+              onChangeText={(t) => {
+                setRecipient(t);
+                setFound(null);
+              }}
+              autoCapitalize="none"
+              keyboardType="default"
+              placeholder="friend@example.com or 07XX…"
+              placeholderTextColor={Colors.mutedForeground}
+              style={styles.input}
+            />
             <Pressable
-              style={[styles.tab, tab === 'phone' && styles.tabOn]}
-              onPress={() => setTab('phone')}>
-              <Text style={[styles.tabText, tab === 'phone' && styles.tabTextOn]}>Phone</Text>
+              style={[styles.btnSecondary, looking && { opacity: 0.7 }]}
+              disabled={looking || busy}
+              onPress={() => void lookup()}>
+              {looking ? (
+                <ActivityIndicator color={Colors.primary} />
+              ) : (
+                <Text style={styles.btnSecondaryText}>Find recipient</Text>
+              )}
             </Pressable>
-          </View>
-          <Text style={styles.label}>{tab === 'email' ? 'Recipient email' : 'Phone'}</Text>
-          <TextInput
-            value={recipient}
-            onChangeText={setRecipient}
-            autoCapitalize="none"
-            keyboardType={tab === 'phone' ? 'phone-pad' : 'email-address'}
-            placeholder={tab === 'email' ? 'friend@example.com' : '07XX XXX XXX'}
-            placeholderTextColor={Colors.mutedForeground}
-            style={styles.input}
-          />
-          <Text style={styles.label}>Amount (KES)</Text>
-          <TextInput
-            value={amount}
-            onChangeText={setAmount}
-            keyboardType="numeric"
-            style={styles.input}
-          />
-          <Text style={styles.label}>Note (optional)</Text>
-          <TextInput
-            value={note}
-            onChangeText={setNote}
-            style={styles.input}
-            placeholder="For lunch"
-            placeholderTextColor={Colors.mutedForeground}
-          />
-          {error ? <Text style={styles.err}>{error}</Text> : null}
-          {ok ? <Text style={styles.ok}>{ok}</Text> : null}
-          <Pressable style={[styles.btn, busy && { opacity: 0.7 }]} onPress={() => void submit()} disabled={busy}>
-            {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Send</Text>}
-          </Pressable>
-        </ModuleGlassCard>
+
+            {found ? (
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Recipient</Text>
+                <Text style={styles.cardLine}>
+                  Name · {found.first_name_masked || found.first_name || 'U***'}
+                  {found.last_name_masked ? ` ${found.last_name_masked}` : ''}
+                </Text>
+                {found.phone_masked ? (
+                  <Text style={styles.cardLine}>Phone · {found.phone_masked}</Text>
+                ) : null}
+                {(found.email_masked || found.email) && (
+                  <Text style={styles.cardLine}>
+                    Email · {found.email_masked || maskEmail(found.email || '')}
+                  </Text>
+                )}
+              </View>
+            ) : null}
+
+            <Text style={styles.label}>Amount (KES)</Text>
+            <TextInput
+              value={amount}
+              onChangeText={setAmount}
+              keyboardType="numeric"
+              style={styles.input}
+            />
+            <Text style={styles.label}>Note (optional)</Text>
+            <TextInput
+              value={note}
+              onChangeText={setNote}
+              style={styles.input}
+              placeholder="For lunch"
+              placeholderTextColor={Colors.mutedForeground}
+            />
+            {error ? <Text style={styles.err}>{error}</Text> : null}
+            {ok ? <Text style={styles.ok}>{ok}</Text> : null}
+            <Pressable
+              style={[styles.btn, (busy || !found) && { opacity: 0.7 }]}
+              onPress={() => void submit()}
+              disabled={busy || !found}>
+              {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Send</Text>}
+            </Pressable>
+          </ModuleGlassCard>
+        )}
       </View>
     </View>
   );
 }
 
+function maskEmail(email: string) {
+  if (!email.includes('@')) return '***';
+  const [u, d] = email.split('@');
+  return `${(u || 'xx').slice(0, 2)}***@${d}`;
+}
+
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#fff' },
-  tabs: { flexDirection: 'row', gap: 8, marginBottom: 14 },
-  tab: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: 'rgba(10,61,46,0.06)',
-    alignItems: 'center',
-  },
-  tabOn: { backgroundColor: Colors.primary },
-  tabText: { fontWeight: '700', color: Colors.primary },
-  tabTextOn: { color: '#fff' },
   label: { fontSize: 12, fontWeight: '700', color: Colors.mutedForeground, marginBottom: 6 },
   input: {
     borderWidth: 1,
@@ -166,6 +230,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: Colors.ink,
   },
+  card: {
+    marginBottom: 12,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(10,61,46,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(10,61,46,0.12)',
+  },
+  cardTitle: { fontWeight: '800', color: Colors.primary, marginBottom: 6 },
+  cardLine: { color: Colors.ink, fontSize: 14, marginBottom: 2 },
   err: { color: '#B91C1C', marginBottom: 8, fontWeight: '600' },
   ok: { color: Colors.primary, marginBottom: 8, fontWeight: '600' },
   btn: {
@@ -175,4 +249,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   btnText: { color: '#fff', fontWeight: '800', fontSize: 15 },
+  btnSecondary: {
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  btnSecondaryText: { color: Colors.primary, fontWeight: '800' },
 });

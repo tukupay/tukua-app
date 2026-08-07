@@ -24,7 +24,11 @@ import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layo
 import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
 import { useDialog } from '../../context/DialogContext';
-import { createDisciplineCase, searchDisciplineStudents } from '../../lib/teacherPortalApi';
+import {
+  createDisciplineCase,
+  fetchDisciplineCategories,
+  searchDisciplineStudents,
+} from '../../lib/teacherPortalApi';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'RecordDiscipline'>;
 
@@ -33,6 +37,8 @@ type StudentHit = {
   id?: string;
   full_name?: string;
   admission_number?: string;
+  class_name?: string;
+  status?: string;
 };
 
 export function RecordDisciplineScreen({ navigation }: Props) {
@@ -42,12 +48,28 @@ export function RecordDisciplineScreen({ navigation }: Props) {
   const [hits, setHits] = useState<StudentHit[]>([]);
   const [searching, setSearching] = useState(false);
   const [selected, setSelected] = useState<StudentHit | null>(null);
+  const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
   const [category, setCategory] = useState('');
+  const [catOpen, setCatOpen] = useState(false);
   const [narrative, setNarrative] = useState('');
   const [witnesses, setWitnesses] = useState('');
   const [incidentDate, setIncidentDate] = useState(new Date().toISOString().slice(0, 10));
   const [submitting, setSubmitting] = useState(false);
   const [analysis, setAnalysis] = useState<string | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const cats = await fetchDisciplineCategories();
+        setCategories(cats);
+        if (cats[0]?.name && !category) setCategory(cats[0].name);
+      } catch {
+        setCategories([{ id: 'general', name: 'General' }]);
+        if (!category) setCategory('General');
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const runSearch = useCallback(async (q: string) => {
     const trimmed = q.trim();
@@ -156,6 +178,19 @@ export function RecordDisciplineScreen({ navigation }: Props) {
             </View>
           ) : null}
 
+          {selected ? (
+            <View style={styles.studentCard}>
+              <Text style={styles.cardName}>{selected.full_name || 'Student'}</Text>
+              <Text style={styles.cardMeta}>
+                Adm · {selected.admission_number || '—'}
+                {selected.class_name ? ` · ${selected.class_name}` : ''}
+              </Text>
+              {selected.status ? (
+                <Text style={styles.cardMeta}>Status · {selected.status}</Text>
+              ) : null}
+            </View>
+          ) : null}
+
           <Text style={styles.label}>Date</Text>
           <TextInput
             value={incidentDate}
@@ -165,13 +200,25 @@ export function RecordDisciplineScreen({ navigation }: Props) {
             style={styles.input}
           />
           <Text style={styles.label}>Category</Text>
-          <TextInput
-            value={category}
-            onChangeText={setCategory}
-            placeholder="e.g. Bullying, Uniform"
-            placeholderTextColor={Colors.mutedForeground}
-            style={styles.input}
-          />
+          <Pressable style={styles.dropdown} onPress={() => setCatOpen((v) => !v)}>
+            <Text style={styles.dropdownText}>{category || 'Select category'}</Text>
+            <Text style={styles.dropdownChevron}>{catOpen ? '▲' : '▼'}</Text>
+          </Pressable>
+          {catOpen ? (
+            <View style={styles.dropList}>
+              {categories.map((c) => (
+                <Pressable
+                  key={c.id}
+                  style={styles.dropItem}
+                  onPress={() => {
+                    setCategory(c.name);
+                    setCatOpen(false);
+                  }}>
+                  <Text style={styles.dropItemText}>{c.name}</Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
           <Text style={styles.label}>What happened</Text>
           <TextInput
             value={narrative}
@@ -209,46 +256,70 @@ export function RecordDisciplineScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.background },
-  label: {
-    marginTop: 10,
-    marginBottom: 6,
-    fontSize: 12,
-    fontWeight: '700',
-    color: Colors.mutedForeground,
-    textTransform: 'uppercase',
-  },
+  root: { flex: 1 },
+  label: { fontSize: 12, fontWeight: '700', color: Colors.mutedForeground, marginBottom: 6, marginTop: 10 },
   input: {
     borderWidth: 1,
     borderColor: 'rgba(0,0,0,0.12)',
-    borderRadius: 10,
+    borderRadius: 12,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 12,
     fontSize: 15,
     color: Colors.ink,
-    backgroundColor: 'rgba(255,255,255,0.9)',
+    backgroundColor: '#fff',
   },
   multiline: { minHeight: 100, textAlignVertical: 'top' },
-  hitList: { marginTop: 8, borderRadius: 10, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(0,0,0,0.08)' },
-  hitRow: { padding: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(0,0,0,0.06)' },
-  hitName: { fontSize: 14, fontWeight: '700', color: Colors.ink },
-  hitAdm: { marginTop: 2, fontSize: 12, color: Colors.mutedForeground },
-  analysis: {
-    marginTop: 12,
-    fontSize: 13,
-    lineHeight: 19,
-    color: Colors.ink,
-    backgroundColor: 'rgba(10,61,46,0.06)',
-    padding: 10,
-    borderRadius: 10,
+  hitList: { marginTop: 8, borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(0,0,0,0.08)' },
+  hitRow: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(0,0,0,0.08)',
+    backgroundColor: '#fff',
   },
+  hitName: { fontWeight: '700', color: Colors.ink },
+  hitAdm: { marginTop: 2, fontSize: 12, color: Colors.mutedForeground },
+  studentCard: {
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(10,61,46,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(10,61,46,0.12)',
+  },
+  cardName: { fontSize: 16, fontWeight: '800', color: Colors.ink },
+  cardMeta: { marginTop: 4, fontSize: 13, color: Colors.mutedForeground },
+  dropdown: {
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.12)',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+    backgroundColor: '#fff',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  dropdownText: { fontSize: 15, color: Colors.ink, fontWeight: '600' },
+  dropdownChevron: { color: Colors.mutedForeground, fontSize: 12 },
+  dropList: {
+    marginTop: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.1)',
+    overflow: 'hidden',
+    backgroundColor: '#fff',
+  },
+  dropItem: { paddingHorizontal: 12, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(0,0,0,0.06)' },
+  dropItemText: { color: Colors.ink, fontWeight: '600' },
+  analysis: { marginTop: 12, color: Colors.primary, fontSize: 13, lineHeight: 18 },
   submit: {
     marginTop: 16,
     backgroundColor: Colors.primary,
-    paddingVertical: 14,
     borderRadius: 12,
+    paddingVertical: 14,
     alignItems: 'center',
   },
-  submitDisabled: { opacity: 0.5 },
-  submitText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  submitDisabled: { opacity: 0.7 },
+  submitText: { color: '#fff', fontWeight: '800', fontSize: 15 },
 });

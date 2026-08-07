@@ -82,6 +82,7 @@ export type DashboardStackParamList = {
   TukuaPayDeposit: undefined;
   TukuaPaySend: undefined;
   TukuaPayBank: undefined;
+  TukuaPayKyc: undefined;
   TeacherTimetable: undefined;
   RecordDiscipline: undefined;
   TeacherProgress: undefined;

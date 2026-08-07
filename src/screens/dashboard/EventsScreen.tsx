@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useIsFocused } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
 import { ModuleTabPager } from '../../components/dashboard/ModuleTabPager';
@@ -109,6 +110,7 @@ function dayKey(iso?: string) {
 
 export function EventsScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
+  const isFocused = useIsFocused();
   const { selectedStudentId, persona, deskUser } = useDeskAuth();
   const studentContextId =
     persona === 'student'
@@ -353,7 +355,7 @@ export function EventsScreen({ navigation }: Props) {
                   <Text style={styles.secondaryBtnText}>Cancel</Text>
                 </Pressable>
               </View>
-            ) : (
+            ) : tab === 'scan' && key === 'scan' && isFocused ? (
               <View style={{ marginTop: 10 }}>
                 <View style={styles.scanCameraWrap}>
                   <CameraView
@@ -390,6 +392,10 @@ export function EventsScreen({ navigation }: Props) {
                   <Text style={styles.secondaryBtnText}>Cancel</Text>
                 </Pressable>
               </View>
+            ) : (
+              <Text style={[styles.meta, { marginTop: 10 }]}>
+                Camera is only active on the Scan tab while this screen is open.
+              </Text>
             )}
           </ModuleGlassCard>
         ) : null}

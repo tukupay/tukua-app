@@ -328,14 +328,24 @@ export async function deskFetch<T = unknown>(
         return deskFetch<T>(path, { ...opts, _retriedNest: true });
       }
     }
-    const msg =
+    const errCode =
+      typeof (json as { error?: unknown })?.error === 'string'
+        ? String((json as { error: string }).error).trim()
+        : typeof (json as { code?: unknown })?.code === 'string'
+          ? String((json as { code: string }).code).trim()
+          : '';
+    const baseMsg =
       res.status === 401
         ? 'Session expired. Please login to continue'
         : (json as { message?: string; error?: string })?.message ||
           (json as { error?: string })?.error ||
           `Desk API ${res.status}`;
-    log.warn('DeskApi', msg, { status: res.status, path });
-    throw new Error(msg);
+    const msg =
+      errCode && errCode !== baseMsg && !String(baseMsg).includes(errCode)
+        ? `${baseMsg} (${errCode})`
+        : String(baseMsg);
+    log.warn('DeskApi', msg, { status: res.status, path, error: errCode || undefined });
+    throw Object.assign(new Error(msg), { code: errCode || undefined, statusCode: res.status });
   }
 
   if (json && typeof json === 'object' && 'success' in json && (json as { success: boolean }).success === false) {

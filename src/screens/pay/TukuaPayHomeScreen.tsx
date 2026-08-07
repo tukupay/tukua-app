@@ -23,6 +23,7 @@ import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layo
 import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
 import { listWallets, totalSavings, type Wallet } from '../../lib/wallet';
+import { fetchMyKyc, type KycStatus } from '../../lib/profileApi';
 import { log } from '../../lib/logger';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'TukuaPayHome'>;
@@ -38,12 +39,18 @@ export function TukuaPayHomeScreen({ navigation }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hide, setHide] = useState(false);
+  const [kycStatus, setKycStatus] = useState<KycStatus>(null);
 
   const load = useCallback(async (soft = false) => {
     if (!soft) setLoading(true);
     setError(null);
     try {
-      setWallets(await listWallets());
+      const [w, kyc] = await Promise.all([
+        listWallets(),
+        fetchMyKyc().catch(() => null),
+      ]);
+      setWallets(w);
+      setKycStatus((kyc?.status as KycStatus) ?? null);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       log.warn('TukuaPay', msg);
@@ -82,10 +89,39 @@ export function TukuaPayHomeScreen({ navigation }: Props) {
         }>
         <ModuleBackBar onBack={() => navigation.goBack()} />
         <ModuleKicker>Tukua Pay</ModuleKicker>
-        <ModuleScreenHeader
-          title="Your wallets"
-          description="Balances for tokens and school money. Pull to refresh."
-        />
+        <View style={styles.headRow}>
+          <View style={{ flex: 1 }}>
+            <ModuleScreenHeader
+              title="Your wallets"
+              description="Balances for tokens and school money. Pull to refresh."
+            />
+          </View>
+          <Pressable
+            style={styles.kycBtn}
+            onPress={() => navigation.navigate('TukuaPayKyc')}
+            hitSlop={8}>
+            <Ionicons
+              name="shield-checkmark-outline"
+              size={22}
+              color={
+                kycStatus === 'approved'
+                  ? '#059669'
+                  : kycStatus === 'pending'
+                    ? '#D97706'
+                    : Colors.primary
+              }
+            />
+            <Text style={styles.kycChip}>
+              {kycStatus === 'approved'
+                ? 'Verified'
+                : kycStatus === 'pending'
+                  ? 'Pending'
+                  : kycStatus === 'rejected'
+                    ? 'Rejected'
+                    : 'Verify'}
+            </Text>
+          </Pressable>
+        </View>
 
         <ModuleGlassCard>
           <View style={styles.totalRow}>
@@ -147,6 +183,9 @@ export function TukuaPayHomeScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#fff' },
+  headRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  kycBtn: { alignItems: 'center', paddingTop: 4, minWidth: 64 },
+  kycChip: { marginTop: 2, fontSize: 10, fontWeight: '800', color: Colors.primary },
   totalRow: { flexDirection: 'row', alignItems: 'center' },
   totalLabel: { fontSize: 12, fontWeight: '700', color: Colors.mutedForeground, textTransform: 'uppercase' },
   totalValue: { marginTop: 4, fontSize: 26, fontWeight: '800', color: Colors.brandGreenDark },

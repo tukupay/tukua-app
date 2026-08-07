@@ -342,7 +342,6 @@ export async function fetchParentBursary() {
 export async function contributeParentBursary(body: {
   amount: number | string;
   program_id?: string;
-  note?: string;
 }) {
   return deskFetch<{ contribution?: ParentBursaryContribution }>('/parents/me/bursary/contribute', {
     method: 'POST',

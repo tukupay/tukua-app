@@ -45,6 +45,7 @@ import { TukuaPayHomeScreen } from '../screens/pay/TukuaPayHomeScreen';
 import { TukuaPayDepositScreen } from '../screens/pay/TukuaPayDepositScreen';
 import { TukuaPaySendScreen } from '../screens/pay/TukuaPaySendScreen';
 import { TukuaPayBankScreen } from '../screens/pay/TukuaPayBankScreen';
+import { TukuaPayKycScreen } from '../screens/pay/TukuaPayKycScreen';
 import { TeacherTimetableScreen } from '../screens/dashboard/TeacherTimetableScreen';
 import { RecordDisciplineScreen } from '../screens/dashboard/RecordDisciplineScreen';
 import { TeacherProgressScreen } from '../screens/dashboard/TeacherProgressScreen';
@@ -321,6 +322,11 @@ export function DashboardStack() {
         name="TukuaPayBank"
         component={TukuaPayBankScreen}
         options={{ title: 'Bank', headerShown: false }}
+      />
+      <Stack.Screen
+        name="TukuaPayKyc"
+        component={TukuaPayKycScreen}
+        options={{ title: 'KYC', headerShown: false }}
       />
       <Stack.Screen
         name="TeacherTimetable"

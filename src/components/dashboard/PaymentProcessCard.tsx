@@ -75,7 +75,6 @@ export function PaymentProcessCard({
 }: Props) {
   const [amount, setAmount] = useState(defaultAmount);
   const [phone, setPhone] = useState(defaultPhone);
-  const [note, setNote] = useState('');
   const [quote, setQuote] = useState<Quote | null>(null);
   const [phase, setPhase] = useState<Phase>('form');
   const [statusLine, setStatusLine] = useState('');
@@ -170,10 +169,7 @@ export function PaymentProcessCard({
         phone: phone.trim(),
         student_id: studentId ?? undefined,
         teacher_id: teacherId ?? undefined,
-        description:
-          mode === 'bursary'
-            ? note.trim() || titleFor(mode, title)
-            : titleFor(mode, title),
+        description: titleFor(mode, title),
       });
 
       if (cancelled.current) return;
@@ -282,21 +278,6 @@ export function PaymentProcessCard({
               placeholderTextColor={Colors.mutedForeground}
               editable={!busy}
             />
-
-            {mode === 'bursary' ? (
-              <>
-                <Text style={styles.fieldLabel}>Note (optional)</Text>
-                <TextInput
-                  style={[styles.input, styles.inputMulti]}
-                  value={note}
-                  onChangeText={setNote}
-                  placeholder="For the vulnerable student fund"
-                  placeholderTextColor={Colors.mutedForeground}
-                  multiline
-                  editable={!busy}
-                />
-              </>
-            ) : null}
 
             <Text style={styles.fieldLabel}>M-Pesa phone</Text>
             <TextInput

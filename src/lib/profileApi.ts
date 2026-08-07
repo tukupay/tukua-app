@@ -574,17 +574,50 @@ export function analyzeDocument(userId: string, docId: string): Promise<Document
 export type TokenShareLookup = {
   user_id?: string;
   email?: string;
+  email_masked?: string | null;
   first_name?: string;
+  first_name_masked?: string | null;
   last_name_masked?: string | null;
   phone_masked?: string | null;
   account_type?: string;
 };
 
-export function lookupTokenShareRecipient(email: string): Promise<TokenShareLookup> {
+export function lookupTokenShareRecipient(query: string): Promise<TokenShareLookup> {
+  const q = String(query || '').trim();
   return nestPlatformFetch('/platform/me/tokens/lookup', {
     method: 'POST',
-    body: { email },
+    body: { query: q, email: q.includes('@') ? q : undefined, phone: q.includes('@') ? undefined : q },
   });
+}
+
+export type KycStatus = 'pending' | 'approved' | 'rejected' | null;
+
+export type KycState = {
+  status?: KycStatus;
+  approved?: boolean;
+  message?: string;
+  documents?: {
+    id_front?: string | null;
+    id_back?: string | null;
+    kra?: string | null;
+    submitted_at?: string | null;
+    review_note?: string | null;
+  };
+};
+
+export function fetchMyKyc(): Promise<KycState> {
+  return nestPlatformFetch('/platform/me/kyc');
+}
+
+export function submitMyKyc(body: {
+  id_front_base64?: string;
+  id_back_base64?: string;
+  kra_base64?: string;
+  id_front?: string;
+  id_back?: string;
+  kra?: string;
+}): Promise<KycState> {
+  return nestPlatformFetch('/platform/me/kyc', { method: 'POST', body });
 }
 
 export function transferTokens(body: {

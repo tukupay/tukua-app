@@ -176,7 +176,13 @@ export function ScanMarksheetScreen({ navigation }: Props) {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       log.warn('ScanMarksheet', msg);
-      setError(msg || 'Could not analyze the image.');
+      if (/500|vision|openrouter|image|configured|api.?key/i.test(msg)) {
+        setError(
+          'Could not analyze the image. Staging may be missing a vision API key, or the photo was unreadable — try again with a clearer sheet.',
+        );
+      } else {
+        setError(msg || 'Could not analyze the image.');
+      }
     } finally {
       setAnalyzing(false);
     }
@@ -218,9 +224,10 @@ export function ScanMarksheetScreen({ navigation }: Props) {
 
   return (
     <View style={styles.root}>
-      <DashboardBackground />
-      <View style={{ paddingTop: floatingHeaderInset(insets.top) }}>
-        <ModuleBackBar onPress={() => navigation.goBack()} label="Dashboard" />
+      <DashboardBackground patternOnly liquid />
+      <View style={{ paddingTop: floatingHeaderInset(insets.top), paddingHorizontal: 16 }}>
+        <ModuleBackBar onBack={() => navigation.goBack()} />
+        <ModuleKicker>Assessments</ModuleKicker>
         <ModuleScreenHeader
           title="Scan marksheet"
           description="Select exam, class and learning area, photograph the sheet, review names, then Save."
@@ -258,12 +265,12 @@ export function ScanMarksheetScreen({ navigation }: Props) {
                   <Text style={styles.btnText}>Open camera</Text>
                 </Pressable>
                 <Pressable style={styles.btnSecondary} onPress={() => void pickImage(false)}>
-                  <Text style={styles.btnText}>Photo library</Text>
+                  <Text style={styles.btnTextSec}>Photo library</Text>
                 </Pressable>
               </View>
 
               {imageUri ? (
-                <ModuleGlassCard style={styles.preview}>
+                <ModuleGlassCard>
                   <Image source={{ uri: imageUri }} style={styles.image} resizeMode="contain" />
                   <Pressable
                     style={[styles.btn, analyzing && { opacity: 0.7 }]}
@@ -286,15 +293,15 @@ export function ScanMarksheetScreen({ navigation }: Props) {
             </View>
           }
           ListEmptyComponent={
-            !imageUri ? (
+            !imageUri && !error ? (
               <ModuleEmpty
                 title="No scan yet"
-                description="Choose exam, class and learning area, then open the camera."
+                body="Choose exam, class and learning area, then open the camera."
               />
             ) : null
           }
           renderItem={({ item, index }) => (
-            <ModuleGlassCard style={styles.row}>
+            <ModuleGlassCard>
               <Text style={styles.rowText}>
                 {index + 1}. #{item.admission_number || '—'} ·{' '}
                 {item.student_name || 'Name not matched'} ·{' '}
@@ -318,7 +325,7 @@ export function ScanMarksheetScreen({ navigation }: Props) {
                   );
                 }}
                 placeholder="Edit marks"
-                placeholderTextColor="rgba(255,255,255,0.35)"
+                placeholderTextColor={Colors.mutedForeground}
               />
             </ModuleGlassCard>
           )}
@@ -360,7 +367,7 @@ function ChipRow({
             onPress={() => onSelect(o.id)}
             style={[styles.chip, on && styles.chipOn]}
           >
-            <Text style={[styles.chipText, on && styles.chipTextOn]} numberOfLines={1}>
+            <Text style={[styles.chipText, on && styles.chipTextOn]} numberOfLines={2}>
               {o.name}
             </Text>
           </Pressable>
@@ -372,19 +379,21 @@ function ChipRow({
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 6, marginBottom: 12 },
+  chips: { flexDirection: 'column', gap: 8, marginTop: 6, marginBottom: 12 },
   chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    minHeight: 44,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    backgroundColor: 'rgba(10,61,46,0.06)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-    maxWidth: '48%',
+    borderColor: 'rgba(10,61,46,0.12)',
+    width: '100%',
+    justifyContent: 'center',
   },
-  chipOn: { backgroundColor: 'rgba(31,139,76,0.35)', borderColor: Colors.primary },
-  chipText: { color: 'rgba(255,255,255,0.75)', fontSize: 13 },
-  chipTextOn: { color: '#fff', fontWeight: '600' },
+  chipOn: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  chipText: { color: Colors.ink, fontSize: 15, fontWeight: '600' },
+  chipTextOn: { color: '#fff', fontWeight: '700' },
   actions: { flexDirection: 'row', gap: 10, marginBottom: 12 },
   btn: {
     flex: 1,
@@ -395,29 +404,28 @@ const styles = StyleSheet.create({
   },
   btnSecondary: {
     flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(10,61,46,0.08)',
     paddingVertical: 12,
     borderRadius: 12,
     alignItems: 'center',
   },
   btnText: { color: '#fff', fontWeight: '700' },
-  preview: { marginBottom: 12 },
+  btnTextSec: { color: Colors.primary, fontWeight: '700' },
   image: { width: '100%', height: 180, borderRadius: 8, marginBottom: 10 },
-  meta: { color: 'rgba(255,255,255,0.7)', marginBottom: 6 },
-  err: { color: '#FCA5A5', marginBottom: 8 },
-  ok: { color: '#86EFAC', marginBottom: 8 },
-  tableHead: { color: '#fff', fontWeight: '700', marginTop: 8, marginBottom: 8 },
-  row: { marginBottom: 10 },
-  rowText: { color: '#fff', fontWeight: '600', marginBottom: 6 },
-  warn: { color: '#FCD34D', fontSize: 12, marginBottom: 6 },
+  meta: { color: Colors.mutedForeground, marginBottom: 6, marginTop: 8 },
+  err: { color: '#B91C1C', marginBottom: 8, fontWeight: '600' },
+  ok: { color: Colors.primary, marginBottom: 8, fontWeight: '600' },
+  tableHead: { color: Colors.ink, fontWeight: '700', marginTop: 8, marginBottom: 8 },
+  rowText: { color: Colors.ink, fontWeight: '600', marginBottom: 6 },
+  warn: { color: '#B45309', fontSize: 12, marginBottom: 6 },
   input: {
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderColor: 'rgba(0,0,0,0.12)',
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    color: '#fff',
-    backgroundColor: 'rgba(0,0,0,0.25)',
+    color: Colors.ink,
+    backgroundColor: '#fff',
   },
   saveBtn: {
     position: 'absolute',
@@ -430,5 +438,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   saveText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  muted: { color: 'rgba(255,255,255,0.55)', marginBottom: 12 },
+  muted: { color: Colors.mutedForeground, marginBottom: 12 },
 });

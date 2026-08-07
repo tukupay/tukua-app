@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -6,69 +6,146 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
-import { PaymentBottomSheet } from '../../components/dashboard/PaymentBottomSheet';
-import { PaymentProcessCard } from '../../components/dashboard/PaymentProcessCard';
 import { ModuleBackBar, ModuleScreenHeader, ModuleEmpty, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import {
+  contributeParentBursary,
   fetchParentBursary,
   ParentBursaryContribution,
   ParentBursaryProgram,
 } from '../../lib/parentPortalApi';
+import { deskFetch } from '../../lib/deskApi';
+import { useDeskAuth } from '../../context/DeskAuthContext';
 import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
 import { log } from '../../lib/logger';
+import { humanizeError } from '../../lib/humanizeError';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'Bursary'>;
 
 const HERO_GREEN = '#15411D';
+
+type ProgramRow = ParentBursaryProgram & {
+  name?: string;
+  status?: string;
+  closes_on?: string | null;
+};
 
 function kes(n: number | undefined | null): string {
   const v = Number(n ?? 0) || 0;
   return `KES ${v.toLocaleString()}`;
 }
 
+function rolesIncludeParent(roles: unknown): boolean {
+  const list = Array.isArray(roles)
+    ? roles.map(String)
+    : String(roles || '')
+        .split(',')
+        .map((r) => r.trim());
+  return list.some((r) => /parent/i.test(r));
+}
+
 export function BursaryScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
-  const [programs, setPrograms] = useState<ParentBursaryProgram[]>([]);
+  const { deskUser } = useDeskAuth();
+  const isParent = useMemo(() => rolesIncludeParent(deskUser?.user_roles), [deskUser?.user_roles]);
+
+  const [programs, setPrograms] = useState<ProgramRow[]>([]);
   const [contributions, setContributions] = useState<ParentBursaryContribution[]>([]);
   const [kittyTotal, setKittyTotal] = useState(0);
   const [selectedProgram, setSelectedProgram] = useState<string | null>(null);
+  const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [ok, setOk] = useState<string | null>(null);
   const [contribPage, setContribPage] = useState(0);
-  const [showContribute, setShowContribute] = useState(false);
-  const [contributeKey, setContributeKey] = useState(0);
   const CONTRIB_PAGE = 8;
 
-  const load = useCallback(async (soft = false) => {
-    if (!soft) setLoading(true);
-    setError(null);
-    try {
-      const data = await fetchParentBursary();
-      setPrograms(data?.programs ?? []);
-      setContributions(data?.contributions ?? []);
-      setKittyTotal(Number(data?.kitty_total ?? 0) || 0);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      log.warn('Bursary', msg);
-      setError(msg);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
+  const load = useCallback(
+    async (soft = false) => {
+      if (!soft) setLoading(true);
+      setError(null);
+      try {
+        const bursaryList = await deskFetch<{ programs?: ProgramRow[] }>('/bursaries/programs');
+        const fromNest = Array.isArray(bursaryList?.programs) ? bursaryList.programs : [];
+        setPrograms(
+          fromNest.map((p) => ({
+            ...p,
+            title: p.title || p.name || 'Bursary program',
+            description: p.description ?? null,
+            deadline: p.deadline || p.closes_on || null,
+          })),
+        );
+
+        if (isParent) {
+          try {
+            const data = await fetchParentBursary();
+            if (!fromNest.length && Array.isArray(data?.programs)) {
+              setPrograms(data.programs);
+            }
+            setContributions(data?.contributions ?? []);
+            setKittyTotal(Number(data?.kitty_total ?? 0) || 0);
+          } catch (parentErr) {
+            log.warn('Bursary', 'parent kit', String(parentErr));
+            setContributions([]);
+            setKittyTotal(0);
+          }
+        } else {
+          setContributions([]);
+          setKittyTotal(0);
+        }
+      } catch (e) {
+        const msg = humanizeError(e);
+        log.warn('Bursary', msg);
+        setError(msg);
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [isParent],
+  );
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  const onContribute = async () => {
+    setOk(null);
+    setError(null);
+    if (!isParent) {
+      setError('Only parents can contribute to the kitty from this screen.');
+      return;
+    }
+    const n = Number(amount);
+    if (!(n > 0)) {
+      setError('Enter a contribution amount greater than 0.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await contributeParentBursary({
+        amount: n,
+        program_id: selectedProgram || undefined,
+      });
+      setOk('Thank you — contribution recorded.');
+      setAmount('');
+      await load(true);
+    } catch (e) {
+      setError(humanizeError(e));
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <View style={styles.root}>
@@ -81,6 +158,7 @@ export function BursaryScreen({ navigation }: Props) {
             paddingBottom: moduleScrollBottomPad(insets.bottom),
           },
         ]}
+        keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -94,22 +172,26 @@ export function BursaryScreen({ navigation }: Props) {
         showsVerticalScrollIndicator={false}>
         <ModuleBackBar onBack={() => navigation.goBack()} />
         <ModuleKicker>Bursary</ModuleKicker>
-        <ModuleScreenHeader title="Vulnerable student kitty" description="Kitty & contributions for learners in need." />
+        <ModuleScreenHeader
+          title="Vulnerable student kitty"
+          description="School bursary programs. Parents can contribute without a note."
+        />
         <Text style={styles.sub}>
-          Contribute to support learners in need. Funds are reviewed and distributed by the school’s bursary
-          committee — not automatically by the app.
+          Funds are reviewed and distributed by the school’s bursary committee — not automatically by the app.
         </Text>
 
         {loading ? (
           <ActivityIndicator color={Colors.brandGreenMid} style={{ marginTop: 24 }} />
-        ) : error ? (
+        ) : error && programs.length === 0 ? (
           <ModuleEmpty title="Could not load bursary" body={error} onRetry={() => void load()} />
         ) : (
           <>
-            <ModuleGlassCard>
-              <Text style={styles.kittyLabel}>Your contributions total</Text>
-              <Text style={styles.kittyValue}>{kes(kittyTotal)}</Text>
-            </ModuleGlassCard>
+            {isParent ? (
+              <ModuleGlassCard>
+                <Text style={styles.kittyLabel}>Your contributions total</Text>
+                <Text style={styles.kittyValue}>{kes(kittyTotal)}</Text>
+              </ModuleGlassCard>
+            ) : null}
 
             <Text style={styles.section}>Open programs</Text>
             {programs.length === 0 ? (
@@ -122,12 +204,14 @@ export function BursaryScreen({ navigation }: Props) {
                     <ModuleGlassCard>
                       <View style={styles.row}>
                         <View style={{ flex: 1 }}>
-                          <Text style={styles.programTitle}>{p.title || 'Bursary program'}</Text>
+                          <Text style={styles.programTitle}>{p.title || p.name || 'Bursary program'}</Text>
                           {p.description ? (
                             <Text style={styles.programDesc}>{p.description}</Text>
                           ) : null}
-                          {p.deadline ? (
-                            <Text style={styles.programMeta}>Deadline · {String(p.deadline).slice(0, 10)}</Text>
+                          {p.deadline || p.closes_on ? (
+                            <Text style={styles.programMeta}>
+                              Deadline · {String(p.deadline || p.closes_on).slice(0, 10)}
+                            </Text>
                           ) : null}
                         </View>
                         {open ? (
@@ -140,18 +224,52 @@ export function BursaryScreen({ navigation }: Props) {
               })
             )}
 
-            <Text style={styles.section}>Contribute</Text>
-            <Pressable
-              style={styles.primaryBtn}
-              onPress={() => {
-                setShowContribute(true);
-                setContributeKey((k) => k + 1);
-              }}>
-              <Ionicons name="heart" size={16} color={Colors.white} />
-              <Text style={styles.primaryBtnText}>Contribute to bursary</Text>
-            </Pressable>
+            {isParent ? (
+              <>
+                <Text style={styles.section}>Contribute</Text>
+                <ModuleGlassCard>
+                  <Text style={styles.fieldLabel}>Amount (KES)</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={amount}
+                    onChangeText={setAmount}
+                    keyboardType="decimal-pad"
+                    placeholder="e.g. 500"
+                    placeholderTextColor={Colors.mutedForeground}
+                    editable={!submitting}
+                  />
+                  {selectedProgram ? (
+                    <Text style={styles.programMeta}>
+                      Program ·{' '}
+                      {programs.find((p) => p.id === selectedProgram)?.title ||
+                        programs.find((p) => p.id === selectedProgram)?.name ||
+                        'Selected'}
+                    </Text>
+                  ) : (
+                    <Text style={styles.programMeta}>General vulnerable student kitty</Text>
+                  )}
+                  {error ? <Text style={styles.err}>{error}</Text> : null}
+                  {ok ? <Text style={styles.ok}>{ok}</Text> : null}
+                  <Pressable
+                    style={[styles.primaryBtn, submitting && { opacity: 0.7 }]}
+                    disabled={submitting}
+                    onPress={() => void onContribute()}>
+                    {submitting ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <>
+                        <Ionicons name="heart" size={16} color={Colors.white} />
+                        <Text style={styles.primaryBtnText}>Contribute</Text>
+                      </>
+                    )}
+                  </Pressable>
+                </ModuleGlassCard>
+              </>
+            ) : (
+              <Text style={styles.sub}>Browse programs here. Parent accounts can record contributions.</Text>
+            )}
 
-            {contributions.length > 0 ? (
+            {isParent && contributions.length > 0 ? (
               <>
                 <Text style={styles.section}>Past contributions</Text>
                 <ModuleGlassCard>
@@ -179,8 +297,7 @@ export function BursaryScreen({ navigation }: Props) {
                     <View style={styles.pager}>
                       <Pressable
                         disabled={contribPage === 0}
-                        onPress={() => setContribPage((p) => Math.max(0, p - 1))}
-                      >
+                        onPress={() => setContribPage((p) => Math.max(0, p - 1))}>
                         <Text style={[styles.pagerText, contribPage === 0 && styles.pagerDisabled]}>
                           Prev
                         </Text>
@@ -191,15 +308,13 @@ export function BursaryScreen({ navigation }: Props) {
                       </Text>
                       <Pressable
                         disabled={(contribPage + 1) * CONTRIB_PAGE >= contributions.length}
-                        onPress={() => setContribPage((p) => p + 1)}
-                      >
+                        onPress={() => setContribPage((p) => p + 1)}>
                         <Text
                           style={[
                             styles.pagerText,
                             (contribPage + 1) * CONTRIB_PAGE >= contributions.length &&
                               styles.pagerDisabled,
-                          ]}
-                        >
+                          ]}>
                           Next
                         </Text>
                       </Pressable>
@@ -211,32 +326,6 @@ export function BursaryScreen({ navigation }: Props) {
           </>
         )}
       </ScrollView>
-
-      <PaymentBottomSheet
-        visible={showContribute}
-        onClose={() => {
-          setShowContribute(false);
-          setContributeKey((k) => k + 1);
-        }}>
-        <PaymentProcessCard
-          key={`bursary-${contributeKey}-${selectedProgram ?? 'none'}`}
-          mode="bursary"
-          title="Contribute to bursary"
-          subtitle={
-            selectedProgram
-              ? programs.find((p) => p.id === selectedProgram)?.title || 'Selected program'
-              : 'General vulnerable student kitty'
-          }
-          programId={selectedProgram}
-          onRefresh={async () => {
-            await load(true);
-          }}
-          onClose={() => {
-            setShowContribute(false);
-            setContributeKey((k) => k + 1);
-          }}
-        />
-      </PaymentBottomSheet>
     </View>
   );
 }
@@ -244,7 +333,6 @@ export function BursaryScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   content: { paddingHorizontal: 20, gap: 12 },
-  title: { fontSize: 26, fontWeight: '800', color: Colors.ink, letterSpacing: -0.4 },
   sub: { fontSize: 14, color: Colors.mutedForeground, marginBottom: 4 },
   section: {
     marginTop: 8,
@@ -266,7 +354,25 @@ const styles = StyleSheet.create({
   programTitle: { fontSize: 15, fontWeight: '700', color: Colors.ink },
   programDesc: { marginTop: 4, fontSize: 13, color: Colors.mutedForeground },
   programMeta: { marginTop: 4, fontSize: 12, color: Colors.mutedForeground },
+  fieldLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.mutedForeground,
+    marginBottom: 6,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.1)',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    marginBottom: 10,
+    fontSize: 16,
+    color: Colors.ink,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+  },
   primaryBtn: {
+    marginTop: 8,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -276,6 +382,8 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   primaryBtnText: { color: Colors.white, fontWeight: '700', fontSize: 14 },
+  err: { color: '#B91C1C', marginTop: 6, fontWeight: '600' },
+  ok: { color: HERO_GREEN, marginTop: 6, fontWeight: '600' },
   tr: {
     flexDirection: 'row',
     alignItems: 'center',

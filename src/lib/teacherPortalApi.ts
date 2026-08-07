@@ -327,6 +327,19 @@ export async function searchDisciplineStudents(q: string) {
   return unwrapList<Record<string, unknown>>(data, ['students']);
 }
 
+export async function fetchDisciplineCategories() {
+  const data = await deskFetch<{ categories?: Array<Record<string, unknown>>; count?: number }>(
+    '/discipline/categories',
+  );
+  const list = unwrapList<Record<string, unknown>>(data, ['categories']);
+  return list
+    .map((c) => ({
+      id: String(c.id ?? c.name ?? ''),
+      name: String(c.name ?? c.title ?? c.id ?? 'Category'),
+    }))
+    .filter((c) => c.id && c.name);
+}
+
 export async function createDisciplineCase(body: Record<string, unknown>) {
   return deskFetch<Record<string, unknown>>('/discipline/cases/analyze', {
     method: 'POST',

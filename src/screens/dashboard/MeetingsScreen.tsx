@@ -197,7 +197,7 @@ export function MeetingsScreen({ navigation }: Props) {
 
   return (
     <View style={styles.root}>
-      <DashboardBackground />
+      <DashboardBackground patternOnly liquid />
       <ScrollView
         contentContainerStyle={{
           paddingTop: floatingHeaderInset(insets.top),
@@ -220,10 +220,13 @@ export function MeetingsScreen({ navigation }: Props) {
           title="Meetings"
           description={
             canSchedule
-              ? 'Schedule, host, or join school video meetings.'
-              : 'Join school video meetings in the app.'
+              ? 'Host enters first, then invite others. If Meet shows a lobby, wait for the host to be in the room.'
+              : 'Join after the host is in the room. If Meet shows a lobby, wait for the host.'
           }
         />
+        <Text style={styles.lobbyHint}>
+          Tip: Hosts should tap Host first so members land in an open room.
+        </Text>
 
         {canSchedule ? (
           <ModuleGlassCard>
@@ -417,6 +420,13 @@ const styles = StyleSheet.create({
   },
   joinBtnDisabled: { opacity: 0.45 },
   joinText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  lobbyHint: {
+    marginTop: -4,
+    marginBottom: 8,
+    fontSize: 13,
+    color: Colors.mutedForeground,
+    lineHeight: 18,
+  },
   inlineErr: { marginTop: 12, color: '#b42318', fontSize: 13 },
   gateOverlay: {
     ...StyleSheet.absoluteFillObject,
