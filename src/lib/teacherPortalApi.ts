@@ -220,14 +220,54 @@ export type AssessmentMarkRow = {
   max_marks?: number | string | null;
 };
 
-export async function listAssessmentMarks(examId: string, classId?: string) {
+export async function listAssessmentMarks(examId: string, classId?: string, subjectId?: string) {
   const params = new URLSearchParams();
   if (examId) params.set('exam_id', examId);
   if (classId) params.set('class_id', classId);
+  if (subjectId) params.set('subject_id', subjectId);
   const data = await deskFetch<{ marks?: AssessmentMarkRow[] }>(
     `/assessments/marks?${params}`,
   );
   return unwrapList<AssessmentMarkRow>(data, ['marks']);
+}
+
+export type ScannedMarkRow = {
+  admission_number?: string;
+  student_name?: string;
+  marks?: number | null;
+  student_user_id?: string;
+  mark_id?: string | null;
+};
+
+export async function analyzeMarksheetScan(body: {
+  exam_id: string;
+  class_id: string;
+  subject_id: string;
+  image_base64: string;
+  max_marks?: number;
+}) {
+  return deskFetch<{
+    exam_id: string;
+    class_id: string;
+    subject_id: string;
+    subject_name?: string;
+    max_marks: number;
+    parsed_count: number;
+    matched_count: number;
+    rows: ScannedMarkRow[];
+  }>('/assessments/marks/scan-analyze', { method: 'POST', body });
+}
+
+export async function saveMarksheetScan(body: {
+  exam_id: string;
+  subject_id: string;
+  max_marks: number;
+  rows: ScannedMarkRow[];
+}) {
+  return deskFetch<{ added: number; updated: number; failed: number; errors?: string[] }>(
+    '/assessments/marks/scan-save',
+    { method: 'POST', body },
+  );
 }
 
 export async function generateExamMarks(examId: string) {
@@ -293,3 +333,45 @@ export async function createDisciplineCase(body: Record<string, unknown>) {
     body,
   });
 }
+
+export type ScanMarkRow = {
+  admission_number?: string;
+  student_name?: string;
+  marks?: number | null;
+  student_user_id?: string;
+  mark_id?: string | null;
+};
+
+export async function scanMarksheetAnalyze(body: {
+  exam_id: string;
+  class_id: string;
+  subject_id: string;
+  image_base64: string;
+  max_marks?: number;
+}) {
+  return deskFetch<{
+    exam_id?: string;
+    class_id?: string;
+    subject_id?: string;
+    subject_name?: string;
+    max_marks?: number;
+    parsed_count?: number;
+    matched_count?: number;
+    rows?: ScanMarkRow[];
+  }>('/assessments/marks/scan-analyze', { method: 'POST', body });
+}
+
+export async function scanMarksheetSave(body: {
+  exam_id: string;
+  subject_id: string;
+  max_marks?: number;
+  rows: ScanMarkRow[];
+}) {
+  return deskFetch<{
+    added?: number;
+    updated?: number;
+    failed?: number;
+    errors?: string[];
+  }>('/assessments/marks/scan-save', { method: 'POST', body });
+}
+

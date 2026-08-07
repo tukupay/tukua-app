@@ -24,6 +24,7 @@ import { JoinSchoolScreen } from '../screens/dashboard/JoinSchoolScreen';
 import { EnterMarksScreen } from '../screens/dashboard/EnterMarksScreen';
 import { TeacherMarksheetScreen } from '../screens/dashboard/TeacherMarksheetScreen';
 import { EnterMarksEntryScreen } from '../screens/dashboard/EnterMarksEntryScreen';
+import { ScanMarksheetScreen } from '../screens/dashboard/ScanMarksheetScreen';
 import { TeacherClassesScreen } from '../screens/dashboard/TeacherClassesScreen';
 import { TeacherReportsScreen } from '../screens/dashboard/TeacherReportsScreen';
 import { StudentGradesScreen } from '../screens/dashboard/StudentGradesScreen';
@@ -33,6 +34,7 @@ import { StudentAttendanceScreen } from '../screens/dashboard/StudentAttendanceS
 import { StudentPocketMoneyScreen } from '../screens/dashboard/StudentPocketMoneyScreen';
 import { ApprovalsScreen } from '../screens/dashboard/ApprovalsScreen';
 import { AdminStudentsScreen } from '../screens/dashboard/AdminStudentsScreen';
+import { AdmitStudentScreen } from '../screens/dashboard/AdmitStudentScreen';
 import { AdminTeachersScreen } from '../screens/dashboard/AdminTeachersScreen';
 import { AdminParentsScreen } from '../screens/dashboard/AdminParentsScreen';
 import { SchoolOverviewScreen } from '../screens/dashboard/SchoolOverviewScreen';
@@ -62,6 +64,7 @@ const lazyCamera = {
     require('../screens/dashboard/FaceSelfEnrollScreen').FaceSelfEnrollScreen,
   GateQr: () => require('../screens/dashboard/GateQrScreen').GateQrScreen,
   GateCheckIn: () => require('../screens/dashboard/GateCheckInScreen').GateCheckInScreen,
+  ScanMarksheet: () => require('../screens/dashboard/ScanMarksheetScreen').ScanMarksheetScreen,
 };
 
 export function DashboardStack() {
@@ -215,6 +218,11 @@ export function DashboardStack() {
         options={({ route }) => ({ title: route.params.title, headerShown: false })}
       />
       <Stack.Screen
+        name="ScanMarksheet"
+        getComponent={lazyCamera.ScanMarksheet}
+        options={{ title: 'Scan marksheet', headerShown: false }}
+      />
+      <Stack.Screen
         name="TeacherClasses"
         component={TeacherClassesScreen}
         options={{ title: 'My classes', headerShown: false }}
@@ -258,6 +266,11 @@ export function DashboardStack() {
         name="AdminStudents"
         component={AdminStudentsScreen}
         options={{ title: 'Students', headerShown: false }}
+      />
+      <Stack.Screen
+        name="AdmitStudent"
+        component={AdmitStudentScreen}
+        options={{ title: 'Admit student', headerShown: false }}
       />
       <Stack.Screen
         name="AdminTeachers"

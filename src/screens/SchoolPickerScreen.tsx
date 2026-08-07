@@ -318,7 +318,7 @@ export function SchoolPickerScreen() {
   const showPickerLoader =
     !schoolsReady ||
     (showStudentMode && !!deskToken && !deskKidsFetched) ||
-    (pickerMode === 'role' && schoolRoleOptions.length <= 1) ||
+    (pickerMode === 'role' && schoolRoleOptions.length <= 1 && schools.length <= 1) ||
     (showStudentMode && !addOpen && displayStudents.length === 1);
 
   useEffect(() => {

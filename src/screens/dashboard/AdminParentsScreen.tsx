@@ -117,11 +117,13 @@ export function AdminParentsScreen({ navigation }: Props) {
           <ModuleEmpty title="No parents found" body="Try a different search or pull to refresh." />
         ) : (
           <>
-            <Text style={styles.count}>
-              Showing {parents.length}
-              {total > parents.length ? ` of ${total}` : ''}
-            </Text>
-            {parents.map((row) => (
+            <View style={styles.tableHead}>
+              <Text style={[styles.th, styles.colNum]}>#</Text>
+              <Text style={[styles.th, styles.colCode]}>Code</Text>
+              <Text style={[styles.th, styles.colName]}>Full name</Text>
+              <Text style={[styles.th, styles.colMeta]}>Phone</Text>
+            </View>
+            {parents.map((row, idx) => (
               <Pressable
                 key={row.id}
                 onPress={() => {
@@ -132,28 +134,18 @@ export function AdminParentsScreen({ navigation }: Props) {
                     description: 'Parent detail, linking, and join requests on Desk.',
                   });
                 }}>
-                <ModuleGlassCard>
-                <Text style={styles.name}>{parentName(row)}</Text>
-                <Text style={styles.meta} numberOfLines={2}>
-                  {[row.email, row.phone_number, row.relationship]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </Text>
-                {Array.isArray(row.students) && row.students.length > 0 ? (
-                  <Text style={styles.linked} numberOfLines={2}>
-                    Linked:{' '}
-                    {row.students
-                      .map((s) => s.full_name || s.admission_number || s.student_id)
-                      .filter(Boolean)
-                      .join(', ')}
+                <ModuleGlassCard style={styles.tableRow}>
+                  <Text style={[styles.td, styles.colNum]}>{idx + 1}</Text>
+                  <Text style={[styles.td, styles.colCode]} numberOfLines={1}>
+                    {row.phone_number || '—'}
                   </Text>
-                ) : (
-                  <Text style={styles.linkedMuted}>No students linked</Text>
-                )}
-                {isDeskWebModuleAvailable() ? (
-                  <Text style={styles.openDesk}>Tap for Desk detail →</Text>
-                ) : null}
-              </ModuleGlassCard>
+                  <Text style={[styles.td, styles.colName]} numberOfLines={1}>
+                    {parentName(row)}
+                  </Text>
+                  <Text style={[styles.td, styles.colMeta]} numberOfLines={1}>
+                    {row.relationship || row.email || '—'}
+                  </Text>
+                </ModuleGlassCard>
               </Pressable>
             ))}
           </>

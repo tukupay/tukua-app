@@ -139,27 +139,28 @@ export function AdminTeachersScreen({ navigation }: Props) {
             body={debounced ? 'Try a different search term.' : 'No teacher records for this school yet.'}
           />
         ) : (
-          teachers.map((t) => (
-            <ModuleGlassCard key={t.id}>
-              <Text style={styles.title}>{teacherName(t)}</Text>
-              <Text style={styles.meta}>
-                {[t.employee_number, t.status, t.user_is_active === 0 ? 'inactive' : null]
-                  .filter(Boolean)
-                  .join(' · ')}
-              </Text>
-              {t.email ? (
-                <Pressable
-                  style={styles.emailRow}
-                  onPress={() => void Linking.openURL(`mailto:${t.email}`)}
-                  hitSlop={6}>
-                  <Ionicons name="mail" size={14} color={Colors.primary} />
-                  <Text style={styles.email} numberOfLines={1}>
-                    {t.email}
-                  </Text>
-                </Pressable>
-              ) : null}
-            </ModuleGlassCard>
-          ))
+          <>
+            <View style={styles.tableHead}>
+              <Text style={[styles.th, styles.colNum]}>#</Text>
+              <Text style={[styles.th, styles.colCode]}>Code</Text>
+              <Text style={[styles.th, styles.colName]}>Full name</Text>
+              <Text style={[styles.th, styles.colMeta]}>Status</Text>
+            </View>
+            {teachers.map((t, idx) => (
+              <ModuleGlassCard key={t.id} style={styles.tableRow}>
+                <Text style={[styles.td, styles.colNum]}>{idx + 1}</Text>
+                <Text style={[styles.td, styles.colCode]} numberOfLines={1}>
+                  {t.employee_number || '—'}
+                </Text>
+                <Text style={[styles.td, styles.colName]} numberOfLines={1}>
+                  {teacherName(t)}
+                </Text>
+                <Text style={[styles.td, styles.colMeta]} numberOfLines={1}>
+                  {t.status || (t.user_is_active === 0 ? 'inactive' : 'active')}
+                </Text>
+              </ModuleGlassCard>
+            ))}
+          </>
         )}
       </ScrollView>
     </View>

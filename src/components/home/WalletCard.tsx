@@ -35,7 +35,7 @@ function formatThousands(amount: number) {
 export function WalletCard({
   wallet,
   index,
-  phoneNumber = '254701234567',
+  phoneNumber = '',
   hideBalance,
   onToggleBalance,
 }: Props) {
@@ -59,7 +59,9 @@ export function WalletCard({
           <View style={styles.meta}>
             <Text style={styles.walletName} numberOfLines={1}>{wallet.name}</Text>
             <View style={styles.accountRow}>
-              <Text style={styles.accountText}>Acc: {phoneNumber.slice(0, 12)}</Text>
+              <Text style={styles.accountText}>
+                {phoneNumber ? `Acc: ${phoneNumber.slice(0, 12)}` : 'Acc: —'}
+              </Text>
               <Text style={styles.walletIndex}>{walletSuffix}</Text>
               <TouchableOpacity
                 onPress={() => copy(`${phoneNumber} ${walletSuffix}`, 'Copied')}

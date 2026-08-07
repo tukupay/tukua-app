@@ -31,7 +31,7 @@ export type DashboardStackParamList = {
   Discipline: undefined;
   Events: undefined;
   Meetings: undefined;
-  MeetingRoom: { title: string; roomUrl: string };
+  MeetingRoom: { title: string; roomUrl: string; meetingId?: string; participantId?: string };
   Assessments: undefined;
   Teachers: undefined;
   Library: undefined;
@@ -59,6 +59,7 @@ export type DashboardStackParamList = {
     apiHint?: string;
   };
   EnterMarks: undefined;
+  ScanMarksheet: undefined;
   TeacherMarksheet: { examId: string; title: string; classId?: string };
   EnterMarksEntry: { examId: string; title: string; classId?: string };
   TeacherClasses: undefined;
@@ -69,6 +70,7 @@ export type DashboardStackParamList = {
   StudentAttendance: undefined;
   StudentPocketMoney: undefined;
   Approvals: undefined;
+  AdmitStudent: undefined;
   AdminStudents: undefined;
   AdminTeachers: undefined;
   AdminParents: undefined;

@@ -107,6 +107,8 @@ export function MeetingsScreen({ navigation }: Props) {
         navigation.navigate('MeetingRoom', {
           title: m.title || 'Tukua Meet',
           roomUrl,
+          meetingId: m.id,
+          participantId: entered?.participant_session_id,
         });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -152,6 +154,7 @@ export function MeetingsScreen({ navigation }: Props) {
         navigation.navigate('MeetingRoom', {
           title: m.title || 'Tukua Meet',
           roomUrl,
+          meetingId: m.id,
         });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);

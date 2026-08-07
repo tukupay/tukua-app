@@ -298,6 +298,7 @@ export function DashboardHomeScreen() {
     schools,
     requestSchoolChange,
     selectedRole,
+    schoolRoleOptions,
   } = useDeskAuth();
   const { guardDashboardAction } = useTokenGate();
   const heroGreen = palette.primary;
@@ -604,6 +605,14 @@ export function DashboardHomeScreen() {
           }
           return;
         }
+        if (action.deskPath && isDeskWebModuleAvailable()) {
+          navigation.navigate('DeskModule', {
+            title: action.title,
+            deskPath: action.deskPath,
+            description: action.description,
+          });
+          return;
+        }
         if (action.tukuaPath) {
           if (action.tukuaTab === 'Courses' || action.tukuaTab === 'Profile') {
             jumpToTab(action.tukuaTab);
@@ -664,7 +673,11 @@ export function DashboardHomeScreen() {
   }, []);
 
   const tokensLabel = formatTokensShort(tokens ?? 0);
-  const showSwitch = linkedStudents.length > 1 || (linkedStudents.length === 0 && schools.length > 1);
+  const showSwitch =
+    linkedStudents.length > 1 ||
+    schools.length > 1 ||
+    schoolRoleOptions.length > 1 ||
+    (linkedStudents.length === 0 && schools.length >= 1);
 
   /** Parent dashboard: selected student is the hero identity. */
   const headerName = selectedStudent?.name || selectedSchool?.name || parentFirstName;

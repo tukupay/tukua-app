@@ -100,8 +100,24 @@ export async function memberEnterMeeting(
   meetingId: string,
   body?: { display_name?: string; full_name?: string; phone?: string },
 ) {
-  return deskFetch<SchoolMeeting & { room_url?: string; room_path?: string }>(
-    `/meetings/${encodeURIComponent(meetingId)}/member-enter`,
-    { method: 'POST', body: body || {} },
-  );
+  return deskFetch<
+    SchoolMeeting & { room_url?: string; room_path?: string; participant_session_id?: string }
+  >(`/meetings/${encodeURIComponent(meetingId)}/member-enter`, {
+    method: 'POST',
+    body: body || {},
+  });
+}
+
+export async function leaveMeeting(meetingId: string, participantId?: string) {
+  return deskFetch(`/meetings/${encodeURIComponent(meetingId)}/leave`, {
+    method: 'POST',
+    body: participantId ? { participant_id: participantId } : {},
+  });
+}
+
+export async function heartbeatMeeting(meetingId: string, participantId?: string) {
+  return deskFetch(`/meetings/${encodeURIComponent(meetingId)}/heartbeat`, {
+    method: 'POST',
+    body: participantId ? { participant_id: participantId } : {},
+  });
 }

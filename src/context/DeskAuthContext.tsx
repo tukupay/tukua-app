@@ -753,7 +753,7 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
   const requestSchoolChange = useCallback(async () => {
     if (!authUserId) return;
     const canSwitch =
-      schools.length > 1 ||
+      schools.length >= 1 ||
       linkedStudents.length > 1 ||
       schoolRoleOptions.length > 1 ||
       uniqueSchoolRoles(selectedSchool?.roles).length > 1;

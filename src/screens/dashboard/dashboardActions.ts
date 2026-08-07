@@ -46,6 +46,7 @@ export type DashboardAction = {
     | 'GateCheckIn'
     | 'JoinSchool'
     | 'EnterMarks'
+    | 'ScanMarksheet'
     | 'TeacherMarksheet'
     | 'TeacherClasses'
     | 'TeacherReports'
@@ -61,6 +62,7 @@ export type DashboardAction = {
     | 'StudentAttendance'
     | 'StudentPocketMoney'
     | 'Approvals'
+    | 'AdmitStudent'
     | 'AdminStudents'
     | 'AdminTeachers'
     | 'AdminParents'
@@ -149,7 +151,7 @@ export const PARENT_HERO: HeroStat[] = [
 ];
 
 export const PARENT_DASHBOARD_ACTIONS: DashboardAction[] = [
-  { id: 'tukua-pay', title: 'Tukua Pay', description: 'Wallets · deposit · send', icon: 'smartphone', nativeScreen: 'TukuaPayHome', accent: '#0A3D2E' },
+  { id: 'tukua-pay', title: 'Tukua Pay', description: 'Wallets · deposit · send', icon: 'smartphone', nativeScreen: 'TukuaPayHome', tokenGated: false, accent: '#0A3D2E' },
   { id: 'school-fees', title: 'School Fees', description: 'Pay · invoices · bank slips', icon: 'credit-card', nativeScreen: 'Accounts', accent: '#059669' },
   { id: 'assessments', title: 'Exams & assessments', description: 'Exams, report cards & slips', icon: 'clipboard', nativeScreen: 'Assessments', accent: '#0EA5E9' },
   { id: 'events', title: 'Events', description: 'RSVP, pay & scan check-in', icon: 'calendar', nativeScreen: 'Events', accent: '#F59E0B' },
@@ -355,10 +357,10 @@ export const TEACHER_HERO: HeroStat[] = [
 
 
 export const TEACHER_DASHBOARD_ACTIONS: DashboardAction[] = [
-  { id: 'tukua-pay', title: 'Tukua Pay', description: 'Wallets · deposit · send', icon: 'smartphone', nativeScreen: 'TukuaPayHome', accent: '#0A3D2E' },
+  { id: 'tukua-pay', title: 'Tukua Pay', description: 'Wallets · deposit · send', icon: 'smartphone', nativeScreen: 'TukuaPayHome', tokenGated: false, accent: '#0A3D2E' },
   { id: 'attendance-scanner', title: 'My gate check-in', description: 'Scan gate QR for yourself', icon: 'camera', nativeScreen: 'GateCheckIn', accent: '#0891B2' },
   { id: 'enter-marks', title: 'Enter Marks', description: 'Grade assessments', icon: 'edit-3', nativeScreen: 'EnterMarks', accent: '#1F8B4C' },
-  { id: 'scan-marks', title: 'Scan marksheet', description: 'Photo → AI extracts & batch-saves marks', icon: 'camera', tukuaPath: '/chat?tool=marks_scan', accent: '#059669' },
+  { id: 'scan-marks', title: 'Scan marksheet', description: 'Photo → AI extracts & batch-saves marks', icon: 'camera', nativeScreen: 'ScanMarksheet', accent: '#059669' },
   { id: 'class-lists', title: 'Class Lists', description: 'View & enroll (class teacher)', icon: 'users', nativeScreen: 'TeacherClasses', accent: '#2563EB', requireClassTeacher: true },
   { id: 'my-timetable', title: 'My Timetable', description: 'Teaching periods', icon: 'calendar', nativeScreen: 'TeacherTimetable', accent: '#D97706' },
   { id: 'events', title: 'Events', description: 'View & save to calendar', icon: 'calendar', nativeScreen: 'Events', accent: '#EA580C' },
@@ -454,9 +456,10 @@ export const SECURITY_DASHBOARD_ACTIONS: DashboardAction[] = [
 
 
 export const SCHOOL_ADMIN_DASHBOARD_ACTIONS: DashboardAction[] = [
+  { id: 'tukua-pay', title: 'Tukua Pay', description: 'Wallets · deposit · send', icon: 'smartphone', nativeScreen: 'TukuaPayHome', accent: '#0A3D2E', tokenGated: false },
   { id: 'attendance-scanner', title: 'My gate check-in', description: 'Scan gate QR for yourself (staff)', icon: 'camera', nativeScreen: 'GateCheckIn', accent: '#0891B2' },
   { id: 'approvals', title: 'Approvals', description: 'Join requests pending', icon: 'check-circle', nativeScreen: 'Approvals', accent: '#2563EB' },
-  { id: 'admit', title: 'Admit student', description: 'Quick admit a student', icon: 'user-plus', deskPath: '/admin/students?admit=1', accent: '#1F8B4C' },
+  { id: 'admit', title: 'Admit student', description: 'Quick admit a student', icon: 'user-plus', nativeScreen: 'AdmitStudent', accent: '#1F8B4C' },
   { id: 'meetings', title: 'Meetings', description: 'Schedule & host video meetings', icon: 'video', nativeScreen: 'Meetings', accent: '#0284C7' },
   { id: 'face-enroll', title: 'Face enroll', description: 'Students · teachers · staff', icon: 'user', nativeScreen: 'SecurityFaceEnroll', accent: '#0E7490' },
   { id: 'admin', title: 'Admin', description: 'Dashboard & monitoring', icon: 'settings', nativeScreen: 'SchoolOverview', accent: '#0A3D2E' },
@@ -484,7 +487,7 @@ export const SUPER_ADMIN_DASHBOARD_ACTIONS: DashboardAction[] = [
   { id: 'analytics', title: 'Analytics', description: 'Platform metrics', icon: 'trending-up', tukuaPath: '/superadmin/analytics', accent: '#2563EB' },
   { id: 'registration', title: 'Registration', description: 'Signup monitor', icon: 'shield', tukuaPath: '/superadmin/registration-monitor', accent: '#DC2626' },
   // People
-  { id: 'users', title: 'Users', description: 'Accounts & roles', icon: 'users', tukuaPath: '/superadmin/users', accent: '#D97706' },
+  { id: 'users', title: 'Users', description: 'Accounts & roles', icon: 'users', tukuaPath: '/superadmin/users', deskPath: '/superadmin/schools/users', accent: '#D97706' },
   { id: 'course-staff', title: 'Course mentors', description: 'Instructors & guests', icon: 'user', tukuaPath: '/superadmin/course-staff', accent: '#7C3AED' },
   { id: 'feedback', title: 'Feedback', description: 'User feedback', icon: 'message-circle', tukuaPath: '/superadmin/feedback', accent: '#0284C7' },
   // Money

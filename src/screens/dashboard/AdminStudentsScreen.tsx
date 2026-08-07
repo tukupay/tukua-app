@@ -94,23 +94,12 @@ export function AdminStudentsScreen({ navigation }: Props) {
           description={total ? `${total} enrolled · search by name or admission no.` : 'Student records'}
         />
 
-        {isDeskWebModuleAvailable() ? (
-          <Pressable
-            style={styles.admitBtn}
-            onPress={() =>
-              navigation.navigate('DeskModule', {
-                title: 'Admit student',
-                deskPath: '/admin/students?admit=1',
-                description: 'Full create/edit wizard on Desk Admin → Students.',
-              })
-            }>
-            <Text style={styles.admitBtnText}>+ Admit / edit on Desk</Text>
-          </Pressable>
-        ) : (
-          <Text style={styles.deskHint}>
-            Create and edit students on Desk Admin (set EXPO_PUBLIC_DESK_WEB_URL to :3250).
-          </Text>
-        )}
+        <Pressable
+          style={styles.admitBtn}
+          onPress={() => navigation.navigate('AdmitStudent')}
+        >
+          <Text style={styles.admitBtnText}>+ Admit student</Text>
+        </Pressable>
 
         <TextInput
           style={styles.search}
@@ -133,30 +122,39 @@ export function AdminStudentsScreen({ navigation }: Props) {
             body={debounced ? 'Try a different search term.' : 'No student records for this school yet.'}
           />
         ) : (
-          students.map((s) => (
-            <Pressable
-              key={s.id}
-              onPress={() => {
-                if (!isDeskWebModuleAvailable() || !s.id) return;
-                navigation.navigate('DeskModule', {
-                  title: studentName(s),
-                  deskPath: `/admin/students/${s.id}`,
-                  description: 'Student detail & edit on Desk.',
-                });
-              }}>
-              <ModuleGlassCard>
-                <Text style={styles.title}>{studentName(s)}</Text>
-                <Text style={styles.meta}>
-                  {[s.student_number, s.class_name, s.gender, s.status || (s.is_active === 0 ? 'inactive' : null)]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </Text>
-                {isDeskWebModuleAvailable() ? (
-                  <Text style={styles.openDesk}>Tap for Desk detail →</Text>
-                ) : null}
-              </ModuleGlassCard>
-            </Pressable>
-          ))
+          <>
+            <View style={styles.tableHead}>
+              <Text style={[styles.th, styles.colNum]}>#</Text>
+              <Text style={[styles.th, styles.colCode]}>Code</Text>
+              <Text style={[styles.th, styles.colName]}>Full name</Text>
+              <Text style={[styles.th, styles.colMeta]}>Class</Text>
+            </View>
+            {students.map((s, idx) => (
+              <Pressable
+                key={s.id}
+                onPress={() => {
+                  if (!isDeskWebModuleAvailable() || !s.id) return;
+                  navigation.navigate('DeskModule', {
+                    title: studentName(s),
+                    deskPath: `/admin/students/${s.id}`,
+                    description: 'Student detail & edit on Desk.',
+                  });
+                }}>
+                <ModuleGlassCard style={styles.tableRow}>
+                  <Text style={[styles.td, styles.colNum]}>{idx + 1}</Text>
+                  <Text style={[styles.td, styles.colCode]} numberOfLines={1}>
+                    {s.student_number || '—'}
+                  </Text>
+                  <Text style={[styles.td, styles.colName]} numberOfLines={1}>
+                    {studentName(s)}
+                  </Text>
+                  <Text style={[styles.td, styles.colMeta]} numberOfLines={1}>
+                    {s.class_name || s.status || '—'}
+                  </Text>
+                </ModuleGlassCard>
+              </Pressable>
+            ))}
+          </>
         )}
       </ScrollView>
     </View>
@@ -180,6 +178,14 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 15, fontWeight: '700', color: Colors.brandGreenDark },
   meta: { marginTop: 4, fontSize: 12, color: Colors.mutedForeground },
+  tableHead: { flexDirection: 'row', gap: 6, paddingHorizontal: 4, marginBottom: 6 },
+  tableRow: { flexDirection: 'row', gap: 6, alignItems: 'center', marginBottom: 8 },
+  th: { fontSize: 10, fontWeight: '800', color: Colors.mutedForeground, textTransform: 'uppercase' },
+  td: { fontSize: 13, color: Colors.brandGreenDark },
+  colNum: { width: 24 },
+  colCode: { width: 64 },
+  colName: { flex: 1, fontWeight: '700' },
+  colMeta: { width: 72, fontSize: 12, color: Colors.mutedForeground },
   admitBtn: {
     alignSelf: 'flex-start',
     marginBottom: 12,

@@ -210,6 +210,15 @@ export async function fetchSchoolsRegistry(q?: string, page = 1, limit = 25) {
   };
 }
 
+export async function createAdminStudent(body: {
+  full_name: string;
+  gender?: string;
+  student_number?: string;
+  class_id?: string;
+}) {
+  return deskFetch<{ student?: AdminStudentRow }>('/students', { method: 'POST', body });
+}
+
 export async function searchSchoolsDirectory(q: string, limit = 25, offset = 0) {
   const params = new URLSearchParams({
     q: q.trim(),

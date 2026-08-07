@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -8,22 +8,50 @@ import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
 import { floatingHeaderInset } from '../../constants/layout';
 import { getWebViewMediaProps, WEBVIEW_MEDIA_INJECT_JS } from '../../lib/webViewMedia';
+import { heartbeatMeeting, leaveMeeting } from '../../lib/meetingsApi';
+import { log } from '../../lib/logger';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'MeetingRoom'>;
 
 /**
- * In-app Tukua Meet room (parents / signed-in members).
- * Guests still use the external short link browser page.
+ * In-app Tukua Meet room — member-enter / host-enter JWT room URLs only.
  */
 export function MeetingRoomScreen({ route, navigation }: Props) {
-  const { title, roomUrl } = route.params;
+  const { title, roomUrl, meetingId, participantId } = route.params;
   const insets = useSafeAreaInsets();
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = React.useState(true);
+  const leftRef = useRef(false);
+
+  useEffect(() => {
+    if (!meetingId) return;
+    const id = setInterval(() => {
+      void heartbeatMeeting(meetingId, participantId).catch((e) =>
+        log.warn('MeetingRoom', 'heartbeat', String(e)),
+      );
+    }, 60_000);
+    return () => {
+      clearInterval(id);
+      if (leftRef.current || !meetingId) return;
+      leftRef.current = true;
+      void leaveMeeting(meetingId, participantId).catch((e) =>
+        log.warn('MeetingRoom', 'leave', String(e)),
+      );
+    };
+  }, [meetingId, participantId]);
+
+  const onLeave = () => {
+    if (meetingId && !leftRef.current) {
+      leftRef.current = true;
+      void leaveMeeting(meetingId, participantId).finally(() => navigation.goBack());
+      return;
+    }
+    navigation.goBack();
+  };
 
   return (
     <View style={styles.root}>
       <View style={[styles.top, { paddingTop: Math.max(insets.top, 8) }]}>
-        <Pressable style={styles.back} onPress={() => navigation.goBack()} hitSlop={10}>
+        <Pressable style={styles.back} onPress={onLeave} hitSlop={10}>
           <Ionicons name="chevron-back" size={22} color={Colors.foreground} />
           <Text style={styles.backText}>Leave</Text>
         </Pressable>
