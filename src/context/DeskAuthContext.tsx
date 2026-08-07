@@ -150,6 +150,13 @@ function prefersSchoolPicker(schools: UserSchool[]): boolean {
   );
 }
 
+/** After password login: force the picker when multi-school or multi-role (ignore saved school). */
+function shouldForcePickAfterLogin(schools: UserSchool[]): boolean {
+  if (schools.length > 1) return true;
+  if (schools.length === 1 && uniqueSchoolRoles(schools[0].roles).length > 1) return true;
+  return prefersSchoolPicker(schools);
+}
+
 function deskUserFromSession(
   session: Session,
   roles: string[],
@@ -1010,7 +1017,22 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
             setDeskToken(token);
             if (nestUser) setDeskUser(nestUser);
           }
-          await syncSupabaseAsDesk(session, { quiet: true });
+          // Fresh password/social login must show Select school again for multi-school / multi-role.
+          // Do not restore SecureStore school here — that was skipping the picker after login.
+          const forceSchoolPick = event === 'SIGNED_IN';
+          await syncSupabaseAsDesk(session, {
+            quiet: event !== 'SIGNED_IN',
+            forceSchoolPick,
+          });
+          // If SIGNED_IN but forcePick was a no-op (single school), resolveContext already continues.
+          // When multi-school, forcePick clears stored; if Nest token race applied schools first
+          // without force, re-apply once with force after login.
+          if (forceSchoolPick && session.user?.id) {
+            const list = await fetchUserSchools(session.user.id);
+            if (shouldForcePickAfterLogin(list)) {
+              await applySchoolsForUser(session.user.id, { quiet: false, forcePick: true });
+            }
+          }
           return;
         }
         await syncSupabaseAsDesk(session);
@@ -1018,7 +1040,7 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
       void run();
     });
     return () => sub.subscription.unsubscribe();
-  }, [syncSupabaseAsDesk]);
+  }, [syncSupabaseAsDesk, applySchoolsForUser]);
 
   useEffect(() => {
     return onDeskSessionCleared(() => {
@@ -1039,6 +1061,17 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
           email: result.user.email,
           schoolId: result.user.school_id,
         });
+        // Nest-only / PEA may not emit GoTrue SIGNED_IN — still force Select school when multi.
+        const uid = String(result.user.id || result.user.user_id || '').trim();
+        if (uid) {
+          setAuthUserId(uid);
+          authUserIdRef.current = uid;
+          const list = await fetchUserSchools(uid);
+          await applySchoolsForUser(uid, {
+            quiet: false,
+            forcePick: shouldForcePickAfterLogin(list),
+          });
+        }
         return result;
       } catch (e) {
         preferNestDeskTokenRef.current = false;
@@ -1051,7 +1084,7 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
         log.warn('DeskAuth', 'Nest password login failed; using supabase token', String(e));
         const { data } = await supabase.auth.getSession();
         if (data.session?.access_token) {
-          await syncSupabaseAsDesk(data.session);
+          await syncSupabaseAsDesk(data.session, { forceSchoolPick: true });
           return {
             token: data.session.access_token,
             user: deskUserFromSession(data.session, orgRoles, orgSchoolId),
@@ -1060,7 +1093,7 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
         throw e;
       }
     },
-    [orgRoles, orgSchoolId, syncSupabaseAsDesk],
+    [applySchoolsForUser, orgRoles, orgSchoolId, syncSupabaseAsDesk],
   );
 
   const refreshDeskUser = useCallback(async () => {
