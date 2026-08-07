@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDeskAuth } from '../../context/DeskAuthContext';
 import { useAuth } from '../../context/AuthContext';
-import { getDeskWebBaseUrl } from '../../lib/localHost';
+import { getDeskWebBaseUrlOrNull, isDeskErpPath, isDeskWebLikelyWrongHost } from '../../lib/localHost';
 import { Colors } from '../../theme/yana';
 import { floatingHeaderInset } from '../../constants/layout';
 import { DashboardStackParamList } from '../../navigation/types';
@@ -45,9 +45,12 @@ export function DeskModuleWebScreen({ route, navigation }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const bearer = deskToken || session?.access_token || null;
-  const base = getDeskWebBaseUrl();
+  const deskWebBase = getDeskWebBaseUrlOrNull();
+  const base = deskWebBase ?? '';
   const path = deskPath.startsWith('/') ? deskPath : `/${deskPath}`;
-  const uri = `${base.replace(/\/$/, '')}${path}`;
+  const uri = base ? `${base.replace(/\/$/, '')}${path}` : path;
+  const wrongHost =
+    isDeskErpPath(path) && (!deskWebBase || isDeskWebLikelyWrongHost(base));
 
   const userJson = useMemo(() => {
     const user = {
@@ -86,7 +89,9 @@ export function DeskModuleWebScreen({ route, navigation }: Props) {
   const onError = useCallback(
     (e: { nativeEvent: { description?: string } }) => {
       log.warn('DeskModule', 'webview error', e.nativeEvent.description);
-      setError(`Could not load ${uri}. API: ${deskApiUrl}`);
+      setError(
+        `Could not load Desk UI at ${uri}. Start Desk Vite (npm run dev:desk → :3250) or set EXPO_PUBLIC_DESK_WEB_URL. API: ${deskApiUrl}`,
+      );
     },
     [deskApiUrl, uri],
   );
@@ -100,6 +105,28 @@ export function DeskModuleWebScreen({ route, navigation }: Props) {
         </Pressable>
         <ModuleScreenHeader title={title} description={description || 'Open this Desk module.'} />
         <Text style={styles.msg}>Sign in to open this module.</Text>
+      </View>
+    );
+  }
+
+  if (wrongHost) {
+    return (
+      <View style={[styles.centered, { paddingTop: floatingHeaderInset(insets.top) }]}>
+        <Pressable style={styles.back} onPress={() => navigation.goBack()} hitSlop={10}>
+          <Ionicons name="chevron-back" size={22} color={palette.primary} />
+          <Text style={[styles.backText, { color: palette.primary }]}>Dashboard</Text>
+        </Pressable>
+        <ModuleScreenHeader
+          title={title}
+          description="This module needs the Desk app UI, not tukua.ai."
+        />
+        <Text style={styles.msg}>
+          Mobile was pointing Desk pages at tukua.ai (empty). Run Desk on this PC
+          (`npm run dev:desk` → port 3250) on the same Wi‑Fi, or set
+          EXPO_PUBLIC_DESK_WEB_URL to your Desk host. Native screens are being added
+          so this WebView is not required.
+        </Text>
+        <Text style={[styles.msg, { marginTop: 12, opacity: 0.7 }]}>Tried: {uri}</Text>
       </View>
     );
   }

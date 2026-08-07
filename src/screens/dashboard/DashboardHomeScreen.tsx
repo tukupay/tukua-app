@@ -22,6 +22,7 @@ import { DashboardStackParamList } from '../../navigation/types';
 import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
 import { ProfileAvatar } from '../../components/navigation/ProfileAvatar';
 import { deskFetch } from '../../lib/deskApi';
+import { isDeskErpPath, isDeskWebModuleAvailable } from '../../lib/localHost';
 import {
   fetchParentAccountsStatement,
   fetchParentPocketMoney,
@@ -118,6 +119,10 @@ const TILE_ICON: Partial<Record<FeatherIconName, keyof typeof Ionicons.glyphMap>
   video: 'videocam',
   heart: 'heart',
   'log-in': 'log-in',
+  'file-plus': 'document-add',
+  'user-plus': 'person-add',
+  'check-circle': 'checkmark-circle',
+  'user-check': 'person-circle',
 };
 
 /** Outline set for hero header (sits on green card). */
@@ -406,7 +411,7 @@ export function DashboardHomeScreen() {
     (action: DashboardAction) => {
       guardDashboardAction(action, () => {
         if (action.nativeScreen) {
-          navigation.navigate(action.nativeScreen);
+          navigation.navigate(action.nativeScreen as keyof DashboardStackParamList);
           return;
         }
         if (action.tukuaPath) {
@@ -419,6 +424,16 @@ export function DashboardHomeScreen() {
           return;
         }
         if (action.deskPath) {
+          const path = action.deskPath.startsWith('/') ? action.deskPath : `/${action.deskPath}`;
+          if (isDeskErpPath(path) && !isDeskWebModuleAvailable()) {
+            navigation.navigate('FeaturePlaceholder', {
+              title: action.title,
+              description:
+                'Desk WebView is not configured (tukua.ai has no /teacher or /admin routes). Use native tiles or set EXPO_PUBLIC_DESK_WEB_URL to Desk Vite :3250.',
+              apiHint: action.deskPath,
+            });
+            return;
+          }
           navigation.navigate('DeskModule', {
             title: action.title,
             deskPath: action.deskPath,

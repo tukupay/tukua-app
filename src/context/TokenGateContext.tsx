@@ -19,7 +19,7 @@ type TokenGateContextType = {
   balanceRevision: number;
   loading: boolean;
   isZeroBalance: boolean;
-  refreshBalance: () => Promise<number>;
+  refreshBalance: () => Promise<number | null>;
   showZeroTokenModal: () => void;
   /** Returns true when navigation may proceed; otherwise shows the modal. */
   guardNavigation: (fn: () => void) => boolean;
@@ -32,14 +32,14 @@ const TokenGateContext = createContext<TokenGateContextType>({
   balanceRevision: 0,
   loading: false,
   isZeroBalance: false,
-  refreshBalance: async () => 0,
+  refreshBalance: async () => null,
   showZeroTokenModal: () => {},
   guardNavigation: () => true,
   guardTab: () => true,
   guardDashboardAction: () => true,
 });
 
-const ALLOWED_TABS = new Set<keyof MainTabParamList>(['Profile']);
+const ALLOWED_TABS = new Set<keyof MainTabParamList>(['Profile', 'Dashboard']);
 
 export function TokenGateProvider({ children }: { children: React.ReactNode }) {
   const { session } = useAuth();
@@ -53,7 +53,7 @@ export function TokenGateProvider({ children }: { children: React.ReactNode }) {
   const refreshBalance = useCallback(async () => {
     if (!session) {
       setBalance(null);
-      return 0;
+      return null;
     }
     setLoading(true);
     try {
@@ -62,9 +62,10 @@ export function TokenGateProvider({ children }: { children: React.ReactNode }) {
       setBalanceRevision((n) => n + 1);
       return next;
     } catch {
-      setBalance(0);
+      // Unknown balance — do not treat as zero (blocks every tab and feels like “empty”).
+      setBalance(null);
       setBalanceRevision((n) => n + 1);
-      return 0;
+      return null;
     } finally {
       setLoading(false);
     }

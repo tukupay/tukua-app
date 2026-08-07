@@ -48,6 +48,7 @@ type DisplayStudent = LinkedStudent & {
 type CardDensity = 'comfy' | 'normal' | 'tight';
 
 const HERO_GREEN = '#15411D';
+const PICKER_LOAD_TIMEOUT_MS = 8000;
 
 function roleIcon(role: string): keyof typeof Ionicons.glyphMap {
   const r = role.toLowerCase();
@@ -147,7 +148,7 @@ function mergePickerStudents(
 }
 
 /** Full-screen loader — never flash Chat or a half-ready picker underneath. */
-export function ContextPickLoader() {
+export function ContextPickLoader({ message = 'Preparing your school…' }: { message?: string }) {
   const insets = useSafeAreaInsets();
   const tabReserve = TAB_BAR_BODY_HEIGHT + insets.bottom;
   return (
@@ -155,7 +156,35 @@ export function ContextPickLoader() {
       <LiquidGlassBackdrop />
       <View style={styles.loaderWrap}>
         <ActivityIndicator color={HERO_GREEN} size="large" />
-        <Text style={styles.loaderText}>Preparing your school…</Text>
+        <Text style={styles.loaderText}>{message}</Text>
+      </View>
+    </View>
+  );
+}
+
+function PickerLoadError({
+  title,
+  message,
+  onRetry,
+}: {
+  title: string;
+  message: string;
+  onRetry?: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const tabReserve = TAB_BAR_BODY_HEIGHT + insets.bottom;
+  return (
+    <View style={[styles.root, { bottom: tabReserve }]}>
+      <LiquidGlassBackdrop />
+      <View style={[styles.loaderWrap, styles.errorWrap]}>
+        <Ionicons name="cloud-offline-outline" size={36} color={HERO_GREEN} />
+        <Text style={styles.title}>{title}</Text>
+        <Text style={styles.waitHint}>{message}</Text>
+        {onRetry ? (
+          <Pressable style={styles.addStudentBtn} onPress={onRetry} accessibilityRole="button">
+            <Text style={styles.addStudentBtnText}>Try again</Text>
+          </Pressable>
+        ) : null}
       </View>
     </View>
   );
@@ -170,6 +199,7 @@ export function SchoolPickerScreen() {
     selectSchool,
     selectRole,
     backInPicker,
+    refreshSchools,
     schoolsReady,
     selectedStudentId,
     selectedSchoolId,
@@ -197,6 +227,7 @@ export function SchoolPickerScreen() {
   const [searchingSchools, setSearchingSchools] = useState(false);
   const [searchingStudents, setSearchingStudents] = useState(false);
   const [submittingJoin, setSubmittingJoin] = useState(false);
+  const [pickerTimedOut, setPickerTimedOut] = useState(false);
   const schoolSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const studentSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -283,6 +314,21 @@ export function SchoolPickerScreen() {
     () => mergePickerStudents(studentList, deskChildren, schools),
     [studentList, deskChildren, schools],
   );
+
+  const showPickerLoader =
+    !schoolsReady ||
+    (showStudentMode && !!deskToken && !deskKidsFetched) ||
+    (pickerMode === 'role' && schoolRoleOptions.length <= 1) ||
+    (showStudentMode && !addOpen && displayStudents.length === 1);
+
+  useEffect(() => {
+    if (!showPickerLoader) {
+      setPickerTimedOut(false);
+      return;
+    }
+    const timer = setTimeout(() => setPickerTimedOut(true), PICKER_LOAD_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [showPickerLoader]);
 
   const filteredSchools = useMemo(() => {
     const q = pickerFilter.trim().toLowerCase();
@@ -471,19 +517,21 @@ export function SchoolPickerScreen() {
   const avatarSize = density === 'tight' ? 40 : density === 'normal' ? 44 : 48;
   const listGap = density === 'tight' ? 8 : density === 'normal' ? 10 : 12;
 
-  // Loader only — no half-ready / previous UI.
-  if (!schoolsReady || (showStudentMode && deskToken && !deskKidsFetched)) {
+  if (showPickerLoader && !pickerTimedOut) {
     return <ContextPickLoader />;
   }
 
-  if (roleMode && schoolRoleOptions.length <= 1) {
-    return <ContextPickLoader />;
-  }
-
-  // Single student auto-select in flight — keep loader, never flash the list.
-  // Zero students: show empty Select student + Add your student.
-  if (showStudentMode && !addOpen && displayStudents.length === 1) {
-    return <ContextPickLoader />;
+  if (showPickerLoader && pickerTimedOut && !schoolsReady) {
+    return (
+      <PickerLoadError
+        title="Could not load schools"
+        message="Check your connection, then try again. You can still open Profile or Dashboard from the tabs below."
+        onRetry={() => {
+          setPickerTimedOut(false);
+          void refreshSchools({ forcePick: true });
+        }}
+      />
+    );
   }
 
   const headerBack = canGoBack ? (
@@ -949,6 +997,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: Colors.mutedForeground,
+  },
+  errorWrap: {
+    paddingHorizontal: 24,
+    maxWidth: 360,
   },
   page: { flex: 1 },
   listFlex: { flex: 1 },
