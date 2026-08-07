@@ -20,6 +20,7 @@ import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
 import { log } from '../../lib/logger';
 import { fetchAdminTeachers, type AdminTeacherRow } from '../../lib/adminPortalApi';
+import { isDeskWebModuleAvailable } from '../../lib/localHost';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'AdminTeachers'>;
 
@@ -92,8 +93,30 @@ export function AdminTeachersScreen({ navigation }: Props) {
         <ModuleKicker>Admin</ModuleKicker>
         <ModuleScreenHeader
           title="Teachers"
-          description={total ? `${total} staff · search by name or employee no.` : 'Staff & workload'}
+          description={
+            total
+              ? `${total} staff · workload CRUD on Desk Admin → Teachers`
+              : 'Staff & workload — assign subjects on Desk'
+          }
         />
+
+        {isDeskWebModuleAvailable() ? (
+          <Pressable
+            style={styles.deskBtn}
+            onPress={() =>
+              navigation.navigate('DeskModule', {
+                title: 'Teachers & workload',
+                deskPath: '/admin/teachers',
+                description: 'Create teachers and assign class × subject workloads on Desk.',
+              })
+            }>
+            <Text style={styles.deskBtnText}>Open Desk teachers & workload</Text>
+          </Pressable>
+        ) : (
+          <Text style={styles.deskHint}>
+            Workload assign/edit is Desk-only (set EXPO_PUBLIC_DESK_WEB_URL to :3250).
+          </Text>
+        )}
 
         <TextInput
           style={styles.search}
@@ -162,4 +185,14 @@ const styles = StyleSheet.create({
   meta: { marginTop: 4, fontSize: 12, color: Colors.mutedForeground },
   emailRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
   email: { flex: 1, fontSize: 13, fontWeight: '600', color: Colors.primary },
+  deskBtn: {
+    alignSelf: 'flex-start',
+    marginBottom: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: Colors.brandGreenMid,
+  },
+  deskBtnText: { color: Colors.white, fontSize: 13, fontWeight: '700' },
+  deskHint: { fontSize: 12, color: Colors.mutedForeground, marginBottom: 10 },
 });

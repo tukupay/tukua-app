@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -121,7 +122,17 @@ export function AdminParentsScreen({ navigation }: Props) {
               {total > parents.length ? ` of ${total}` : ''}
             </Text>
             {parents.map((row) => (
-              <ModuleGlassCard key={row.id}>
+              <Pressable
+                key={row.id}
+                onPress={() => {
+                  if (!isDeskWebModuleAvailable() || !row.id) return;
+                  navigation.navigate('DeskModule', {
+                    title: parentName(row),
+                    deskPath: `/admin/parents/${row.id}`,
+                    description: 'Parent detail, linking, and join requests on Desk.',
+                  });
+                }}>
+                <ModuleGlassCard>
                 <Text style={styles.name}>{parentName(row)}</Text>
                 <Text style={styles.meta} numberOfLines={2}>
                   {[row.email, row.phone_number, row.relationship]
@@ -139,7 +150,11 @@ export function AdminParentsScreen({ navigation }: Props) {
                 ) : (
                   <Text style={styles.linkedMuted}>No students linked</Text>
                 )}
+                {isDeskWebModuleAvailable() ? (
+                  <Text style={styles.openDesk}>Tap for Desk detail →</Text>
+                ) : null}
               </ModuleGlassCard>
+              </Pressable>
             ))}
           </>
         )}
@@ -168,4 +183,5 @@ const styles = StyleSheet.create({
   meta: { marginTop: 4, fontSize: 12, color: Colors.mutedForeground },
   linked: { marginTop: 6, fontSize: 12, color: Colors.brandGreen },
   linkedMuted: { marginTop: 6, fontSize: 12, color: Colors.mutedForeground, fontStyle: 'italic' },
+  openDesk: { marginTop: 8, fontSize: 11, color: Colors.primary, fontWeight: '600' },
 });

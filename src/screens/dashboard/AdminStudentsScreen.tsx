@@ -18,6 +18,7 @@ import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
 import { log } from '../../lib/logger';
 import { fetchAdminStudents, type AdminStudentRow } from '../../lib/adminPortalApi';
+import { isDeskWebModuleAvailable } from '../../lib/localHost';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'AdminStudents'>;
 
@@ -93,6 +94,24 @@ export function AdminStudentsScreen({ navigation }: Props) {
           description={total ? `${total} enrolled · search by name or admission no.` : 'Student records'}
         />
 
+        {isDeskWebModuleAvailable() ? (
+          <Pressable
+            style={styles.admitBtn}
+            onPress={() =>
+              navigation.navigate('DeskModule', {
+                title: 'Admit student',
+                deskPath: '/admin/students?admit=1',
+                description: 'Full create/edit wizard on Desk Admin → Students.',
+              })
+            }>
+            <Text style={styles.admitBtnText}>+ Admit / edit on Desk</Text>
+          </Pressable>
+        ) : (
+          <Text style={styles.deskHint}>
+            Create and edit students on Desk Admin (set EXPO_PUBLIC_DESK_WEB_URL to :3250).
+          </Text>
+        )}
+
         <TextInput
           style={styles.search}
           value={query}
@@ -115,14 +134,28 @@ export function AdminStudentsScreen({ navigation }: Props) {
           />
         ) : (
           students.map((s) => (
-            <ModuleGlassCard key={s.id}>
-              <Text style={styles.title}>{studentName(s)}</Text>
-              <Text style={styles.meta}>
-                {[s.student_number, s.class_name, s.gender, s.status || (s.is_active === 0 ? 'inactive' : null)]
-                  .filter(Boolean)
-                  .join(' · ')}
-              </Text>
-            </ModuleGlassCard>
+            <Pressable
+              key={s.id}
+              onPress={() => {
+                if (!isDeskWebModuleAvailable() || !s.id) return;
+                navigation.navigate('DeskModule', {
+                  title: studentName(s),
+                  deskPath: `/admin/students/${s.id}`,
+                  description: 'Student detail & edit on Desk.',
+                });
+              }}>
+              <ModuleGlassCard>
+                <Text style={styles.title}>{studentName(s)}</Text>
+                <Text style={styles.meta}>
+                  {[s.student_number, s.class_name, s.gender, s.status || (s.is_active === 0 ? 'inactive' : null)]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </Text>
+                {isDeskWebModuleAvailable() ? (
+                  <Text style={styles.openDesk}>Tap for Desk detail →</Text>
+                ) : null}
+              </ModuleGlassCard>
+            </Pressable>
           ))
         )}
       </ScrollView>
@@ -147,4 +180,15 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 15, fontWeight: '700', color: Colors.brandGreenDark },
   meta: { marginTop: 4, fontSize: 12, color: Colors.mutedForeground },
+  admitBtn: {
+    alignSelf: 'flex-start',
+    marginBottom: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: Colors.brandGreenMid,
+  },
+  admitBtnText: { color: Colors.white, fontSize: 13, fontWeight: '700' },
+  deskHint: { fontSize: 12, color: Colors.mutedForeground, marginBottom: 10 },
+  openDesk: { marginTop: 6, fontSize: 11, color: Colors.primary, fontWeight: '600' },
 });

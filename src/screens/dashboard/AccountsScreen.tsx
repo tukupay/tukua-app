@@ -39,6 +39,7 @@ import {
 import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
 import { log } from '../../lib/logger';
+import { fetchStudentFees, type StudentFeeBalance } from '../../lib/studentPortalApi';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'Accounts'>;
 
@@ -111,11 +112,21 @@ export function AccountsScreen({ navigation }: Props) {
   const [payForm, setPayForm] = useState<'fees' | 'pocket' | 'tip' | null>(null);
   const [payAmountSeed, setPayAmountSeed] = useState('');
   const [payPhone, setPayPhone] = useState(() => defaultMpesaPhone(profile?.phone));
+  const [studentFees, setStudentFees] = useState<StudentFeeBalance | null>(null);
+  const [studentFeesLoading, setStudentFeesLoading] = useState(false);
 
   useEffect(() => {
     const next = defaultMpesaPhone(profile?.phone);
     if (next) setPayPhone((prev) => (prev.trim() ? prev : next));
   }, [profile?.phone]);
+
+  useEffect(() => {
+    if (persona !== 'student') return;
+    setStudentFeesLoading(true);
+    void fetchStudentFees()
+      .then(setStudentFees)
+      .finally(() => setStudentFeesLoading(false));
+  }, [persona]);
 
   const load = useCallback(
     async (soft = false) => {
@@ -395,6 +406,7 @@ export function AccountsScreen({ navigation }: Props) {
   }, [receipts, selectedStudent?.name, selectedStudentId, showDialog]);
 
   if (persona === 'student') {
+    const balance = Number(studentFees?.balance ?? 0);
     return (
       <View style={styles.root}>
         <DashboardBackground patternOnly liquid />
@@ -411,12 +423,42 @@ export function AccountsScreen({ navigation }: Props) {
           <ModuleKicker>School fees</ModuleKicker>
           <ModuleScreenHeader
             title="Your fees"
-            description="Students view balances here — payments are made by a parent or the school office."
+            description="Read-only balance from the school ledger. M-Pesa pay stays on the parent app or office."
           />
-          <ModuleEmpty
-            title="Ask a parent to pay"
-            body="Fee balances and M-Pesa pay are on the parent app. If you need help, talk to the school bursar or your guardian."
-          />
+          {studentFeesLoading ? (
+            <ActivityIndicator color={Colors.brandGreenMid} style={{ marginTop: 24 }} />
+          ) : studentFees ? (
+            <GlassPanel tone="frost" radius={16} style={styles.tableCard}>
+              <View style={styles.tableInner}>
+                <Text style={styles.section}>Outstanding balance</Text>
+                <Text style={[styles.heroStatValue, { color: Colors.brandGreenDark, fontSize: 28, marginTop: 4 }]}>
+                  {kes(balance)}
+                </Text>
+                <Text style={styles.sub}>
+                  FY {yearLabel(studentFees.financial_year ?? null)}
+                  {studentFees.student_number ? ` · #${studentFees.student_number}` : ''}
+                </Text>
+                <Text style={[styles.sub, { marginTop: 12 }]}>
+                  Invoiced {kes(studentFees.total_invoiced)} · Receipted {kes(studentFees.total_receipts)}
+                </Text>
+                {(studentFees.recent_receipts ?? []).length > 0 ? (
+                  <>
+                    <Text style={[styles.section, { marginTop: 16 }]}>Recent receipts</Text>
+                    {(studentFees.recent_receipts ?? []).slice(0, 5).map((r, i) => (
+                      <Text key={String(r.id ?? i)} style={styles.sub}>
+                        {String(r.receipt_number ?? r.id ?? 'Receipt')} · {kes(Number(r.amount ?? 0))}
+                      </Text>
+                    ))}
+                  </>
+                ) : null}
+              </View>
+            </GlassPanel>
+          ) : (
+            <ModuleEmpty
+              title="Balance unavailable"
+              body="Could not load your fee ledger yet. Ask the bursar or a parent to check Accounts."
+            />
+          )}
         </ScrollView>
       </View>
     );

@@ -59,6 +59,7 @@ import { fetchClasses, fetchMyTeacherWorkloads, fetchTeacherStats } from '../../
 import {
   fetchStudentAssignments,
   fetchStudentExams,
+  fetchStudentFees,
   fetchStudentProfile,
   fetchStudentRecentAttendance,
   fetchStudentExamSummary,
@@ -522,12 +523,13 @@ export function DashboardHomeScreen() {
     const sid = resolveStudentRecordId(deskUser) || String(selectedStudentId ?? '').trim();
     void (async () => {
       try {
-        const [profile, exams, att, pocket, assignments] = await Promise.allSettled([
+        const [profile, exams, att, pocket, assignments, fees] = await Promise.allSettled([
           sid ? fetchStudentProfile(sid) : Promise.resolve(null),
           fetchStudentExams(5),
           sid ? fetchStudentRecentAttendance(sid, 14) : Promise.resolve([]),
           sid ? tryFetchStudentPocketBalance(sid) : Promise.resolve(null),
           sid ? fetchStudentAssignments(sid) : Promise.resolve({ assignments: [] }),
+          fetchStudentFees(),
         ]);
         const prof = profile.status === 'fulfilled' ? profile.value : null;
         const examList = exams.status === 'fulfilled' ? exams.value : [];
@@ -535,6 +537,8 @@ export function DashboardHomeScreen() {
         const pocketBal = pocket.status === 'fulfilled' ? pocket.value : null;
         const assignmentRows =
           assignments.status === 'fulfilled' ? assignments.value?.assignments ?? [] : [];
+        const feeRow = fees.status === 'fulfilled' ? fees.value : null;
+        const feeBal = feeRow?.balance;
         const presentDays = new Set(attRows.map((m) => String(m.marked_at ?? '').slice(0, 10))).size;
         let gradeLabel = examList.length ? 'See grades' : 'No grades yet';
         if (examList[0]?.id && sid) {
@@ -559,7 +563,10 @@ export function DashboardHomeScreen() {
           pocketBalance: pocketBal,
           pocketLabel:
             pocketBal != null ? `KES ${pocketBal.toLocaleString()}` : 'Office / parent only',
-          feesLabel: 'Via parent app',
+          feesLabel:
+            feeBal != null && Number.isFinite(Number(feeBal))
+              ? `KES ${Number(feeBal).toLocaleString()}`
+              : 'See School Fees',
           assignmentsLabel:
             assignmentRows.length > 0 ? String(assignmentRows.length) : 'No assignments API',
         });

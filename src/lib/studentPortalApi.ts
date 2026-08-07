@@ -272,3 +272,26 @@ export function resolveStudentRecordId(
 ): string {
   return String(deskUser?.id ?? deskUser?.user_id ?? '').trim();
 }
+
+export type StudentFeeBalance = {
+  student_id?: string;
+  student_name?: string | null;
+  student_number?: string | null;
+  financial_year?: string | null;
+  balance?: number;
+  total_invoiced?: number;
+  total_receipts?: number;
+  recent_receipts?: Array<Record<string, unknown>>;
+  pay_via?: string;
+};
+
+/** Read-only fee balance for student persona (S17). */
+export async function fetchStudentFees(): Promise<StudentFeeBalance | null> {
+  try {
+    const data = await deskFetch<{ data?: StudentFeeBalance } & StudentFeeBalance>('/students/me/fees');
+    const row = (data as { data?: StudentFeeBalance })?.data ?? data;
+    return row && typeof row === 'object' ? (row as StudentFeeBalance) : null;
+  } catch {
+    return null;
+  }
+}
