@@ -585,13 +585,6 @@ export function DashboardHomeScreen() {
 
   const onPressAction = useCallback(
     (action: DashboardAction) => {
-      if (action.id === 'exam-generator') {
-        navigation.navigate('FeaturePlaceholder', {
-          title: action.title,
-          description: 'Exam generator is coming soon — e-learning exams will land here.',
-        });
-        return;
-      }
       guardDashboardAction(action, () => {
         if (action.nativeScreen) {
           const screen = action.nativeScreen;
