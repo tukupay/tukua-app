@@ -92,7 +92,7 @@ async function nestJson<T>(path: string, init?: RequestInit): Promise<T> {
 
 function youtubeEmbedHtml(videoId: string, muted: boolean, isShort: boolean, autoplay: boolean): string {
   const id = String(videoId || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 11);
-  // Mobile WebViews only autoplay when muted; Unmute remounts with mute=0.
+  // Prefer sound on; some browsers still block unmuted autoplay until a tap.
   const startMute = muted ? 1 : 0;
   const doAuto = autoplay ? 'true' : 'false';
   if (isShort) {
@@ -265,7 +265,7 @@ export function ContentScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [muted, setMuted] = useState(true);
+  const [muted, setMuted] = useState(false);
   const [playingItemId, setPlayingItemId] = useState<string | null>(null);
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
   const [listH, setListH] = useState(0);
@@ -351,16 +351,26 @@ export function ContentScreen() {
     [persona, selectedStudentId],
   );
 
+  const onListLayout = useCallback((e: LayoutChangeEvent) => {
+    const h = Math.round(e.nativeEvent.layout.height);
+    if (h <= 0) return;
+    // Ignore tiny layout jitter — resizing mid-scroll feels like auto-paging.
+    setListH((prev) => (prev > 0 && Math.abs(prev - h) < 8 ? prev : h));
+  }, []);
+
   useEffect(() => {
-    if (focused) {
-      chargedRef.current = new Set();
-      cursorRef.current = null;
-      void loadPage(null, false);
-    } else {
+    // Reload catalog when student/persona changes — not on every tab focus (that jumps the list).
+    chargedRef.current = new Set();
+    cursorRef.current = null;
+    void loadPage(null, false);
+  }, [selectedStudentId, persona, loadPage]);
+
+  useEffect(() => {
+    if (!focused) {
       pauseOthers(null);
       setPlayingItemId(null);
     }
-  }, [focused, loadPage, pauseOthers, selectedStudentId, persona]);
+  }, [focused, pauseOthers]);
 
   const chargeView = useCallback(
     async (item: FeedItem) => {
@@ -435,11 +445,6 @@ export function ContentScreen() {
     }
   }, []);
 
-  const onListLayout = useCallback((e: LayoutChangeEvent) => {
-    const h = Math.round(e.nativeEvent.layout.height);
-    if (h > 0) setListH(h);
-  }, []);
-
   const levelLabel = selectedStudent?.className || '';
 
   if (loading && !items.length) {
@@ -481,7 +486,7 @@ export function ContentScreen() {
     const isActive = activeItemId === item.id;
     const playing = playingItemId === item.id;
     const titleBandH = isShort ? 56 : 64;
-    const shortFooterH = 88; // mute row + gap above tab bar
+    const shortFooterH = 36; // one control row + thin gap above bottom nav
     const maxShortH = Math.max(240, itemH - titleBandH - shortFooterH);
     const videoH = isShort
       ? Math.min(maxShortH, Math.round((frameW * 16) / 9))
@@ -583,8 +588,8 @@ export function ContentScreen() {
             style={[
               styles.caption,
               {
-                paddingBottom: 10 + (isShort ? 4 : insets.bottom * 0.1),
-                minHeight: isShort ? shortFooterH - 8 : undefined,
+                paddingBottom: isShort ? 8 : 10 + insets.bottom * 0.1,
+                minHeight: isShort ? shortFooterH : undefined,
               },
             ]}
           >
@@ -654,19 +659,16 @@ export function ContentScreen() {
             style={{ flex: 1 }}
             pagingEnabled
             showsVerticalScrollIndicator={false}
-            snapToInterval={itemH}
-            snapToAlignment="start"
-            disableIntervalMomentum
             decelerationRate="fast"
             bounces={false}
             overScrollMode="never"
             windowSize={3}
             maxToRenderPerBatch={2}
             initialNumToRender={1}
-            removeClippedSubviews
+            removeClippedSubviews={Platform.OS === 'android'}
             getItemLayout={(_, index) => ({ length: itemH, offset: itemH * index, index })}
             onViewableItemsChanged={onViewableStable}
-            viewabilityConfig={{ itemVisiblePercentThreshold: 80 }}
+            viewabilityConfig={{ itemVisiblePercentThreshold: 85, minimumViewTime: 120 }}
             onEndReached={onEndReached}
             onEndReachedThreshold={0.6}
             renderItem={renderItem}
