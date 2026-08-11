@@ -86,19 +86,19 @@ async function nestJson<T>(path: string, init?: RequestInit): Promise<T> {
 function youtubeEmbedHtml(videoId: string, muted: boolean, isShort: boolean): string {
   const id = String(videoId || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 11);
   const startMuted = muted ? 1 : 0;
-  // YouTube's iframe API always paints a 16:9 surface. Shorts sit vertically inside
-  // with side bars — maximize works because fullscreen crops them. We mimic that
-  // with a portrait WebView + overflow cover-crop (no auto-fullscreen; swipe works).
+  // YouTube iframe API always paints 16:9. Shorts are vertical inside that frame.
+  // Cover-crop: size a tall wide 16:9 player so the Short's content fills our portrait WebView.
   if (isShort) {
     return `<!DOCTYPE html><html><head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
 <meta name="referrer" content="strict-origin-when-cross-origin"/>
 <style>
-  html,body{margin:0;padding:0;width:100%;height:100%;background:#000;overflow:hidden}
+  html,body{margin:0;padding:0;width:100%;height:100%;background:#000;overflow:hidden;touch-action:none}
   #crop{position:absolute;inset:0;overflow:hidden;background:#000}
-  #stage{position:absolute;top:0;left:50%;height:100%;transform:translateX(-50%);background:#000}
-  #player,#player iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+  #stage{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:#000}
+  #player{position:absolute;inset:0;width:100%;height:100%}
+  #player iframe{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;border:0!important}
 </style>
 </head><body>
 <div id="crop"><div id="stage"><div id="player"></div></div></div>
@@ -107,19 +107,24 @@ function youtubeEmbedHtml(videoId: string, muted: boolean, isShort: boolean): st
   var START_MUTE=${startMuted};
   var player=null;
   function post(playing){
-    try{ if(window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify({playing:!!playing})); }catch(e){}
+    try{ if(window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify({playing:!!playing,short:true})); }catch(e){}
   }
   function layout(){
-    var h = window.innerHeight || document.documentElement.clientHeight || 1;
-    var w = Math.round(h * 16 / 9);
+    var cw = Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
+    var ch = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
+    // Short content ≈ 9:16 filling the player height. Need content width >= cw
+    // => playerH >= cw * 16/9, and also cover crop height ch.
+    var playerH = Math.ceil(Math.max(ch, cw * 16 / 9));
+    var playerW = Math.ceil(playerH * 16 / 9);
     var stage = document.getElementById('stage');
-    if(stage){ stage.style.width = w + 'px'; stage.style.height = h + 'px'; }
-    try{ if(player && player.setSize) player.setSize(w, h); }catch(e){}
+    if(stage){ stage.style.width = playerW + 'px'; stage.style.height = playerH + 'px'; }
+    try{ if(player && player.setSize) player.setSize(playerW, playerH); }catch(e){}
   }
   function bootPlayer(){
-    var h = window.innerHeight || 640;
-    var w = Math.round(h * 16 / 9);
     layout();
+    var stage = document.getElementById('stage');
+    var w = parseInt(stage.style.width,10) || 1280;
+    var h = parseInt(stage.style.height,10) || 720;
     player = new YT.Player('player',{
       videoId:VID,
       width:w,
@@ -129,7 +134,7 @@ function youtubeEmbedHtml(videoId: string, muted: boolean, isShort: boolean): st
         mute:START_MUTE,fs:0,origin:${JSON.stringify(YT_EMBED_ORIGIN)}
       },
       events:{
-        onReady:function(){ layout(); },
+        onReady:function(){ layout(); setTimeout(layout, 250); setTimeout(layout, 800); },
         onStateChange:function(e){
           if(e.data===1||e.data===3) post(true);
           else if(e.data===2||e.data===0||e.data===5) post(false);
@@ -204,6 +209,14 @@ function youtubeEmbedHtml(videoId: string, muted: boolean, isShort: boolean): st
 </body></html>`;
 }
 
+/** Prefer API is_short; also infer from title / media hints (stale Redis pages). */
+function itemIsShort(item: FeedItem): boolean {
+  if (item.is_short === true) return true;
+  if (/^short\b/i.test(String(item.title || '').trim())) return true;
+  if (String(item.media_kind || '').toLowerCase() === 'short') return true;
+  return false;
+}
+
 async function ensureTukuaFolder(): Promise<string> {
   const root = FileSystem.documentDirectory || FileSystem.cacheDirectory || '';
   const dir = `${root}Tukua/`;
@@ -237,7 +250,7 @@ export function ContentScreen() {
 
   const isDesktopWeb = Platform.OS === 'web' && winW >= 768;
   const frameW = isDesktopWeb ? Math.min(PHONE_FRAME_MAX, winW * 0.42) : winW;
-  const topPad = floatingHeaderInset(insets.top);
+  const topPad = floatingHeaderInset(insets.top) + 18;
   const itemH = listH > 0 ? listH : 560;
 
   const pauseOthers = useCallback((exceptId: string | null) => {
@@ -422,12 +435,14 @@ export function ContentScreen() {
 
   const renderItem = ({ item }: { item: FeedItem }) => {
     const hosted = String(item.download_url || '').trim();
-    const isShort = !!item.is_short;
+    const isShort = itemIsShort(item);
     const isActive = activeItemId === item.id;
     const playing = playingItemId === item.id;
+    const titleBandH = 64;
+    const maxShortH = Math.max(280, itemH - titleBandH - Math.round(itemH * 0.28));
     const videoH = isShort
-      ? itemH
-      : Math.min(Math.round(itemH * 0.48), Math.round((frameW * 9) / 16));
+      ? Math.min(maxShortH, Math.round((frameW * 16) / 9))
+      : Math.min(Math.round(itemH * 0.42), Math.round((frameW * 9) / 16));
     const videoW = frameW;
 
     return (
@@ -444,9 +459,19 @@ export function ContentScreen() {
             },
           ]}
         >
+          <View style={styles.titleBand}>
+            <Text style={styles.course} numberOfLines={1}>
+              {item.course_title}
+            </Text>
+            <Text style={styles.title} numberOfLines={2}>
+              {item.title}
+            </Text>
+          </View>
+
           <View style={[styles.videoStage, { width: videoW, height: videoH }]}>
             {isActive ? (
               <WebView
+                key={`wv-${item.id}-${isShort ? 's' : 'w'}-${muted ? 'm' : 'u'}`}
                 ref={(r) => {
                   webRefs.current.set(item.id, r);
                 }}
@@ -496,31 +521,20 @@ export function ContentScreen() {
               />
             ) : (
               <View style={[styles.placeholder, { width: videoW, height: videoH }]}>
-                <Text style={styles.placeholderTxt}>{isShort ? 'Short' : 'Video'}</Text>
+                <Text style={styles.placeholderTxt}>{isShort ? 'Short · 9:16' : 'Video · 16:9'}</Text>
               </View>
             )}
           </View>
 
           {!playing ? (
-            <View
-              style={[
-                isShort ? styles.captionOverlay : styles.caption,
-                { paddingBottom: 10 + insets.bottom * 0.15 },
-              ]}
-            >
+            <View style={[styles.caption, { paddingBottom: 10 + insets.bottom * 0.15 }]}>
               <ScrollView
-                style={isShort ? undefined : styles.captionScroll}
+                style={styles.captionScroll}
                 contentContainerStyle={styles.captionScrollInner}
                 showsVerticalScrollIndicator={false}
                 nestedScrollEnabled
               >
-                <Text style={styles.course}>{item.course_title}</Text>
-                <Text style={styles.title}>{item.title}</Text>
-                {item.description ? (
-                  <Text style={styles.desc} numberOfLines={isShort ? 4 : undefined}>
-                    {item.description}
-                  </Text>
-                ) : null}
+                {item.description ? <Text style={styles.desc}>{item.description}</Text> : null}
                 <Text style={styles.meta}>
                   swipe up for next
                   {levelLabel ? ` · ${levelLabel}` : ''}
@@ -622,6 +636,13 @@ const styles = StyleSheet.create({
   err: { color: '#f87171', fontSize: 14, textAlign: 'center' },
   emptyTitle: { color: '#fff', fontSize: 18, fontWeight: '700', textAlign: 'center' },
   phoneFrame: { backgroundColor: '#000', maxWidth: PHONE_FRAME_MAX, flexDirection: 'column' },
+  titleBand: {
+    width: '100%',
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 8,
+    backgroundColor: '#000',
+  },
   videoStage: { width: '100%', backgroundColor: '#000' },
   placeholder: {
     backgroundColor: '#111',
@@ -635,15 +656,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 12,
     backgroundColor: '#0a0a0a',
-  },
-  captionOverlay: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    paddingHorizontal: 16,
-    paddingTop: 48,
-    backgroundColor: 'rgba(0,0,0,0.55)',
   },
   captionScroll: { flex: 1 },
   captionScrollInner: { paddingBottom: 8, gap: 4 },
