@@ -539,14 +539,10 @@ export function ContentScreen() {
     const availForShort = Math.max(220, itemH - shortFooterH - shortTopNudge);
     let videoW = frameW;
     let videoH: number;
-    let sidePad = 0;
     if (isShort) {
-      // Size to stage height; keep only 10% of the natural 9:16 side letterbox.
+      // Full bleed — no left/right margin.
+      videoW = frameW;
       videoH = availForShort;
-      const naturalW = Math.max(160, Math.round((videoH * 9) / 16));
-      const naturalPad = Math.max(0, (frameW - naturalW) / 2);
-      sidePad = Math.max(0, Math.round(naturalPad * 0.1));
-      videoW = Math.max(160, frameW - sidePad * 2);
     } else {
       videoH = Math.min(Math.round(itemH * 0.36), Math.round((frameW * 9) / 16));
       videoW = frameW;
@@ -556,6 +552,7 @@ export function ContentScreen() {
     const courseTitle = decodeHtmlEntities(String(item.course_title || ''));
     const unitTitle = decodeHtmlEntities(String(item.unit_title || ''));
     const lessonTitle = decodeHtmlEntities(String(item.title || ''));
+    const classLevel = decodeHtmlEntities(String(item.level || levelLabel || '').trim());
     const showUnitCta = !isShort && !!item.course_id && item.course_id !== 'platform-shared';
     const captionBodyH = Math.max(
       0,
@@ -601,7 +598,6 @@ export function ContentScreen() {
                 width: frameW,
                 height: isShort ? availForShort : videoH,
                 marginTop: shortTopNudge,
-                paddingHorizontal: sidePad,
                 alignItems: 'center',
                 justifyContent: 'flex-start',
               },
@@ -688,10 +684,19 @@ export function ContentScreen() {
 
           {isShort ? (
             <View style={[styles.shortBottomText, { paddingTop: captionPadTop, paddingBottom: captionPadBottom }]}>
-              <Text style={styles.course} numberOfLines={1}>
-                {courseTitle}
-                {unitTitle ? ` · ${unitTitle}` : ''}
-              </Text>
+              <View style={styles.shortTitleRow}>
+                <Text style={[styles.course, { flex: 1, marginBottom: 0 }]} numberOfLines={1}>
+                  {courseTitle}
+                  {unitTitle ? ` · ${unitTitle}` : ''}
+                </Text>
+                {classLevel ? (
+                  <View style={styles.levelTag}>
+                    <Text style={styles.levelTagTxt} numberOfLines={1}>
+                      {classLevel}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
               <Text style={styles.title} numberOfLines={2}>
                 {lessonTitle}
               </Text>
@@ -722,7 +727,7 @@ export function ContentScreen() {
                 </>
               ) : null}
               <Text style={styles.meta} numberOfLines={1}>
-                swipe up for next{levelLabel ? ` · ${levelLabel}` : ''}
+                swipe up for next
               </Text>
               <View style={styles.controls}>
                 <Pressable style={styles.ctrlBtn} onPress={() => setMuted((m) => !m)}>
@@ -737,6 +742,13 @@ export function ContentScreen() {
                   <Pressable style={[styles.ctrlBtn, styles.ctrlBtnPrimary]} onPress={() => openUnit(item)}>
                     <Text style={styles.ctrlTxt}>View unit</Text>
                   </Pressable>
+                ) : null}
+                {classLevel ? (
+                  <View style={styles.levelTag}>
+                    <Text style={styles.levelTagTxt} numberOfLines={1}>
+                      {classLevel}
+                    </Text>
+                  </View>
                 ) : null}
               </View>
             </View>
@@ -826,6 +838,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     backgroundColor: '#000',
     justifyContent: 'flex-end',
+    gap: 4,
+  },
+  shortTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  levelTag: {
+    backgroundColor: 'rgba(34,197,94,0.28)',
+    borderWidth: 1,
+    borderColor: 'rgba(134,239,172,0.55)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    maxWidth: 140,
+  },
+  levelTagTxt: {
+    color: '#86efac',
+    fontSize: 11,
+    fontWeight: '800',
   },
   loadMore: {
     position: 'absolute',
