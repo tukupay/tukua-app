@@ -263,7 +263,7 @@ export function ContentScreen() {
         <Text style={styles.hint}>
           {persona === 'parent' && levelLabel
             ? `Courses for ${levelLabel} will appear here.`
-            : 'When courses match your class, YouTube lessons show here.'}
+            : 'When courses match your level (and levels below), lessons show here.'}
         </Text>
       </View>
     );
@@ -322,12 +322,11 @@ export function ContentScreen() {
               <Pressable style={styles.ctrlBtn} onPress={() => setMuted((m) => !m)}>
                 <Text style={styles.ctrlTxt}>{muted ? 'Unmute' : 'Mute'}</Text>
               </Pressable>
-              <Pressable style={styles.ctrlBtn} onPress={() => void openExternal(item)}>
-                <Text style={styles.ctrlTxt}>YouTube</Text>
-              </Pressable>
-              <Pressable style={styles.ctrlBtn} onPress={() => void downloadItem(item)}>
-                <Text style={styles.ctrlTxt}>{item.download_url ? 'Download' : 'Open'}</Text>
-              </Pressable>
+              {item.download_url ? (
+                <Pressable style={styles.ctrlBtn} onPress={() => void downloadItem(item)}>
+                  <Text style={styles.ctrlTxt}>Download</Text>
+                </Pressable>
+              ) : null}
             </View>
           </View>
         </View>

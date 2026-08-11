@@ -1,8 +1,9 @@
 /**
  * Open external meeting hosts (Meet / Teams / Zoom / Facebook) preferring native apps.
+ * Calendar: open Google Calendar template in the browser/app (do NOT Share.share ICS —
+ * that opens the system share sheet).
  */
-import { Linking, Platform, Share } from 'react-native';
-import * as FileSystem from 'expo-file-system/legacy';
+import { Linking, Platform } from 'react-native';
 
 export function providerLabel(url?: string | null, provider?: string | null): string {
   const p = String(provider || '').toLowerCase();
@@ -29,7 +30,6 @@ export function resolveOpenUrl(url: string): string {
     const u = new URL(raw);
     const host = u.hostname.toLowerCase();
     if (host.includes('teams.microsoft.com') || host.includes('teams.live.com')) {
-      // Universal link usually opens Teams app when installed.
       return raw;
     }
     if (host.includes('zoom.us') || host.includes('zoom.com')) {
@@ -62,7 +62,7 @@ function toStamp(d: Date): string {
   return d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
 }
 
-/** ICS with VALARM −1 day — share / open so device calendars keep the reminder. */
+/** Open Google Calendar “add event” externally (browser / calendar app). */
 export async function saveMeetingToCalendar(opts: {
   title: string;
   startsAt?: string | null;
@@ -79,50 +79,6 @@ export async function saveMeetingToCalendar(opts: {
     ? new Date(startSafe.getTime() + 60 * 60 * 1000)
     : end;
   const loc = opts.location || '';
-  const desc = [opts.description, loc ? `Join: ${loc}` : ''].filter(Boolean).join('\\n');
-  const ics = [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//Tukua//Meetings//EN',
-    'CALSCALE:GREGORIAN',
-    'METHOD:PUBLISH',
-    'BEGIN:VEVENT',
-    `UID:${Date.now()}@tukua.ai`,
-    `DTSTAMP:${toStamp(new Date())}`,
-    `DTSTART:${toStamp(startSafe)}`,
-    `DTEND:${toStamp(endSafe)}`,
-    `SUMMARY:${(opts.title || 'Meeting').replace(/[,;\\]/g, ' ')}`,
-    desc ? `DESCRIPTION:${desc}` : '',
-    loc ? `LOCATION:${loc.replace(/[,;\\]/g, ' ')}` : '',
-    'BEGIN:VALARM',
-    'TRIGGER:-P1D',
-    'ACTION:DISPLAY',
-    'DESCRIPTION:Meeting tomorrow',
-    'END:VALARM',
-    'END:VEVENT',
-    'END:VCALENDAR',
-  ]
-    .filter(Boolean)
-    .join('\r\n');
-
-  try {
-    const dir = FileSystem.cacheDirectory || FileSystem.documentDirectory;
-    if (dir) {
-      const path = `${dir}tukua-meeting-${Date.now()}.ics`;
-      await FileSystem.writeAsStringAsync(path, ics, {
-        encoding: FileSystem.EncodingType.UTF8,
-      });
-      await Share.share({
-        url: path,
-        title: opts.title || 'Meeting',
-        message: 'Add to calendar (includes 1-day reminder).',
-      });
-      return 'ics';
-    }
-  } catch {
-    /* fall through to Google Calendar */
-  }
-
   const params = new URLSearchParams({
     action: 'TEMPLATE',
     text: opts.title || 'Meeting',
@@ -136,6 +92,7 @@ export async function saveMeetingToCalendar(opts: {
       .join('\n\n'),
   });
   if (loc) params.set('location', loc);
-  await Linking.openURL(`https://calendar.google.com/calendar/render?${params.toString()}`);
+  const gcal = `https://calendar.google.com/calendar/render?${params.toString()}`;
+  await Linking.openURL(gcal);
   return 'gcal';
 }
