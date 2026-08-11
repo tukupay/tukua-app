@@ -29,7 +29,7 @@ import { useDeskAuth } from '../context/DeskAuthContext';
 import { useTokenGate } from '../context/TokenGateContext';
 import { useAppTheme } from '../context/AppThemeContext';
 import { Colors } from '../theme/yana';
-import { floatingHeaderInset } from '../constants/layout';
+import { floatingHeaderInset, TAB_BAR_BODY_HEIGHT } from '../constants/layout';
 import { log } from '../lib/logger';
 import { useNavigation } from '@react-navigation/native';
 import type { NavigationProp } from '@react-navigation/native';
@@ -310,6 +310,8 @@ export function ContentScreen() {
   const isDesktopWeb = Platform.OS === 'web' && winW >= 768;
   const frameW = isDesktopWeb ? Math.min(PHONE_FRAME_MAX, winW * 0.42) : winW;
   const topPad = floatingHeaderInset(insets.top) + 18;
+  // Absolute tab bar sits on top of the scene — reserve height so reels/buttons clear it.
+  const bottomClear = TAB_BAR_BODY_HEIGHT + insets.bottom + 8;
   const itemH = listH > 0 ? listH : 560;
 
   const openUnit = useCallback(
@@ -517,12 +519,12 @@ export function ContentScreen() {
     const isShort = itemIsShort(item);
     const isActive = activeItemId === item.id;
     const titleBandH = isShort ? 0 : 64;
-    const shortFooterH = 40; // mute row + thin gap above bottom nav
-    const captionPadBottom = isShort ? 8 : 10;
+    const shortFooterH = CONTROLS_BAR_H + 8;
+    const captionPadBottom = 4;
     const captionPadTop = isShort ? 4 : 10;
     const maxShortH = Math.max(240, itemH - shortFooterH);
     const videoH = isShort
-      ? Math.min(maxShortH, Math.round((frameW * 16) / 9))
+      ? maxShortH
       : Math.min(Math.round(itemH * 0.36), Math.round((frameW * 9) / 16));
     const videoW = frameW;
     const notes = decodeHtmlEntities(String(item.unit_notes || '').trim());
@@ -639,12 +641,11 @@ export function ContentScreen() {
               {
                 paddingTop: captionPadTop,
                 paddingBottom: captionPadBottom,
-                minHeight: isShort ? shortFooterH : undefined,
               },
             ]}
           >
             {!isShort ? (
-              <View style={styles.captionBody}>
+              <>
                 {descLines > 0 && desc ? (
                   <Text style={styles.desc} numberOfLines={descLines}>
                     {desc}
@@ -663,11 +664,9 @@ export function ContentScreen() {
                 <Text style={styles.meta} numberOfLines={1}>
                   swipe up for next{levelLabel ? ` · ${levelLabel}` : ''}
                 </Text>
-              </View>
-            ) : (
-              <View style={styles.captionBody} />
-            )}
-            <View style={styles.controls}>
+              </>
+            ) : null}
+            <View style={[styles.controls, isShort ? styles.controlsShort : null]}>
               <Pressable style={styles.ctrlBtn} onPress={() => setMuted((m) => !m)}>
                 <Text style={styles.ctrlTxt}>{muted ? 'Unmute' : 'Mute'}</Text>
               </Pressable>
@@ -694,6 +693,7 @@ export function ContentScreen() {
         flex: 1,
         backgroundColor: isDesktopWeb ? '#111' : '#000',
         paddingTop: topPad,
+        paddingBottom: bottomClear,
         alignItems: 'center',
       }}
     >
@@ -759,9 +759,9 @@ const styles = StyleSheet.create({
     width: '100%',
     paddingHorizontal: 16,
     backgroundColor: '#0a0a0a',
-    justifyContent: 'flex-end',
+    justifyContent: 'flex-start',
+    gap: 6,
   },
-  captionBody: { flex: 1, justifyContent: 'flex-start', gap: 4, overflow: 'hidden' },
   loadMore: {
     position: 'absolute',
     left: 0,
@@ -784,13 +784,17 @@ const styles = StyleSheet.create({
     lineHeight: NOTES_LINE,
     fontWeight: '500',
   },
-  meta: { color: 'rgba(255,255,255,0.55)', fontSize: 11, marginTop: 4 },
+  meta: { color: 'rgba(255,255,255,0.55)', fontSize: 11, marginTop: 2 },
   controls: {
     height: CONTROLS_BAR_H,
     flexDirection: 'row',
     flexWrap: 'nowrap',
     alignItems: 'center',
     gap: 8,
+    marginTop: 4,
+  },
+  controlsShort: {
+    marginTop: 0,
   },
   ctrlBtn: {
     backgroundColor: 'rgba(255,255,255,0.16)',
