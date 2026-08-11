@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../theme/yana';
 import { useAppTheme } from '../../context/AppThemeContext';
@@ -68,9 +68,15 @@ export function ModuleEmpty({
 }
 
 /** Glass content card for module list rows / detail blocks. */
-export function ModuleGlassCard({ children }: { children: React.ReactNode }) {
+export function ModuleGlassCard({
+  children,
+  style,
+}: {
+  children: React.ReactNode;
+  style?: StyleProp<ViewStyle>;
+}) {
   return (
-    <GlassPanel tone="frost" intensity={40} radius={16} style={styles.moduleCard}>
+    <GlassPanel tone="frost" intensity={40} radius={16} style={[styles.moduleCard, style]}>
       <View style={styles.cardInner}>{children}</View>
     </GlassPanel>
   );

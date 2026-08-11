@@ -129,7 +129,7 @@ const TILE_ICON: Partial<Record<FeatherIconName, keyof typeof Ionicons.glyphMap>
   video: 'videocam',
   heart: 'heart',
   'log-in': 'log-in',
-  'file-plus': 'document-add',
+  'file-plus': 'document',
   'user-plus': 'person-add',
   'check-circle': 'checkmark-circle',
   'user-check': 'person-circle',
