@@ -374,11 +374,74 @@ export const TEACHER_DASHBOARD_ACTIONS: DashboardAction[] = [
   { id: 'bursary', title: 'Bursary', description: 'Kitty & programs', icon: 'gift', nativeScreen: 'Bursary', accent: '#EC4899' },
   { id: 'reports', title: 'Reports', description: 'Mark sheets & forms', icon: 'file-text', nativeScreen: 'TeacherReports', accent: '#4E74F9' },
   { id: 'progress', title: 'Progress', description: 'Outstanding mark entry', icon: 'trending-up', nativeScreen: 'TeacherProgress', accent: '#059669' },
+  // School admin / principal — existing stack screens, role-gated only
+  {
+    id: 'approvals',
+    title: 'Approvals',
+    description: 'Join requests & admissions',
+    icon: 'check-circle',
+    nativeScreen: 'Approvals',
+    accent: '#CA8A04',
+    requireAnyRole: ['school_admin', 'principal', 'deputy', 'admin'],
+  },
+  {
+    id: 'school-overview',
+    title: 'School overview',
+    description: 'Roll & staff snapshot',
+    icon: 'home',
+    nativeScreen: 'SchoolOverview',
+    accent: '#0F766E',
+    requireAnyRole: ['school_admin', 'principal', 'deputy', 'admin'],
+  },
+  {
+    id: 'admin-students',
+    title: 'Students',
+    description: 'Directory & admit',
+    icon: 'user-plus',
+    nativeScreen: 'AdminStudents',
+    accent: '#2563EB',
+    requireAnyRole: ['school_admin', 'principal', 'deputy', 'admin', 'registrar'],
+  },
+  {
+    id: 'admin-teachers',
+    title: 'Teachers',
+    description: 'Staff directory',
+    icon: 'users',
+    nativeScreen: 'AdminTeachers',
+    accent: '#4F46E5',
+    requireAnyRole: ['school_admin', 'principal', 'deputy', 'admin'],
+  },
+  {
+    id: 'admin-parents',
+    title: 'Parents',
+    description: 'Guardian directory',
+    icon: 'heart',
+    nativeScreen: 'AdminParents',
+    accent: '#DB2777',
+    requireAnyRole: ['school_admin', 'principal', 'deputy', 'admin'],
+  },
+  {
+    id: 'admit-student',
+    title: 'Admit student',
+    description: 'New admission',
+    icon: 'user-check',
+    nativeScreen: 'AdmitStudent',
+    accent: '#059669',
+    requireAnyRole: ['school_admin', 'principal', 'deputy', 'admin', 'registrar'],
+  },
+  {
+    id: 'admin-accounts',
+    title: 'Accounts',
+    description: 'Fees · invoices · reports',
+    icon: 'dollar-sign',
+    nativeScreen: 'AdminAccounts',
+    accent: '#047857',
+    requireAnyRole: ['bursar', 'accountant', 'accounts_clerk', 'school_admin', 'principal', 'admin'],
+  },
   { id: 'my-profile', title: 'My Profile', description: 'Account settings', icon: 'user', tukuaPath: '/profile', tukuaTab: 'Profile', accent: '#059669' },
   { id: 'school-info', title: 'School Info', description: 'About your school', icon: 'info', nativeScreen: 'SchoolInfo', accent: '#0A3D2E', tokenGated: false },
   { id: 'join-school', title: 'Join school', description: 'Request to join a school', icon: 'log-in', nativeScreen: 'JoinSchool', accent: '#2563EB', tokenGated: false },
 ];
-
 
 export const SECURITY_HERO: HeroStat[] = [
 
@@ -486,6 +549,16 @@ export const SUPER_ADMIN_DASHBOARD_ACTIONS: DashboardAction[] = [
 export const INDIVIDUAL_DASHBOARD_ACTIONS: DashboardAction[] = [
 
   { id: 'tukua-pay', title: 'Tukua Pay', description: 'Wallets · deposit · send', icon: 'smartphone', nativeScreen: 'TukuaPayHome', tokenGated: false, accent: '#0A3D2E' },
+
+  {
+    id: 'admin-accounts',
+    title: 'Accounts',
+    description: 'Fees · invoices · reports',
+    icon: 'dollar-sign',
+    nativeScreen: 'AdminAccounts',
+    accent: '#047857',
+    requireAnyRole: ['bursar', 'accountant', 'accounts_clerk'],
+  },
 
   { id: 'bursary', title: 'Bursary', description: 'Kitty & programs', icon: 'gift', nativeScreen: 'Bursary', accent: '#EC4899' },
 
