@@ -51,6 +51,7 @@ type FeedItem = {
   unit_id?: string | null;
   unit_title?: string | null;
   unit_notes?: string | null;
+  is_enrolled?: boolean;
 };
 
 type FeedResponse = {
@@ -131,14 +132,13 @@ function youtubeEmbedHtml(videoId: string, muted: boolean, isShort: boolean, aut
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
 <meta name="referrer" content="strict-origin-when-cross-origin"/>
 <style>
-  html,body{margin:0;padding:0;width:100%;height:100%;background:#000;overflow:hidden;touch-action:none}
-  #crop{position:absolute;inset:0;overflow:hidden;background:#000}
-  #stage{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:#000}
-  #player{position:absolute;inset:0;width:100%;height:100%}
-  #player iframe{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;border:0!important}
+  html,body{margin:0;padding:0;width:100%;height:100%;background:#000;overflow:hidden}
+  body{display:flex;align-items:center;justify-content:center}
+  #stage{position:relative;background:#000;max-width:100%;max-height:100%}
+  #player,#player iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
 </style>
 </head><body>
-<div id="crop"><div id="stage"><div id="player"></div></div></div>
+<div id="stage"><div id="player"></div></div>
 <script>
   var VID=${JSON.stringify(id)};
   var START_MUTE=${startMute};
@@ -150,8 +150,13 @@ function youtubeEmbedHtml(videoId: string, muted: boolean, isShort: boolean, aut
   function layout(){
     var cw = Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
     var ch = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
-    var playerH = Math.ceil(Math.max(ch, cw * 16 / 9));
-    var playerW = Math.ceil(playerH * 16 / 9);
+    // Contain 9:16 so YouTube controls stay visible (no cover-crop).
+    var playerW = cw;
+    var playerH = Math.ceil(playerW * 16 / 9);
+    if (playerH > ch) {
+      playerH = ch;
+      playerW = Math.floor(playerH * 9 / 16);
+    }
     var stage = document.getElementById('stage');
     if(stage){ stage.style.width = playerW + 'px'; stage.style.height = playerH + 'px'; }
     try{ if(player && player.setSize) player.setSize(playerW, playerH); }catch(e){}
@@ -167,8 +172,8 @@ function youtubeEmbedHtml(videoId: string, muted: boolean, isShort: boolean, aut
   function bootPlayer(){
     layout();
     var stage = document.getElementById('stage');
-    var w = parseInt(stage.style.width,10) || 1280;
-    var h = parseInt(stage.style.height,10) || 720;
+    var w = parseInt(stage.style.width,10) || 360;
+    var h = parseInt(stage.style.height,10) || 640;
     player = new YT.Player('player',{
       videoId:VID,
       width:w,
@@ -317,7 +322,17 @@ export function ContentScreen() {
   const openUnit = useCallback(
     (item: FeedItem) => {
       if (!item.course_id || item.course_id === 'platform-shared') return;
-      const path = `/courses/${item.course_id}/learn`;
+      if (isZeroBalance) {
+        showZeroTokenModal();
+        return;
+      }
+      const enrolled = item.is_enrolled === true;
+      const moduleId = String(item.unit_id || (item.lesson_id !== 'preview' ? item.lesson_id : '') || '').trim();
+      const path = enrolled
+        ? moduleId
+          ? `/courses/${item.course_id}/learn?module=${encodeURIComponent(moduleId)}`
+          : `/courses/${item.course_id}/learn`
+        : `/courses/${item.course_id}`;
       navigation.navigate('Courses', {
         screen: 'CourseWeb',
         params: {
@@ -326,7 +341,7 @@ export function ContentScreen() {
         } satisfies CoursesStackParamList['CourseWeb'],
       });
     },
-    [navigation],
+    [isZeroBalance, navigation, showZeroTokenModal],
   );
 
   const pauseOthers = useCallback((exceptId: string | null) => {
@@ -518,21 +533,32 @@ export function ContentScreen() {
     const hosted = String(item.download_url || '').trim();
     const isShort = itemIsShort(item);
     const isActive = activeItemId === item.id;
-    const titleBandH = isShort ? 0 : 64;
-    const shortFooterH = CONTROLS_BAR_H + 8;
+    const titleBandH = 56;
+    const shortFooterH = CONTROLS_BAR_H + 10;
     const captionPadBottom = 4;
     const captionPadTop = isShort ? 4 : 10;
-    const maxShortH = Math.max(240, itemH - shortFooterH);
-    const videoH = isShort
-      ? maxShortH
-      : Math.min(Math.round(itemH * 0.36), Math.round((frameW * 9) / 16));
-    const videoW = frameW;
+    const availForShort = Math.max(220, itemH - titleBandH - shortFooterH);
+    let videoW = frameW;
+    let videoH: number;
+    if (isShort) {
+      // Contain true 9:16 in remaining space — side margins if needed.
+      videoW = frameW;
+      videoH = Math.round((videoW * 16) / 9);
+      if (videoH > availForShort) {
+        videoH = availForShort;
+        videoW = Math.max(160, Math.round((videoH * 9) / 16));
+      }
+    } else {
+      videoH = Math.min(Math.round(itemH * 0.36), Math.round((frameW * 9) / 16));
+      videoW = frameW;
+    }
+    const sidePad = isShort ? Math.max(0, Math.round((frameW - videoW) / 2)) : 0;
     const notes = decodeHtmlEntities(String(item.unit_notes || '').trim());
     const desc = decodeHtmlEntities(String(item.description || '').trim());
     const courseTitle = decodeHtmlEntities(String(item.course_title || ''));
     const unitTitle = decodeHtmlEntities(String(item.unit_title || ''));
     const lessonTitle = decodeHtmlEntities(String(item.title || ''));
-    const showUnitCta = !isShort && !!item.course_id && item.course_id !== 'platform-shared';
+    const showUnitCta = !!item.course_id && item.course_id !== 'platform-shared';
     const captionBodyH = Math.max(
       0,
       itemH - titleBandH - videoH - CONTROLS_BAR_H - captionPadTop - captionPadBottom,
@@ -542,7 +568,7 @@ export function ContentScreen() {
     const metaBlock = 18;
     const notesBudget = Math.max(0, captionBodyH - headerBlock - metaBlock - (desc ? 22 : 0));
     const notesLines = Math.max(1, Math.min(3, Math.floor(notesBudget / NOTES_LINE) || 1));
-    const descLines = desc && notesBudget > NOTES_LINE * 2 ? 1 : 0;
+    const descLines = !isShort && desc && notesBudget > NOTES_LINE * 2 ? 1 : 0;
 
     return (
       <View style={{ height: itemH, width: '100%', backgroundColor: '#000', overflow: 'hidden' }}>
@@ -558,19 +584,28 @@ export function ContentScreen() {
             },
           ]}
         >
-          {!isShort ? (
-            <View style={styles.titleBand}>
-              <Text style={styles.course} numberOfLines={1}>
-                {courseTitle}
-                {unitTitle ? ` · ${unitTitle}` : ''}
-              </Text>
-              <Text style={styles.title} numberOfLines={2}>
-                {lessonTitle}
-              </Text>
-            </View>
-          ) : null}
+          <View style={styles.titleBand}>
+            <Text style={styles.course} numberOfLines={1}>
+              {courseTitle}
+              {unitTitle ? ` · ${unitTitle}` : ''}
+            </Text>
+            <Text style={styles.title} numberOfLines={isShort ? 1 : 2}>
+              {lessonTitle}
+            </Text>
+          </View>
 
-          <View style={[styles.videoStage, { width: videoW, height: videoH }]}>
+          <View
+            style={[
+              styles.videoStage,
+              {
+                width: frameW,
+                height: videoH,
+                paddingHorizontal: sidePad,
+                alignItems: 'center',
+                justifyContent: 'center',
+              },
+            ]}
+          >
             {isActive ? (
               <WebView
                 key={`wv-${item.id}-${isShort ? 's' : 'w'}-${muted ? 'm' : 'u'}`}
