@@ -536,15 +536,16 @@ export function ContentScreen() {
     const hosted = String(item.download_url || '').trim();
     const isShort = itemIsShort(item);
     const isActive = activeItemId === item.id;
-    const titleBandH = 56;
-    const shortFooterH = CONTROLS_BAR_H + 10;
+    const titleBandH = isShort ? 0 : 56;
+    const shortTextH = 52; // course + title at bottom; no buttons on Shorts
+    const shortFooterH = isShort ? shortTextH : CONTROLS_BAR_H + 10;
     const captionPadBottom = 4;
-    const captionPadTop = isShort ? 4 : 10;
-    const availForShort = Math.max(220, itemH - titleBandH - shortFooterH);
+    const captionPadTop = isShort ? 6 : 10;
+    const availForShort = Math.max(220, itemH - shortFooterH);
     let videoW = frameW;
     let videoH: number;
     if (isShort) {
-      // Nearly full-bleed 9:16; only a 1pt side gutter. Prefer width over big side margins.
+      // Nearly full-bleed; 1pt side gutter. Height fills remaining space above bottom text.
       videoW = Math.max(160, frameW - SHORT_SIDE_PT * 2);
       videoH = Math.min(availForShort, Math.round((videoW * 16) / 9));
     } else {
@@ -557,7 +558,7 @@ export function ContentScreen() {
     const courseTitle = decodeHtmlEntities(String(item.course_title || ''));
     const unitTitle = decodeHtmlEntities(String(item.unit_title || ''));
     const lessonTitle = decodeHtmlEntities(String(item.title || ''));
-    const showUnitCta = !!item.course_id && item.course_id !== 'platform-shared';
+    const showUnitCta = !isShort && !!item.course_id && item.course_id !== 'platform-shared';
     const captionBodyH = Math.max(
       0,
       itemH - titleBandH - videoH - CONTROLS_BAR_H - captionPadTop - captionPadBottom,
@@ -583,22 +584,24 @@ export function ContentScreen() {
             },
           ]}
         >
-          <View style={styles.titleBand}>
-            <Text style={styles.course} numberOfLines={1}>
-              {courseTitle}
-              {unitTitle ? ` · ${unitTitle}` : ''}
-            </Text>
-            <Text style={styles.title} numberOfLines={isShort ? 1 : 2}>
-              {lessonTitle}
-            </Text>
-          </View>
+          {!isShort ? (
+            <View style={styles.titleBand}>
+              <Text style={styles.course} numberOfLines={1}>
+                {courseTitle}
+                {unitTitle ? ` · ${unitTitle}` : ''}
+              </Text>
+              <Text style={styles.title} numberOfLines={2}>
+                {lessonTitle}
+              </Text>
+            </View>
+          ) : null}
 
           <View
             style={[
               styles.videoStage,
               {
                 width: frameW,
-                height: videoH,
+                height: isShort ? availForShort : videoH,
                 paddingHorizontal: sidePad,
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -684,53 +687,61 @@ export function ContentScreen() {
             )}
           </View>
 
-          <View
-            style={[
-              styles.caption,
-              {
-                paddingTop: captionPadTop,
-                paddingBottom: captionPadBottom,
-              },
-            ]}
-          >
-            {!isShort ? (
-              <>
-                {descLines > 0 && desc ? (
-                  <Text style={styles.desc} numberOfLines={descLines}>
-                    {desc}
-                  </Text>
-                ) : null}
-                {notes ? (
-                  <>
-                    <Text style={styles.notesLabel} numberOfLines={1}>
-                      {unitTitle ? `Unit · ${unitTitle}` : 'Unit notes'}
-                    </Text>
-                    <Text style={styles.notes} numberOfLines={notesLines}>
-                      {notes}
-                    </Text>
-                  </>
-                ) : null}
-                <Text style={styles.meta} numberOfLines={1}>
-                  swipe up for next{levelLabel ? ` · ${levelLabel}` : ''}
-                </Text>
-              </>
-            ) : null}
-            <View style={[styles.controls, isShort ? styles.controlsShort : null]}>
-              <Pressable style={styles.ctrlBtn} onPress={() => setMuted((m) => !m)}>
-                <Text style={styles.ctrlTxt}>{muted ? 'Unmute' : 'Mute'}</Text>
-              </Pressable>
-              {hosted ? (
-                <Pressable style={styles.ctrlBtn} onPress={() => void downloadItem(item)}>
-                  <Text style={styles.ctrlTxt}>Download</Text>
-                </Pressable>
-              ) : null}
-              {showUnitCta ? (
-                <Pressable style={[styles.ctrlBtn, styles.ctrlBtnPrimary]} onPress={() => openUnit(item)}>
-                  <Text style={styles.ctrlTxt}>View unit</Text>
-                </Pressable>
-              ) : null}
+          {isShort ? (
+            <View style={[styles.shortBottomText, { paddingTop: captionPadTop, paddingBottom: captionPadBottom }]}>
+              <Text style={styles.course} numberOfLines={1}>
+                {courseTitle}
+                {unitTitle ? ` · ${unitTitle}` : ''}
+              </Text>
+              <Text style={styles.title} numberOfLines={2}>
+                {lessonTitle}
+              </Text>
             </View>
-          </View>
+          ) : (
+            <View
+              style={[
+                styles.caption,
+                {
+                  paddingTop: captionPadTop,
+                  paddingBottom: captionPadBottom,
+                },
+              ]}
+            >
+              {descLines > 0 && desc ? (
+                <Text style={styles.desc} numberOfLines={descLines}>
+                  {desc}
+                </Text>
+              ) : null}
+              {notes ? (
+                <>
+                  <Text style={styles.notesLabel} numberOfLines={1}>
+                    {unitTitle ? `Unit · ${unitTitle}` : 'Unit notes'}
+                  </Text>
+                  <Text style={styles.notes} numberOfLines={notesLines}>
+                    {notes}
+                  </Text>
+                </>
+              ) : null}
+              <Text style={styles.meta} numberOfLines={1}>
+                swipe up for next{levelLabel ? ` · ${levelLabel}` : ''}
+              </Text>
+              <View style={styles.controls}>
+                <Pressable style={styles.ctrlBtn} onPress={() => setMuted((m) => !m)}>
+                  <Text style={styles.ctrlTxt}>{muted ? 'Unmute' : 'Mute'}</Text>
+                </Pressable>
+                {hosted ? (
+                  <Pressable style={styles.ctrlBtn} onPress={() => void downloadItem(item)}>
+                    <Text style={styles.ctrlTxt}>Download</Text>
+                  </Pressable>
+                ) : null}
+                {showUnitCta ? (
+                  <Pressable style={[styles.ctrlBtn, styles.ctrlBtnPrimary]} onPress={() => openUnit(item)}>
+                    <Text style={styles.ctrlTxt}>View unit</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            </View>
+          )}
         </View>
       </View>
     );
@@ -811,6 +822,12 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     gap: 6,
   },
+  shortBottomText: {
+    width: '100%',
+    paddingHorizontal: 16,
+    backgroundColor: '#000',
+    justifyContent: 'flex-end',
+  },
   loadMore: {
     position: 'absolute',
     left: 0,
@@ -841,9 +858,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     marginTop: 4,
-  },
-  controlsShort: {
-    marginTop: 0,
   },
   ctrlBtn: {
     backgroundColor: 'rgba(255,255,255,0.16)',
