@@ -10,7 +10,6 @@ import {
   Linking,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -63,6 +62,37 @@ type FeedResponse = {
 
 const PHONE_FRAME_MAX = 440;
 const YT_EMBED_ORIGIN = 'https://tukua.ai';
+const CONTROLS_BAR_H = 44;
+const NOTES_FONT = 16;
+const NOTES_LINE = 24;
+
+function decodeHtmlEntities(raw: string): string {
+  return String(raw || '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex: string) => {
+      const n = parseInt(hex, 16);
+      if (!Number.isFinite(n) || n < 0) return '';
+      try {
+        return String.fromCodePoint(n);
+      } catch {
+        return '';
+      }
+    })
+    .replace(/&#(\d+);/g, (_, dec: string) => {
+      const n = Number(dec);
+      if (!Number.isFinite(n) || n < 0) return '';
+      try {
+        return String.fromCodePoint(n);
+      } catch {
+        return '';
+      }
+    });
+}
 
 async function nestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const token = await resolveNestAccessTokenForWebView();
@@ -129,7 +159,8 @@ function youtubeEmbedHtml(videoId: string, muted: boolean, isShort: boolean, aut
   function tryPlay(){
     try{
       if(!player) return;
-      if(START_MUTE) player.mute && player.mute();
+      if(START_MUTE) { player.mute && player.mute(); }
+      else { player.unMute && player.unMute(); }
       if(AUTOPLAY && player.playVideo) player.playVideo();
     }catch(e){}
   }
@@ -196,7 +227,8 @@ function youtubeEmbedHtml(videoId: string, muted: boolean, isShort: boolean, aut
   function tryPlay(){
     try{
       if(!player) return;
-      if(START_MUTE) player.mute && player.mute();
+      if(START_MUTE) { player.mute && player.mute(); }
+      else { player.unMute && player.unMute(); }
       if(AUTOPLAY && player.playVideo) player.playVideo();
     }catch(e){}
   }
@@ -484,16 +516,31 @@ export function ContentScreen() {
     const hosted = String(item.download_url || '').trim();
     const isShort = itemIsShort(item);
     const isActive = activeItemId === item.id;
-    const playing = playingItemId === item.id;
-    const titleBandH = isShort ? 56 : 64;
-    const shortFooterH = 36; // one control row + thin gap above bottom nav
-    const maxShortH = Math.max(240, itemH - titleBandH - shortFooterH);
+    const titleBandH = isShort ? 0 : 64;
+    const shortFooterH = 40; // mute row + thin gap above bottom nav
+    const captionPadBottom = isShort ? 8 : 10;
+    const captionPadTop = isShort ? 4 : 10;
+    const maxShortH = Math.max(240, itemH - shortFooterH);
     const videoH = isShort
       ? Math.min(maxShortH, Math.round((frameW * 16) / 9))
-      : Math.min(Math.round(itemH * 0.38), Math.round((frameW * 9) / 16));
+      : Math.min(Math.round(itemH * 0.36), Math.round((frameW * 9) / 16));
     const videoW = frameW;
-    const notes = String(item.unit_notes || '').trim();
+    const notes = decodeHtmlEntities(String(item.unit_notes || '').trim());
+    const desc = decodeHtmlEntities(String(item.description || '').trim());
+    const courseTitle = decodeHtmlEntities(String(item.course_title || ''));
+    const unitTitle = decodeHtmlEntities(String(item.unit_title || ''));
+    const lessonTitle = decodeHtmlEntities(String(item.title || ''));
     const showUnitCta = !isShort && !!item.course_id && item.course_id !== 'platform-shared';
+    const captionBodyH = Math.max(
+      0,
+      itemH - titleBandH - videoH - CONTROLS_BAR_H - captionPadTop - captionPadBottom,
+    );
+    // Fit text to remaining space — no inner scroll.
+    const headerBlock = unitTitle || notes ? 22 : 0;
+    const metaBlock = 18;
+    const notesBudget = Math.max(0, captionBodyH - headerBlock - metaBlock - (desc ? 22 : 0));
+    const notesLines = Math.max(1, Math.min(3, Math.floor(notesBudget / NOTES_LINE) || 1));
+    const descLines = desc && notesBudget > NOTES_LINE * 2 ? 1 : 0;
 
     return (
       <View style={{ height: itemH, width: '100%', backgroundColor: '#000', overflow: 'hidden' }}>
@@ -509,15 +556,17 @@ export function ContentScreen() {
             },
           ]}
         >
-          <View style={styles.titleBand}>
-            <Text style={styles.course} numberOfLines={1}>
-              {item.course_title}
-              {item.unit_title && !isShort ? ` · ${item.unit_title}` : ''}
-            </Text>
-            <Text style={styles.title} numberOfLines={2}>
-              {item.title}
-            </Text>
-          </View>
+          {!isShort ? (
+            <View style={styles.titleBand}>
+              <Text style={styles.course} numberOfLines={1}>
+                {courseTitle}
+                {unitTitle ? ` · ${unitTitle}` : ''}
+              </Text>
+              <Text style={styles.title} numberOfLines={2}>
+                {lessonTitle}
+              </Text>
+            </View>
+          ) : null}
 
           <View style={[styles.videoStage, { width: videoW, height: videoH }]}>
             {isActive ? (
@@ -588,35 +637,35 @@ export function ContentScreen() {
             style={[
               styles.caption,
               {
-                paddingBottom: isShort ? 8 : 10 + insets.bottom * 0.1,
+                paddingTop: captionPadTop,
+                paddingBottom: captionPadBottom,
                 minHeight: isShort ? shortFooterH : undefined,
               },
             ]}
           >
             {!isShort ? (
-              <ScrollView
-                style={styles.captionScroll}
-                contentContainerStyle={styles.captionScrollInner}
-                showsVerticalScrollIndicator={false}
-                nestedScrollEnabled
-              >
-                {item.description ? <Text style={styles.desc}>{item.description}</Text> : null}
+              <View style={styles.captionBody}>
+                {descLines > 0 && desc ? (
+                  <Text style={styles.desc} numberOfLines={descLines}>
+                    {desc}
+                  </Text>
+                ) : null}
                 {notes ? (
                   <>
-                    <Text style={styles.notesLabel}>
-                      {item.unit_title ? `Unit notes · ${item.unit_title}` : 'Unit notes'}
+                    <Text style={styles.notesLabel} numberOfLines={1}>
+                      {unitTitle ? `Unit · ${unitTitle}` : 'Unit notes'}
                     </Text>
-                    <Text style={styles.notes}>{notes}</Text>
+                    <Text style={styles.notes} numberOfLines={notesLines}>
+                      {notes}
+                    </Text>
                   </>
                 ) : null}
-                <Text style={styles.meta}>swipe up for next{levelLabel ? ` · ${levelLabel}` : ''}</Text>
-              </ScrollView>
+                <Text style={styles.meta} numberOfLines={1}>
+                  swipe up for next{levelLabel ? ` · ${levelLabel}` : ''}
+                </Text>
+              </View>
             ) : (
-              <Text style={styles.meta}>
-                swipe up for next
-                {levelLabel ? ` · ${levelLabel}` : ''}
-                {' · Short'}
-              </Text>
+              <View style={styles.captionBody} />
             )}
             <View style={styles.controls}>
               <Pressable style={styles.ctrlBtn} onPress={() => setMuted((m) => !m)}>
@@ -709,21 +758,10 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
     paddingHorizontal: 16,
-    paddingTop: 12,
     backgroundColor: '#0a0a0a',
-  },
-  captionScroll: { flex: 1 },
-  captionScrollInner: { paddingBottom: 8, gap: 4 },
-  playingBar: {
-    position: 'absolute',
-    left: 12,
-    right: 12,
-    bottom: 0,
-    flexDirection: 'row',
-    gap: 8,
     justifyContent: 'flex-end',
-    alignItems: 'flex-end',
   },
+  captionBody: { flex: 1, justifyContent: 'flex-start', gap: 4, overflow: 'hidden' },
   loadMore: {
     position: 'absolute',
     left: 0,
@@ -733,21 +771,31 @@ const styles = StyleSheet.create({
   },
   course: { color: Colors.primaryLight || '#86efac', fontSize: 12, fontWeight: '600', marginBottom: 4 },
   title: { color: '#fff', fontSize: 17, fontWeight: '800' },
-  desc: { color: 'rgba(255,255,255,0.85)', fontSize: 13, marginTop: 6, lineHeight: 19 },
+  desc: { color: 'rgba(255,255,255,0.85)', fontSize: 14, lineHeight: 20 },
   notesLabel: {
     color: Colors.primaryLight || '#86efac',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
-    marginTop: 12,
-    marginBottom: 4,
+    marginTop: 2,
   },
-  notes: { color: 'rgba(255,255,255,0.78)', fontSize: 13, lineHeight: 19 },
-  meta: { color: 'rgba(255,255,255,0.55)', fontSize: 11, marginTop: 8 },
-  controls: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
+  notes: {
+    color: 'rgba(255,255,255,0.88)',
+    fontSize: NOTES_FONT,
+    lineHeight: NOTES_LINE,
+    fontWeight: '500',
+  },
+  meta: { color: 'rgba(255,255,255,0.55)', fontSize: 11, marginTop: 4 },
+  controls: {
+    height: CONTROLS_BAR_H,
+    flexDirection: 'row',
+    flexWrap: 'nowrap',
+    alignItems: 'center',
+    gap: 8,
+  },
   ctrlBtn: {
     backgroundColor: 'rgba(255,255,255,0.16)',
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 8,
     borderRadius: 8,
   },
   ctrlBtnPrimary: { backgroundColor: 'rgba(34,197,94,0.35)' },
