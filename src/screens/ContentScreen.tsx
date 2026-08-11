@@ -311,7 +311,10 @@ export function ContentScreen() {
   const navigation = useNavigation<NavigationProp<MainTabParamList>>();
   const isDesktopWeb = Platform.OS === 'web' && winW >= 768;
   const frameW = isDesktopWeb ? Math.min(PHONE_FRAME_MAX, winW * 0.42) : winW;
-  const topPad = floatingHeaderInset(insets.top) + 18;
+  const headerClearance = floatingHeaderInset(insets.top) + 18;
+  // Let Shorts invade most of the header zone so height can keep true 9:16 from full width.
+  const shortUnderNav = Math.round(headerClearance * 0.72);
+  const topPad = Math.max(2, headerClearance - shortUnderNav);
   // Absolute tab bar sits on top of the scene — reserve height so reels/buttons clear it.
   const bottomClear = TAB_BAR_BODY_HEIGHT + insets.bottom + 8;
   const itemH = listH > 0 ? listH : 560;
@@ -495,7 +498,7 @@ export function ContentScreen() {
 
   if (loading && !items.length) {
     return (
-      <View style={[styles.center, { backgroundColor: '#0a0a0a', paddingTop: topPad }]}>
+      <View style={[styles.center, { backgroundColor: '#0a0a0a', paddingTop: headerClearance }]}>
         <ActivityIndicator color={palette.primary} size="large" />
         <Text style={styles.hint}>Loading content…</Text>
       </View>
@@ -504,7 +507,7 @@ export function ContentScreen() {
 
   if (error && !items.length) {
     return (
-      <View style={[styles.center, { backgroundColor: '#0a0a0a', paddingTop: topPad }]}>
+      <View style={[styles.center, { backgroundColor: '#0a0a0a', paddingTop: headerClearance }]}>
         <Text style={styles.err}>{error}</Text>
         <Text style={styles.hint} onPress={() => void loadPage(null, false)}>
           Tap to retry
@@ -515,7 +518,7 @@ export function ContentScreen() {
 
   if (!items.length) {
     return (
-      <View style={[styles.center, { backgroundColor: '#0a0a0a', paddingTop: topPad }]}>
+      <View style={[styles.center, { backgroundColor: '#0a0a0a', paddingTop: headerClearance }]}>
         <Text style={styles.emptyTitle}>No videos for this level yet</Text>
         <Text style={styles.hint}>
           {persona === 'parent' && levelLabel
@@ -531,18 +534,19 @@ export function ContentScreen() {
     const isShort = itemIsShort(item);
     const isActive = activeItemId === item.id;
     const titleBandH = isShort ? 0 : 56;
-    const shortTextH = 52; // course + title at bottom; no buttons on Shorts
-    const shortFooterH = isShort ? shortTextH : CONTROLS_BAR_H + 10;
+    const shortTextH = 56; // course + level + title at bottom; no buttons on Shorts
     const captionPadBottom = 4;
     const captionPadTop = isShort ? 6 : 10;
-    const shortTopNudge = isShort ? 12 : 0; // nudge video block up a little
-    const availForShort = Math.max(220, itemH - shortFooterH - shortTopNudge);
+    // Extra top inset for 16:9 only — Shorts use that height for aspect instead.
+    const longTopInset = isShort ? 0 : shortUnderNav;
     let videoW = frameW;
     let videoH: number;
     if (isShort) {
-      // Full bleed — no left/right margin.
+      // Width-first 9:16. Extra height comes from sitting higher under the top nav.
       videoW = frameW;
-      videoH = availForShort;
+      const idealH = Math.round((videoW * 16) / 9);
+      const maxH = Math.max(240, itemH - shortTextH);
+      videoH = Math.min(idealH, maxH + shortUnderNav);
     } else {
       videoH = Math.min(Math.round(itemH * 0.36), Math.round((frameW * 9) / 16));
       videoW = frameW;
@@ -566,13 +570,21 @@ export function ContentScreen() {
     const descLines = !isShort && desc && notesBudget > NOTES_LINE * 2 ? 1 : 0;
 
     return (
-      <View style={{ height: itemH, width: '100%', backgroundColor: '#000', overflow: 'hidden' }}>
+      <View
+        style={{
+          height: itemH,
+          width: '100%',
+          backgroundColor: '#000',
+          overflow: 'hidden',
+          paddingTop: longTopInset,
+        }}
+      >
         <View
           style={[
             styles.phoneFrame,
             {
               width: frameW,
-              height: itemH,
+              height: isShort ? itemH : itemH - longTopInset,
               alignSelf: 'center',
               borderRadius: isDesktopWeb ? 24 : 0,
               overflow: 'hidden',
@@ -596,8 +608,8 @@ export function ContentScreen() {
               styles.videoStage,
               {
                 width: frameW,
-                height: isShort ? availForShort : videoH,
-                marginTop: shortTopNudge,
+                height: videoH,
+                marginTop: isShort ? -Math.min(shortUnderNav, Math.max(0, videoH - (itemH - shortTextH))) : 0,
                 alignItems: 'center',
                 justifyContent: 'flex-start',
               },
@@ -683,7 +695,16 @@ export function ContentScreen() {
           </View>
 
           {isShort ? (
-            <View style={[styles.shortBottomText, { paddingTop: captionPadTop, paddingBottom: captionPadBottom }]}>
+            <View
+              style={[
+                styles.shortBottomText,
+                {
+                  paddingTop: captionPadTop,
+                  paddingBottom: captionPadBottom,
+                  marginTop: 'auto' as const,
+                },
+              ]}
+            >
               <View style={styles.shortTitleRow}>
                 <Text style={[styles.course, { flex: 1, marginBottom: 0 }]} numberOfLines={1}>
                   {courseTitle}
