@@ -23,6 +23,8 @@ import {
   resolveMemberRoomUrl,
   SchoolMeeting,
 } from '../../lib/meetingsApi';
+import { joinButtonLabel, openExternalMeeting, saveMeetingToCalendar } from '../../lib/meetingOpen';
+import { Ionicons } from '@expo/vector-icons';
 import { useDeskAuth } from '../../context/DeskAuthContext';
 import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
@@ -62,6 +64,7 @@ export function MeetingsScreen({ navigation }: Props) {
   const [creating, setCreating] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [newTitle, setNewTitle] = useState('');
+  const [newMeetingUrl, setNewMeetingUrl] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [profileGate, setProfileGate] = useState<SchoolMeeting | null>(null);
   const [gateName, setGateName] = useState('');
@@ -177,13 +180,27 @@ export function MeetingsScreen({ navigation }: Props) {
     setCreating(true);
     setError(null);
     try {
+      const url = newMeetingUrl.trim();
       await createSchoolMeeting({
         title,
         is_public: true,
         duration_minutes: 60,
         join_opens_minutes_before: 15,
+        ...(url
+          ? {
+              meeting_url: url,
+              meeting_provider: /meet\.google\.com/i.test(url)
+                ? 'google_meet'
+                : /zoom\.(us|com)/i.test(url)
+                  ? 'zoom'
+                  : /teams\.(microsoft|live)\.com/i.test(url)
+                    ? 'teams'
+                    : 'custom',
+            }
+          : {}),
       });
       setNewTitle('');
+      setNewMeetingUrl('');
       setShowCreate(false);
       await load(true);
     } catch (e) {
@@ -193,7 +210,17 @@ export function MeetingsScreen({ navigation }: Props) {
     } finally {
       setCreating(false);
     }
-  }, [load, newTitle]);
+  }, [load, newMeetingUrl, newTitle]);
+
+  const openGoogleCalendar = useCallback((m: SchoolMeeting) => {
+    void saveMeetingToCalendar({
+      title: m.title || 'Meeting',
+      startsAt: m.starts_at,
+      endsAt: m.ends_at,
+      location: m.meeting_url || m.short_url || m.join_url || '',
+      description: m.description || '',
+    });
+  }, []);
 
   return (
     <View style={styles.root}>
@@ -243,6 +270,14 @@ export function MeetingsScreen({ navigation }: Props) {
                   placeholderTextColor={Colors.mutedForeground}
                   style={styles.input}
                 />
+                <TextInput
+                  value={newMeetingUrl}
+                  onChangeText={setNewMeetingUrl}
+                  placeholder="Meet / Zoom / Teams URL (optional)"
+                  placeholderTextColor={Colors.mutedForeground}
+                  autoCapitalize="none"
+                  style={styles.input}
+                />
                 <View style={styles.createActions}>
                   <Pressable
                     style={[styles.joinBtn, creating && styles.joinBtnDisabled]}
@@ -254,7 +289,13 @@ export function MeetingsScreen({ navigation }: Props) {
                       <Text style={styles.joinText}>Create</Text>
                     )}
                   </Pressable>
-                  <Pressable style={styles.secondaryBtn} onPress={() => setShowCreate(false)}>
+                  <Pressable
+                    style={styles.secondaryBtn}
+                    onPress={() => {
+                      setShowCreate(false);
+                      setNewTitle('');
+                      setNewMeetingUrl('');
+                    }}>
                     <Text style={styles.secondaryText}>Cancel</Text>
                   </Pressable>
                 </View>
@@ -305,12 +346,30 @@ export function MeetingsScreen({ navigation }: Props) {
                     <Pressable
                       disabled={!open || busy}
                       style={[styles.joinBtn, (!open || busy) && styles.joinBtnDisabled]}
-                      onPress={() => void onJoin(m)}>
+                      onPress={() => {
+                        if (m.meeting_url) {
+                          void openExternalMeeting(m.meeting_url);
+                          return;
+                        }
+                        void onJoin(m);
+                      }}>
                       {busy ? (
                         <ActivityIndicator color="#fff" size="small" />
                       ) : (
-                        <Text style={styles.joinText}>{open ? 'Join' : 'Not open'}</Text>
+                        <Text style={styles.joinText}>
+                          {open || m.meeting_url
+                            ? joinButtonLabel(m.meeting_url, m.meeting_provider)
+                            : 'Not open'}
+                        </Text>
                       )}
+                    </Pressable>
+                    <Pressable
+                      style={styles.calendarBtn}
+                      onPress={() => openGoogleCalendar(m)}
+                      accessibilityRole="button"
+                      accessibilityLabel="Add to calendar with reminder">
+                      <Ionicons name="calendar" size={18} color="#fff" />
+                      <Text style={styles.calendarBtnText}>Calendar</Text>
                     </Pressable>
                   </View>
                 </View>
@@ -420,6 +479,18 @@ const styles = StyleSheet.create({
   },
   joinBtnDisabled: { opacity: 0.45 },
   joinText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  calendarBtn: {
+    backgroundColor: '#2563EB',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    minWidth: 72,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  calendarBtnText: { color: '#fff', fontWeight: '700', fontSize: 12 },
   lobbyHint: {
     marginTop: -4,
     marginBottom: 8,

@@ -32,6 +32,7 @@ import { useRegisterTabJumper } from '../hooks/useRegisterTabJumper';
 import { historyKeyFromUrl, TabHistoryStack } from '../lib/webviewHistory';
 import { isAppWebHost } from '../lib/localHost';
 import { useAuth } from '../context/AuthContext';
+import { useDeskAuth } from '../context/DeskAuthContext';
 import { useAppTheme } from '../context/AppThemeContext';
 import { useFontPreference } from '../context/FontPreferenceContext';
 import { useWebViewControl } from '../context/WebViewControlContext';
@@ -90,6 +91,7 @@ export function WebAppScreen({ path, label }: Props) {
   const { register, registerTabFocusHandler, consumePendingRoute, navigate: navigateWeb } =
     useWebViewControl();
   const { session, ensureFreshSession, logout } = useAuth();
+  const { selectedSchool, selectedStudent, selectedRole, persona } = useDeskAuth();
   const { themeId, chatBgPattern, palette } = useAppTheme();
   const { webFamily, webWeight, webStyle, fontSize } = useFontPreference();
 
@@ -204,10 +206,28 @@ export function WebAppScreen({ path, label }: Props) {
             nestTokRef.current ?? (await resolveNestAccessTokenForWebView());
           nestTokRef.current = nestTok;
           if (!webRef.current) return;
+          const deskPayload = {
+            schoolName: selectedSchool?.name || (selectedSchool as { school_name?: string } | null)?.school_name || null,
+            studentName: selectedStudent?.name || null,
+            studentClass: selectedStudent?.className || null,
+            role: selectedRole || persona || null,
+          };
+          const deskInject = `
+            (function(){
+              try {
+                var ctx = ${JSON.stringify(deskPayload)};
+                localStorage.setItem('tukua_desk_context', JSON.stringify(ctx));
+                if (ctx.schoolName) localStorage.setItem('tukua_school_name', String(ctx.schoolName));
+                if (ctx.studentName) localStorage.setItem('tukua_selected_student_name', String(ctx.studentName));
+                if (ctx.role) localStorage.setItem('tukua_desk_role', String(ctx.role));
+              } catch (e) {}
+              true;
+            })();
+          `;
           const script = chatMode
             ? buildSupabaseRefreshAndNavigateScript(session, path, nestTok)
             : buildFastTabNavigateScript(session, path, nestTok);
-          webRef.current.injectJavaScript(`${script}\ntrue;`);
+          webRef.current.injectJavaScript(`${deskInject}\n${script}\ntrue;`);
         } finally {
           setTimeout(() => {
             bootstrapPendingRef.current = false;
@@ -215,7 +235,7 @@ export function WebAppScreen({ path, label }: Props) {
         }
       })();
     },
-    [session, path, chatMode],
+    [session, path, chatMode, selectedSchool, selectedStudent, selectedRole, persona],
   );
 
   const scheduleBootstrap = useCallback(
@@ -616,6 +636,10 @@ export function WebAppScreen({ path, label }: Props) {
           bootstrappedRef.current = true;
           bootstrapPendingRef.current = false;
           // Keep pageLoading until TUKUA_CHAT_READY so user sees a loader, not a blank pane.
+        } else {
+          bootstrappedRef.current = true;
+          bootstrapPendingRef.current = false;
+          setPageLoading(false);
         }
       } else if (msg.type === 'TUKUA_CHAT_READY') {
         log.info('WebApp', 'chat ready');
@@ -656,24 +680,51 @@ export function WebAppScreen({ path, label }: Props) {
     }
   };
 
+  const isCourseWeb = path === '/courses' || path.startsWith('/courses/');
+  const shellLoaderMode = chatMode || isCourseWeb;
+
+  const [loaderPhraseIdx, setLoaderPhraseIdx] = useState(0);
+  const loaderPhrases = chatMode
+    ? ['Loading your chats…', 'Signing you in…', 'Getting things ready…']
+    : [`Loading ${loadingLabel}…`, 'Almost ready…'];
+
+  useEffect(() => {
+    if (!(shellLoaderMode && isFocused && (booting || pageLoading))) return;
+    const t = setInterval(() => {
+      setLoaderPhraseIdx((i) => (i + 1) % loaderPhrases.length);
+    }, 1800);
+    return () => clearInterval(t);
+  }, [shellLoaderMode, isFocused, booting, pageLoading, loaderPhrases.length]);
+
   if (booting || !preInject) {
     return (
-      <View style={styles.loader}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={styles.loaderText}>Starting {loadingLabel}…</Text>
+      <View style={[styles.chatShellLoader, { backgroundColor: palette.muted }]}>
+        <View style={styles.chatShellInner}>
+          <ActivityIndicator size="large" color={palette.primary} />
+          <Text style={[styles.loaderText, { color: Colors.mutedForeground }]}>
+            Starting {loadingLabel}…
+          </Text>
+          <View style={styles.skelRow}>
+            <View style={[styles.skelBubble, { backgroundColor: `${palette.primary}22` }]} />
+          </View>
+          <View style={[styles.skelRow, { justifyContent: 'flex-end' }]}>
+            <View style={[styles.skelBubbleShort, { backgroundColor: `${palette.primary}33` }]} />
+          </View>
+        </View>
       </View>
     );
   }
 
   const showOverlay =
+    !shellLoaderMode &&
     pageLoading &&
     isFocused &&
     isAtTabRoot(currentPathname, path) &&
     !bootstrappedRef.current &&
     !webOnlyTab;
 
-  // Show until SPA posts TUKUA_CHAT_READY (or bootstrap timeout clears pageLoading).
-  const showChatLoader = chatMode && isFocused && (booting || pageLoading);
+  // Solid in-chat shell (not a translucent overlay) until SPA posts TUKUA_CHAT_READY.
+  const showChatLoader = shellLoaderMode && isFocused && (booting || pageLoading);
 
   const Container = View;
   const containerKeyboardProps = {};
@@ -689,17 +740,14 @@ export function WebAppScreen({ path, label }: Props) {
         </View>
       )}
 
-      {showChatLoader && (
-        <View style={[styles.chatLoaderOverlay, { backgroundColor: `${palette.muted}8C` }]} pointerEvents="none">
-          <ActivityIndicator size="large" color={Colors.primary} />
-          <Text style={styles.loaderText}>Loading chat…</Text>
-        </View>
-      )}
-
       <WebView
         ref={webRef}
         source={{ uri: shellUrl }}
-        style={[styles.web, { backgroundColor: palette.muted }]}
+        style={[
+          styles.web,
+          { backgroundColor: palette.muted },
+          showChatLoader ? styles.webHiddenUnderLoader : null,
+        ]}
         originWhitelist={['https://*', 'http://*']}
         onLoadEnd={() => {
           hideSystemStatusBar();
@@ -713,13 +761,13 @@ export function WebAppScreen({ path, label }: Props) {
             setPageLoading(false);
             if (isFocused) syncTabRoute('shell reload');
           }
-          // Chat: wait for TUKUA_CHAT_READY. Fallback so loader never sticks forever.
-          if (chatMode) {
+          // Chat/courses: wait for TUKUA_CHAT_READY. Fallback so loader never sticks forever.
+          if (shellLoaderMode) {
             setTimeout(() => {
               if (shellReadyRef.current && bootstrappedRef.current) {
                 setPageLoading(false);
               }
-            }, 12_000);
+            }, 8_000);
           }
         }}
         onError={(e) => {
@@ -773,6 +821,29 @@ export function WebAppScreen({ path, label }: Props) {
         automaticallyAdjustsScrollIndicatorInsets={false}
         automaticallyAdjustContentInsets={false}
       />
+
+      {showChatLoader ? (
+        <View
+          style={[styles.chatShellLoader, { backgroundColor: palette.muted }]}
+          pointerEvents="auto"
+          accessibilityLabel={loaderPhrases[loaderPhraseIdx] || 'Loading'}>
+          <View style={styles.chatShellInner}>
+            <ActivityIndicator size="large" color={palette.primary} />
+            <Text style={[styles.loaderText, { color: Colors.mutedForeground, textTransform: 'none' }]}>
+              {loaderPhrases[loaderPhraseIdx] || 'Loading your chats…'}
+            </Text>
+            <View style={styles.skelRow}>
+              <View style={[styles.skelBubble, { backgroundColor: `${palette.primary}22` }]} />
+            </View>
+            <View style={[styles.skelRow, { justifyContent: 'flex-end' }]}>
+              <View style={[styles.skelBubbleShort, { backgroundColor: `${palette.primary}33` }]} />
+            </View>
+            <View style={styles.skelRow}>
+              <View style={[styles.skelBubbleMid, { backgroundColor: `${palette.primary}18` }]} />
+            </View>
+          </View>
+        </View>
+      ) : null}
     </Container>
   );
 }
@@ -780,13 +851,7 @@ export function WebAppScreen({ path, label }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.white },
   web: { flex: 1, backgroundColor: Colors.white },
-  loader: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.white,
-    gap: 12,
-  },
+  webHiddenUnderLoader: { opacity: 0.01 },
   loaderOverlay: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
@@ -796,18 +861,42 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   loaderText: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
     color: Colors.mutedForeground,
     fontFamily: 'Inter_500Medium',
-    textTransform: 'capitalize',
   },
-  chatLoaderOverlay: {
+  /** Full chat-chrome loader — solid, not translucent over white WebView. */
+  chatShellLoader: {
     ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
+    zIndex: 30,
+    paddingHorizontal: 20,
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.55)',
-    zIndex: 20,
-    gap: 12,
+  },
+  chatShellInner: {
+    gap: 14,
+    alignItems: 'stretch',
+    maxWidth: 420,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  skelRow: {
+    flexDirection: 'row',
+    marginTop: 4,
+  },
+  skelBubble: {
+    height: 44,
+    width: '72%',
+    borderRadius: 16,
+  },
+  skelBubbleShort: {
+    height: 36,
+    width: '48%',
+    borderRadius: 16,
+  },
+  skelBubbleMid: {
+    height: 40,
+    width: '58%',
+    borderRadius: 16,
   },
 });

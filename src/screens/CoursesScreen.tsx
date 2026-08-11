@@ -26,6 +26,7 @@ import { floatingHeaderInset } from '../constants/layout';
 import { log } from '../lib/logger';
 import type { CoursesStackParamList } from '../navigation/CoursesStack';
 import { GreenPattern } from '../components/dashboard/DashboardBackground';
+import { useAppTheme } from '../context/AppThemeContext';
 
 async function nestAuthGet<T>(path: string): Promise<T> {
   const token = await resolveNestAccessTokenForWebView();
@@ -217,6 +218,7 @@ function CertifierLabels({ entries }: { entries: CertifierEntry[] }) {
 export function CoursesScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NativeStackNavigationProp<CoursesStackParamList>>();
+  const { palette } = useAppTheme();
   const [enrolled, setEnrolled] = useState<Enrolled[]>([]);
   const [catalog, setCatalog] = useState<CatalogCourse[]>([]);
   const [orgBrandByCourse, setOrgBrandByCourse] = useState<Record<string, OrgBrand>>({});
@@ -301,9 +303,9 @@ export function CoursesScreen() {
   const headerPad = floatingHeaderInset(insets.top);
 
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, { backgroundColor: palette.muted }]}>
       <LinearGradient
-        colors={['#041F18', '#0A3D2E', '#F7FAF8']}
+        colors={[palette.primary, palette.tertiary || palette.primary, palette.muted]}
         locations={[0, 0.22, 0.48]}
         style={StyleSheet.absoluteFill}
       />

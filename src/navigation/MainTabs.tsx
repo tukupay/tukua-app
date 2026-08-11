@@ -14,6 +14,7 @@ import { WebViewTabBridge } from '../components/WebViewTabBridge';
 import { DashboardStack } from './DashboardStack';
 import { CoursesStack } from './CoursesStack';
 import { ProfileStack } from './ProfileStack';
+import { ContentScreen } from '../screens/ContentScreen';
 import { TAB_BAR_BODY_HEIGHT } from '../constants/layout';
 import { TAB_PATHS, WebViewControlProvider, useWebViewControl } from '../context/WebViewControlContext';
 import { useDialog } from '../context/DialogContext';
@@ -163,6 +164,7 @@ function MainTabNavigator({
           }
           const icons: Record<string, keyof typeof Ionicons.glyphMap> = {
             Courses: 'book-outline',
+            Content: 'play-circle-outline',
             Dashboard: 'grid-outline',
             Profile: 'person-outline',
           };
@@ -179,6 +181,7 @@ function MainTabNavigator({
       </Tab.Screen>
       {/* Tukua Connect parked for next release — tab hidden */}
       <Tab.Screen name="Courses" options={{ title: 'Courses' }} component={CoursesStack} listeners={tabPressGuard('Courses')} />
+      <Tab.Screen name="Content" options={{ title: 'Content' }} component={ContentScreen} listeners={tabPressGuard('Content')} />
       <Tab.Screen name="Dashboard" options={{ title: 'Dashboard' }} component={DashboardStack} listeners={tabPressGuard('Dashboard')} />
       <Tab.Screen name="Profile" options={{ title: 'Profile' }} component={ProfileStack} listeners={tabPressGuard('Profile')} />
     </Tab.Navigator>

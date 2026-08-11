@@ -91,6 +91,7 @@ export type DashboardStackParamList = {
 export type MainTabParamList = {
   Chat: undefined;
   Courses: undefined;
+  Content: undefined;
   Dashboard: undefined;
   Profile: NavigatorScreenParams<ProfileStackParamList> | undefined;
 };
