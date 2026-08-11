@@ -1,6 +1,7 @@
 /**
  * Content tab — TikTok/Reels-style vertical YouTube lessons for the student's level.
- * YouTube is loaded as a direct WebView uri (not nested HTML iframe) to avoid error 153.
+ * Error 153 = YouTube needs a real HTTPS Referer/origin in WebView embeds.
+ * Fix: single embed iframe HTML with baseUrl https://tukua.ai (no Data API).
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -77,9 +78,30 @@ async function nestJson<T>(path: string, init?: RequestInit): Promise<T> {
   return data;
 }
 
-function youtubeEmbedUri(videoId: string): string {
-  const id = encodeURIComponent(videoId);
-  return `https://www.youtube.com/embed/${id}?playsinline=1&rel=0&modestbranding=1&controls=1`;
+/** HTTPS origin YouTube accepts as Referer for in-app embeds (error 153). */
+const YT_EMBED_ORIGIN = 'https://tukua.ai';
+
+function youtubeEmbedHtml(videoId: string, muted: boolean): string {
+  const id = String(videoId || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 11);
+  const mute = muted ? '&mute=1' : '';
+  // Single iframe only — set WebView baseUrl to YT_EMBED_ORIGIN so Referer is sent.
+  return `<!DOCTYPE html><html><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<meta name="referrer" content="strict-origin-when-cross-origin"/>
+<style>
+  html,body{margin:0;padding:0;height:100%;background:#000;overflow:hidden}
+  iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+</style>
+</head><body>
+<iframe
+  src="https://www.youtube.com/embed/${id}?playsinline=1&rel=0&modestbranding=1&controls=1&enablejsapi=1${mute}"
+  title="lesson"
+  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+  allowfullscreen
+  referrerpolicy="strict-origin-when-cross-origin"
+></iframe>
+</body></html>`;
 }
 
 function youtubeWatchUri(videoId: string): string {
@@ -270,9 +292,12 @@ export function ContentScreen() {
   }
 
   const renderItem = ({ item }: { item: FeedItem }) => {
-    const uri = item.youtube_id
-      ? `${youtubeEmbedUri(item.youtube_id)}${muted ? '&mute=1' : ''}`
-      : item.download_url || 'about:blank';
+    const hosted = String(item.download_url || '').trim();
+    const webSource = item.youtube_id
+      ? { html: youtubeEmbedHtml(item.youtube_id, muted), baseUrl: YT_EMBED_ORIGIN }
+      : hosted
+        ? { uri: hosted }
+        : { html: '<html><body style="background:#000"></body></html>', baseUrl: YT_EMBED_ORIGIN };
 
     return (
       <View style={{ height: itemH, width: '100%', alignItems: 'center', backgroundColor: '#000' }}>
@@ -289,7 +314,7 @@ export function ContentScreen() {
         >
           <WebView
             originWhitelist={['*']}
-            source={{ uri }}
+            source={webSource}
             style={styles.web}
             allowsFullscreenVideo
             allowsInlineMediaPlayback
@@ -298,10 +323,11 @@ export function ContentScreen() {
             domStorageEnabled
             setSupportMultipleWindows={false}
             androidLayerType="hardware"
+            mixedContentMode="always"
             userAgent={
               Platform.OS === 'android'
-                ? undefined
-                : 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
+                ? 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
+                : undefined
             }
           />
           <View style={[styles.caption, { paddingBottom: 16 + insets.bottom * 0.2 }]} pointerEvents="box-none">
