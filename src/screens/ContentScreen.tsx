@@ -544,18 +544,14 @@ export function ContentScreen() {
     let videoW = frameW;
     let videoH: number;
     if (isShort) {
-      // Contain true 9:16 in remaining space — side margins if needed.
-      videoW = frameW;
-      videoH = Math.round((videoW * 16) / 9);
-      if (videoH > availForShort) {
-        videoH = availForShort;
-        videoW = Math.max(160, Math.round((videoH * 9) / 16));
-      }
+      // Nearly full-bleed 9:16; only a 1pt side gutter. Prefer width over big side margins.
+      videoW = Math.max(160, frameW - SHORT_SIDE_PT * 2);
+      videoH = Math.min(availForShort, Math.round((videoW * 16) / 9));
     } else {
       videoH = Math.min(Math.round(itemH * 0.36), Math.round((frameW * 9) / 16));
       videoW = frameW;
     }
-    const sidePad = isShort ? Math.max(0, Math.round((frameW - videoW) / 2)) : 0;
+    const sidePad = isShort ? SHORT_SIDE_PT : 0;
     const notes = decodeHtmlEntities(String(item.unit_notes || '').trim());
     const desc = decodeHtmlEntities(String(item.description || '').trim());
     const courseTitle = decodeHtmlEntities(String(item.course_title || ''));
@@ -636,7 +632,13 @@ export function ContentScreen() {
                           baseUrl: YT_EMBED_ORIGIN,
                         }
                 }
-                style={{ width: videoW, height: videoH, backgroundColor: '#000' }}
+                style={{
+                  width: videoW,
+                  height: videoH,
+                  backgroundColor: '#000',
+                  borderRadius: isShort ? SHORT_RADIUS_PT : 0,
+                  overflow: 'hidden',
+                }}
                 allowsFullscreenVideo={!isShort}
                 allowsInlineMediaPlayback
                 mediaPlaybackRequiresUserAction={false}
@@ -667,7 +669,16 @@ export function ContentScreen() {
                 }
               />
             ) : (
-              <View style={[styles.placeholder, { width: videoW, height: videoH }]}>
+              <View
+                style={[
+                  styles.placeholder,
+                  {
+                    width: videoW,
+                    height: videoH,
+                    borderRadius: isShort ? SHORT_RADIUS_PT : 0,
+                  },
+                ]}
+              >
                 <Text style={styles.placeholderTxt}>{isShort ? 'Short · 9:16' : 'Video · 16:9'}</Text>
               </View>
             )}
