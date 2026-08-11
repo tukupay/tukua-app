@@ -1,6 +1,6 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
 import type { ProfileStackParamList } from './ProfileStack';
-
+import type { CoursesStackParamList } from './CoursesStack';
 export type RootStackParamList = {
   Login: undefined;
   Register: undefined;
@@ -90,7 +90,7 @@ export type DashboardStackParamList = {
 
 export type MainTabParamList = {
   Chat: undefined;
-  Courses: undefined;
+  Courses: NavigatorScreenParams<CoursesStackParamList> | undefined;
   Content: undefined;
   Dashboard: undefined;
   Profile: NavigatorScreenParams<ProfileStackParamList> | undefined;

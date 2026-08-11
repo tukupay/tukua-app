@@ -32,6 +32,10 @@ import { useAppTheme } from '../context/AppThemeContext';
 import { Colors } from '../theme/yana';
 import { floatingHeaderInset } from '../constants/layout';
 import { log } from '../lib/logger';
+import { useNavigation } from '@react-navigation/native';
+import type { NavigationProp } from '@react-navigation/native';
+import type { MainTabParamList } from '../navigation/types';
+import type { CoursesStackParamList } from '../navigation/CoursesStack';
 
 type FeedItem = {
   id: string;
@@ -45,6 +49,9 @@ type FeedItem = {
   download_url?: string | null;
   media_kind?: 'youtube' | 'file';
   is_short?: boolean;
+  unit_id?: string | null;
+  unit_title?: string | null;
+  unit_notes?: string | null;
 };
 
 type FeedResponse = {
@@ -83,11 +90,11 @@ async function nestJson<T>(path: string, init?: RequestInit): Promise<T> {
   return data;
 }
 
-function youtubeEmbedHtml(videoId: string, muted: boolean, isShort: boolean): string {
+function youtubeEmbedHtml(videoId: string, muted: boolean, isShort: boolean, autoplay: boolean): string {
   const id = String(videoId || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 11);
-  const startMuted = muted ? 1 : 0;
-  // YouTube iframe API always paints 16:9. Shorts are vertical inside that frame.
-  // Cover-crop: size a tall wide 16:9 player so the Short's content fills our portrait WebView.
+  // Mobile WebViews only autoplay when muted; Unmute remounts with mute=0.
+  const startMute = muted ? 1 : 0;
+  const doAuto = autoplay ? 'true' : 'false';
   if (isShort) {
     return `<!DOCTYPE html><html><head>
 <meta charset="utf-8"/>
@@ -104,7 +111,8 @@ function youtubeEmbedHtml(videoId: string, muted: boolean, isShort: boolean): st
 <div id="crop"><div id="stage"><div id="player"></div></div></div>
 <script>
   var VID=${JSON.stringify(id)};
-  var START_MUTE=${startMuted};
+  var START_MUTE=${startMute};
+  var AUTOPLAY=${doAuto};
   var player=null;
   function post(playing){
     try{ if(window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify({playing:!!playing,short:true})); }catch(e){}
@@ -112,13 +120,18 @@ function youtubeEmbedHtml(videoId: string, muted: boolean, isShort: boolean): st
   function layout(){
     var cw = Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
     var ch = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
-    // Short content ≈ 9:16 filling the player height. Need content width >= cw
-    // => playerH >= cw * 16/9, and also cover crop height ch.
     var playerH = Math.ceil(Math.max(ch, cw * 16 / 9));
     var playerW = Math.ceil(playerH * 16 / 9);
     var stage = document.getElementById('stage');
     if(stage){ stage.style.width = playerW + 'px'; stage.style.height = playerH + 'px'; }
     try{ if(player && player.setSize) player.setSize(playerW, playerH); }catch(e){}
+  }
+  function tryPlay(){
+    try{
+      if(!player) return;
+      if(START_MUTE) player.mute && player.mute();
+      if(AUTOPLAY && player.playVideo) player.playVideo();
+    }catch(e){}
   }
   function bootPlayer(){
     layout();
@@ -130,11 +143,11 @@ function youtubeEmbedHtml(videoId: string, muted: boolean, isShort: boolean): st
       width:w,
       height:h,
       playerVars:{
-        playsinline:1,rel:0,modestbranding:1,controls:1,
+        playsinline:1,rel:0,modestbranding:1,controls:1,autoplay:AUTOPLAY?1:0,
         mute:START_MUTE,fs:0,origin:${JSON.stringify(YT_EMBED_ORIGIN)}
       },
       events:{
-        onReady:function(){ layout(); setTimeout(layout, 250); setTimeout(layout, 800); },
+        onReady:function(){ layout(); tryPlay(); setTimeout(layout, 250); setTimeout(tryPlay, 400); },
         onStateChange:function(e){
           if(e.data===1||e.data===3) post(true);
           else if(e.data===2||e.data===0||e.data===5) post(false);
@@ -142,14 +155,16 @@ function youtubeEmbedHtml(videoId: string, muted: boolean, isShort: boolean): st
       }
     });
   }
-  function onPauseCmd(ev){
+  function onCmd(ev){
     try{
       var d = typeof ev.data==='string' ? JSON.parse(ev.data) : ev.data;
-      if(d && d.cmd==='pause' && player && player.pauseVideo) player.pauseVideo();
+      if(!d||!player) return;
+      if(d.cmd==='pause' && player.pauseVideo) player.pauseVideo();
+      if(d.cmd==='play') tryPlay();
     }catch(e){}
   }
-  document.addEventListener('message', onPauseCmd);
-  window.addEventListener('message', onPauseCmd);
+  document.addEventListener('message', onCmd);
+  window.addEventListener('message', onCmd);
   window.addEventListener('resize', layout);
   window.onYouTubeIframeAPIReady = bootPlayer;
   if(window.YT && window.YT.Player){ bootPlayer(); }
@@ -172,10 +187,18 @@ function youtubeEmbedHtml(videoId: string, muted: boolean, isShort: boolean): st
 <div id="stage"><div id="player"></div></div>
 <script>
   var VID=${JSON.stringify(id)};
-  var START_MUTE=${startMuted};
+  var START_MUTE=${startMute};
+  var AUTOPLAY=${doAuto};
   var player=null;
   function post(playing){
     try{ if(window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify({playing:!!playing})); }catch(e){}
+  }
+  function tryPlay(){
+    try{
+      if(!player) return;
+      if(START_MUTE) player.mute && player.mute();
+      if(AUTOPLAY && player.playVideo) player.playVideo();
+    }catch(e){}
   }
   function bootPlayer(){
     player = new YT.Player('player',{
@@ -183,10 +206,11 @@ function youtubeEmbedHtml(videoId: string, muted: boolean, isShort: boolean): st
       width:'100%',
       height:'100%',
       playerVars:{
-        playsinline:1,rel:0,modestbranding:1,controls:1,
+        playsinline:1,rel:0,modestbranding:1,controls:1,autoplay:AUTOPLAY?1:0,
         mute:START_MUTE,fs:1,origin:${JSON.stringify(YT_EMBED_ORIGIN)}
       },
       events:{
+        onReady:function(){ tryPlay(); setTimeout(tryPlay, 400); },
         onStateChange:function(e){
           if(e.data===1||e.data===3) post(true);
           else if(e.data===2||e.data===0||e.data===5) post(false);
@@ -194,14 +218,16 @@ function youtubeEmbedHtml(videoId: string, muted: boolean, isShort: boolean): st
       }
     });
   }
-  function onPauseCmd(ev){
+  function onCmd(ev){
     try{
       var d = typeof ev.data==='string' ? JSON.parse(ev.data) : ev.data;
-      if(d && d.cmd==='pause' && player && player.pauseVideo) player.pauseVideo();
+      if(!d||!player) return;
+      if(d.cmd==='pause' && player.pauseVideo) player.pauseVideo();
+      if(d.cmd==='play') tryPlay();
     }catch(e){}
   }
-  document.addEventListener('message', onPauseCmd);
-  window.addEventListener('message', onPauseCmd);
+  document.addEventListener('message', onCmd);
+  window.addEventListener('message', onCmd);
   window.onYouTubeIframeAPIReady = bootPlayer;
   if(window.YT && window.YT.Player){ bootPlayer(); }
 </script>
@@ -239,7 +265,7 @@ export function ContentScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [muted, setMuted] = useState(false);
+  const [muted, setMuted] = useState(true);
   const [playingItemId, setPlayingItemId] = useState<string | null>(null);
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
   const [listH, setListH] = useState(0);
@@ -248,10 +274,26 @@ export function ContentScreen() {
   const loadingMoreRef = useRef(false);
   const webRefs = useRef<Map<string, WebView | null>>(new Map());
 
+  const navigation = useNavigation<NavigationProp<MainTabParamList>>();
   const isDesktopWeb = Platform.OS === 'web' && winW >= 768;
   const frameW = isDesktopWeb ? Math.min(PHONE_FRAME_MAX, winW * 0.42) : winW;
   const topPad = floatingHeaderInset(insets.top) + 18;
   const itemH = listH > 0 ? listH : 560;
+
+  const openUnit = useCallback(
+    (item: FeedItem) => {
+      if (!item.course_id || item.course_id === 'platform-shared') return;
+      const path = `/courses/${item.course_id}/learn`;
+      navigation.navigate('Courses', {
+        screen: 'CourseWeb',
+        params: {
+          path,
+          title: item.unit_title || item.course_title || 'Course',
+        } satisfies CoursesStackParamList['CourseWeb'],
+      });
+    },
+    [navigation],
+  );
 
   const pauseOthers = useCallback((exceptId: string | null) => {
     webRefs.current.forEach((ref, id) => {
@@ -438,12 +480,15 @@ export function ContentScreen() {
     const isShort = itemIsShort(item);
     const isActive = activeItemId === item.id;
     const playing = playingItemId === item.id;
-    const titleBandH = 64;
-    const maxShortH = Math.max(280, itemH - titleBandH - Math.round(itemH * 0.28));
+    const titleBandH = isShort ? 56 : 64;
+    const shortFooterH = 88; // mute row + gap above tab bar
+    const maxShortH = Math.max(240, itemH - titleBandH - shortFooterH);
     const videoH = isShort
       ? Math.min(maxShortH, Math.round((frameW * 16) / 9))
-      : Math.min(Math.round(itemH * 0.42), Math.round((frameW * 9) / 16));
+      : Math.min(Math.round(itemH * 0.38), Math.round((frameW * 9) / 16));
     const videoW = frameW;
+    const notes = String(item.unit_notes || '').trim();
+    const showUnitCta = !isShort && !!item.course_id && item.course_id !== 'platform-shared';
 
     return (
       <View style={{ height: itemH, width: '100%', backgroundColor: '#000', overflow: 'hidden' }}>
@@ -462,6 +507,7 @@ export function ContentScreen() {
           <View style={styles.titleBand}>
             <Text style={styles.course} numberOfLines={1}>
               {item.course_title}
+              {item.unit_title && !isShort ? ` · ${item.unit_title}` : ''}
             </Text>
             <Text style={styles.title} numberOfLines={2}>
               {item.title}
@@ -474,12 +520,19 @@ export function ContentScreen() {
                 key={`wv-${item.id}-${isShort ? 's' : 'w'}-${muted ? 'm' : 'u'}`}
                 ref={(r) => {
                   webRefs.current.set(item.id, r);
+                  if (r) {
+                    try {
+                      r.postMessage?.(JSON.stringify({ cmd: 'play' }));
+                    } catch {
+                      /* ignore */
+                    }
+                  }
                 }}
                 originWhitelist={['*']}
                 source={
                   item.youtube_id
                     ? {
-                        html: youtubeEmbedHtml(item.youtube_id, muted, isShort),
+                        html: youtubeEmbedHtml(item.youtube_id, muted, isShort, true),
                         baseUrl: YT_EMBED_ORIGIN,
                       }
                     : hosted
@@ -526,8 +579,16 @@ export function ContentScreen() {
             )}
           </View>
 
-          {!playing ? (
-            <View style={[styles.caption, { paddingBottom: 10 + insets.bottom * 0.15 }]}>
+          <View
+            style={[
+              styles.caption,
+              {
+                paddingBottom: 10 + (isShort ? 4 : insets.bottom * 0.1),
+                minHeight: isShort ? shortFooterH - 8 : undefined,
+              },
+            ]}
+          >
+            {!isShort ? (
               <ScrollView
                 style={styles.captionScroll}
                 contentContainerStyle={styles.captionScrollInner}
@@ -535,38 +596,25 @@ export function ContentScreen() {
                 nestedScrollEnabled
               >
                 {item.description ? <Text style={styles.desc}>{item.description}</Text> : null}
-                <Text style={styles.meta}>
-                  swipe up for next
-                  {levelLabel ? ` · ${levelLabel}` : ''}
-                  {isShort ? ' · Short' : ''}
-                </Text>
-              </ScrollView>
-              <View style={styles.controls}>
-                <Pressable
-                  style={styles.ctrlBtn}
-                  onPress={() => {
-                    setPlayingItemId(null);
-                    setMuted((m) => !m);
-                  }}
-                >
-                  <Text style={styles.ctrlTxt}>{muted ? 'Unmute' : 'Mute'}</Text>
-                </Pressable>
-                {hosted ? (
-                  <Pressable style={styles.ctrlBtn} onPress={() => void downloadItem(item)}>
-                    <Text style={styles.ctrlTxt}>Download</Text>
-                  </Pressable>
+                {notes ? (
+                  <>
+                    <Text style={styles.notesLabel}>
+                      {item.unit_title ? `Unit notes · ${item.unit_title}` : 'Unit notes'}
+                    </Text>
+                    <Text style={styles.notes}>{notes}</Text>
+                  </>
                 ) : null}
-              </View>
-            </View>
-          ) : (
-            <View style={[styles.playingBar, { paddingBottom: 12 + insets.bottom * 0.2 }]}>
-              <Pressable
-                style={styles.ctrlBtn}
-                onPress={() => {
-                  setPlayingItemId(null);
-                  setMuted((m) => !m);
-                }}
-              >
+                <Text style={styles.meta}>swipe up for next{levelLabel ? ` · ${levelLabel}` : ''}</Text>
+              </ScrollView>
+            ) : (
+              <Text style={styles.meta}>
+                swipe up for next
+                {levelLabel ? ` · ${levelLabel}` : ''}
+                {' · Short'}
+              </Text>
+            )}
+            <View style={styles.controls}>
+              <Pressable style={styles.ctrlBtn} onPress={() => setMuted((m) => !m)}>
                 <Text style={styles.ctrlTxt}>{muted ? 'Unmute' : 'Mute'}</Text>
               </Pressable>
               {hosted ? (
@@ -574,8 +622,13 @@ export function ContentScreen() {
                   <Text style={styles.ctrlTxt}>Download</Text>
                 </Pressable>
               ) : null}
+              {showUnitCta ? (
+                <Pressable style={[styles.ctrlBtn, styles.ctrlBtnPrimary]} onPress={() => openUnit(item)}>
+                  <Text style={styles.ctrlTxt}>View unit</Text>
+                </Pressable>
+              ) : null}
             </View>
-          )}
+          </View>
         </View>
       </View>
     );
@@ -679,13 +732,22 @@ const styles = StyleSheet.create({
   course: { color: Colors.primaryLight || '#86efac', fontSize: 12, fontWeight: '600', marginBottom: 4 },
   title: { color: '#fff', fontSize: 17, fontWeight: '800' },
   desc: { color: 'rgba(255,255,255,0.85)', fontSize: 13, marginTop: 6, lineHeight: 19 },
+  notesLabel: {
+    color: Colors.primaryLight || '#86efac',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  notes: { color: 'rgba(255,255,255,0.78)', fontSize: 13, lineHeight: 19 },
   meta: { color: 'rgba(255,255,255,0.55)', fontSize: 11, marginTop: 8 },
-  controls: { flexDirection: 'row', gap: 8, marginTop: 8 },
+  controls: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
   ctrlBtn: {
     backgroundColor: 'rgba(255,255,255,0.16)',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 8,
   },
+  ctrlBtnPrimary: { backgroundColor: 'rgba(34,197,94,0.35)' },
   ctrlTxt: { color: '#fff', fontSize: 12, fontWeight: '700' },
 });
