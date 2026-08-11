@@ -29,7 +29,18 @@ import { useDeskAuth } from '../context/DeskAuthContext';
 import { useTokenGate } from '../context/TokenGateContext';
 import { useAppTheme } from '../context/AppThemeContext';
 import { Colors } from '../theme/yana';
-import { floatingHeaderInset, TAB_BAR_BODY_HEIGHT } from '../constants/layout';
+import { floatingHeaderInset } from '../constants/layout';
+import {
+  CONTENT_CONTROLS_BAR_H,
+  CONTENT_NOTES_FONT,
+  CONTENT_NOTES_LINE,
+  CONTENT_PHONE_FRAME_MAX,
+  CONTENT_SHORT_RADIUS_PT,
+  CONTENT_YT_EMBED_ORIGIN,
+  fitNotesLines,
+  resolveContentFeedChrome,
+  resolveContentItemLayout,
+} from '../constants/contentFeedLayout';
 import { log } from '../lib/logger';
 import { useNavigation } from '@react-navigation/native';
 import type { NavigationProp } from '@react-navigation/native';
@@ -61,14 +72,12 @@ type FeedResponse = {
   next_cursor?: string | null;
 };
 
-const PHONE_FRAME_MAX = 440;
-const YT_EMBED_ORIGIN = 'https://tukua.ai';
-const CONTROLS_BAR_H = 44;
-const NOTES_FONT = 16;
-const NOTES_LINE = 24;
-/** Shorts: hairline side inset + corner soft edges. */
-const SHORT_SIDE_PT = 1;
-const SHORT_RADIUS_PT = 1;
+const PHONE_FRAME_MAX = CONTENT_PHONE_FRAME_MAX;
+const YT_EMBED_ORIGIN = CONTENT_YT_EMBED_ORIGIN;
+const CONTROLS_BAR_H = CONTENT_CONTROLS_BAR_H;
+const NOTES_FONT = CONTENT_NOTES_FONT;
+const NOTES_LINE = CONTENT_NOTES_LINE;
+const SHORT_RADIUS_PT = CONTENT_SHORT_RADIUS_PT;
 
 function decodeHtmlEntities(raw: string): string {
   return String(raw || '')
@@ -310,13 +319,13 @@ export function ContentScreen() {
 
   const navigation = useNavigation<NavigationProp<MainTabParamList>>();
   const isDesktopWeb = Platform.OS === 'web' && winW >= 768;
-  const frameW = isDesktopWeb ? Math.min(PHONE_FRAME_MAX, winW * 0.42) : winW;
-  const headerClearance = floatingHeaderInset(insets.top) + 18;
-  // Let Shorts invade most of the header zone so height can keep true 9:16 from full width.
-  const shortUnderNav = Math.round(headerClearance * 0.72);
-  const topPad = Math.max(2, headerClearance - shortUnderNav);
-  // Absolute tab bar sits on top of the scene — reserve height so reels/buttons clear it.
-  const bottomClear = TAB_BAR_BODY_HEIGHT + insets.bottom + 8;
+  const chrome = resolveContentFeedChrome({
+    windowWidth: winW,
+    safeTop: insets.top,
+    safeBottom: insets.bottom,
+    isDesktopWeb,
+  });
+  const { frameW, headerClearance, shortUnderNav, topPad, bottomClear } = chrome;
   const itemH = listH > 0 ? listH : 560;
 
   const openUnit = useCallback(
@@ -533,24 +542,23 @@ export function ContentScreen() {
     const hosted = String(item.download_url || '').trim();
     const isShort = itemIsShort(item);
     const isActive = activeItemId === item.id;
-    const titleBandH = isShort ? 0 : 56;
-    const shortTextH = 56; // course + level + title at bottom; no buttons on Shorts
-    const captionPadBottom = 4;
-    const captionPadTop = isShort ? 6 : 10;
-    // Extra top inset for 16:9 only — Shorts use that height for aspect instead.
-    const longTopInset = isShort ? 0 : shortUnderNav;
-    let videoW = frameW;
-    let videoH: number;
-    if (isShort) {
-      // Width-first 9:16. Extra height comes from sitting higher under the top nav.
-      videoW = frameW;
-      const idealH = Math.round((videoW * 16) / 9);
-      const maxH = Math.max(240, itemH - shortTextH);
-      videoH = Math.min(idealH, maxH + shortUnderNav);
-    } else {
-      videoH = Math.min(Math.round(itemH * 0.36), Math.round((frameW * 9) / 16));
-      videoW = frameW;
-    }
+    const lay = resolveContentItemLayout({
+      frameW,
+      itemH,
+      isShort,
+      shortUnderNav,
+    });
+    const {
+      videoW,
+      videoH,
+      longTopInset,
+      stageMarginTop,
+      phoneFrameH,
+      captionPadTop,
+      captionPadBottom,
+      borderRadius,
+      captionBodyH,
+    } = lay;
     const notes = decodeHtmlEntities(String(item.unit_notes || '').trim());
     const desc = decodeHtmlEntities(String(item.description || '').trim());
     const courseTitle = decodeHtmlEntities(String(item.course_title || ''));
@@ -558,16 +566,11 @@ export function ContentScreen() {
     const lessonTitle = decodeHtmlEntities(String(item.title || ''));
     const classLevel = decodeHtmlEntities(String(item.level || levelLabel || '').trim());
     const showUnitCta = !isShort && !!item.course_id && item.course_id !== 'platform-shared';
-    const captionBodyH = Math.max(
-      0,
-      itemH - titleBandH - videoH - CONTROLS_BAR_H - captionPadTop - captionPadBottom,
-    );
-    // Fit text to remaining space — no inner scroll.
-    const headerBlock = unitTitle || notes ? 22 : 0;
-    const metaBlock = 18;
-    const notesBudget = Math.max(0, captionBodyH - headerBlock - metaBlock - (desc ? 22 : 0));
-    const notesLines = Math.max(1, Math.min(3, Math.floor(notesBudget / NOTES_LINE) || 1));
-    const descLines = !isShort && desc && notesBudget > NOTES_LINE * 2 ? 1 : 0;
+    const notesLines = fitNotesLines(captionBodyH, {
+      hasUnitLabel: !!(unitTitle || notes),
+      hasDesc: !!desc,
+    });
+    const descLines = !isShort && desc && notesLines >= 2 ? 1 : 0;
 
     return (
       <View
@@ -584,7 +587,7 @@ export function ContentScreen() {
             styles.phoneFrame,
             {
               width: frameW,
-              height: isShort ? itemH : itemH - longTopInset,
+              height: phoneFrameH,
               alignSelf: 'center',
               borderRadius: isDesktopWeb ? 24 : 0,
               overflow: 'hidden',
@@ -609,7 +612,7 @@ export function ContentScreen() {
               {
                 width: frameW,
                 height: videoH,
-                marginTop: isShort ? -Math.min(shortUnderNav, Math.max(0, videoH - (itemH - shortTextH))) : 0,
+                marginTop: stageMarginTop,
                 alignItems: 'center',
                 justifyContent: 'flex-start',
               },
@@ -646,7 +649,7 @@ export function ContentScreen() {
                   width: videoW,
                   height: videoH,
                   backgroundColor: '#000',
-                  borderRadius: isShort ? SHORT_RADIUS_PT : 0,
+                  borderRadius,
                   overflow: 'hidden',
                 }}
                 allowsFullscreenVideo={!isShort}
@@ -685,7 +688,7 @@ export function ContentScreen() {
                   {
                     width: videoW,
                     height: videoH,
-                    borderRadius: isShort ? SHORT_RADIUS_PT : 0,
+                    borderRadius,
                   },
                 ]}
               >
