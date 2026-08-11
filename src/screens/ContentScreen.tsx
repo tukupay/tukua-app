@@ -29,13 +29,11 @@ import { useDeskAuth } from '../context/DeskAuthContext';
 import { useTokenGate } from '../context/TokenGateContext';
 import { useAppTheme } from '../context/AppThemeContext';
 import { Colors } from '../theme/yana';
-import { floatingHeaderInset } from '../constants/layout';
 import {
   CONTENT_CONTROLS_BAR_H,
   CONTENT_NOTES_FONT,
   CONTENT_NOTES_LINE,
   CONTENT_PHONE_FRAME_MAX,
-  CONTENT_SHORT_RADIUS_PT,
   CONTENT_YT_EMBED_ORIGIN,
   fitNotesLines,
   resolveContentFeedChrome,
@@ -77,7 +75,6 @@ const YT_EMBED_ORIGIN = CONTENT_YT_EMBED_ORIGIN;
 const CONTROLS_BAR_H = CONTENT_CONTROLS_BAR_H;
 const NOTES_FONT = CONTENT_NOTES_FONT;
 const NOTES_LINE = CONTENT_NOTES_LINE;
-const SHORT_RADIUS_PT = CONTENT_SHORT_RADIUS_PT;
 
 function decodeHtmlEntities(raw: string): string {
   return String(raw || '')
