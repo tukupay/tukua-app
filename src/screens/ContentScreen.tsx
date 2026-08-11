@@ -2,19 +2,22 @@
  * Content tab — TikTok/Reels-style vertical YouTube lessons for the student's level.
  * Error 153 = YouTube needs a real HTTPS Referer/origin in WebView embeds.
  * Fix: single embed iframe HTML with baseUrl https://tukua.ai (no Data API).
+ * Shorts embed via same iframe API (youtube.com/shorts/ID → videoId).
  */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Linking,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
   ViewToken,
   FlatList,
   useWindowDimensions,
+  LayoutChangeEvent,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -27,7 +30,7 @@ import { useDeskAuth } from '../context/DeskAuthContext';
 import { useTokenGate } from '../context/TokenGateContext';
 import { useAppTheme } from '../context/AppThemeContext';
 import { Colors } from '../theme/yana';
-import { TAB_BAR_BODY_HEIGHT } from '../constants/layout';
+import { floatingHeaderInset } from '../constants/layout';
 import { log } from '../lib/logger';
 
 type FeedItem = {
@@ -41,6 +44,7 @@ type FeedItem = {
   level?: string | null;
   download_url?: string | null;
   media_kind?: 'youtube' | 'file';
+  is_short?: boolean;
 };
 
 type FeedResponse = {
@@ -51,6 +55,7 @@ type FeedResponse = {
 };
 
 const PHONE_FRAME_MAX = 440;
+const YT_EMBED_ORIGIN = 'https://tukua.ai';
 
 async function nestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const token = await resolveNestAccessTokenForWebView();
@@ -78,40 +83,141 @@ async function nestJson<T>(path: string, init?: RequestInit): Promise<T> {
   return data;
 }
 
-/** HTTPS origin YouTube accepts as Referer for in-app embeds (error 153). */
-const YT_EMBED_ORIGIN = 'https://tukua.ai';
-
-function youtubeEmbedHtml(videoId: string, muted: boolean): string {
+function youtubeEmbedHtml(videoId: string, muted: boolean, isShort: boolean): string {
   const id = String(videoId || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 11);
-  const mute = muted ? '&mute=1' : '';
-  // Single iframe only — set WebView baseUrl to YT_EMBED_ORIGIN so Referer is sent.
+  const startMuted = muted ? 1 : 0;
+  // YouTube's iframe API always paints a 16:9 surface. Shorts sit vertically inside
+  // with side bars — maximize works because fullscreen crops them. We mimic that
+  // with a portrait WebView + overflow cover-crop (no auto-fullscreen; swipe works).
+  if (isShort) {
+    return `<!DOCTYPE html><html><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<meta name="referrer" content="strict-origin-when-cross-origin"/>
+<style>
+  html,body{margin:0;padding:0;width:100%;height:100%;background:#000;overflow:hidden}
+  #crop{position:absolute;inset:0;overflow:hidden;background:#000}
+  #stage{position:absolute;top:0;left:50%;height:100%;transform:translateX(-50%);background:#000}
+  #player,#player iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+</style>
+</head><body>
+<div id="crop"><div id="stage"><div id="player"></div></div></div>
+<script>
+  var VID=${JSON.stringify(id)};
+  var START_MUTE=${startMuted};
+  var player=null;
+  function post(playing){
+    try{ if(window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify({playing:!!playing})); }catch(e){}
+  }
+  function layout(){
+    var h = window.innerHeight || document.documentElement.clientHeight || 1;
+    var w = Math.round(h * 16 / 9);
+    var stage = document.getElementById('stage');
+    if(stage){ stage.style.width = w + 'px'; stage.style.height = h + 'px'; }
+    try{ if(player && player.setSize) player.setSize(w, h); }catch(e){}
+  }
+  function bootPlayer(){
+    var h = window.innerHeight || 640;
+    var w = Math.round(h * 16 / 9);
+    layout();
+    player = new YT.Player('player',{
+      videoId:VID,
+      width:w,
+      height:h,
+      playerVars:{
+        playsinline:1,rel:0,modestbranding:1,controls:1,
+        mute:START_MUTE,fs:0,origin:${JSON.stringify(YT_EMBED_ORIGIN)}
+      },
+      events:{
+        onReady:function(){ layout(); },
+        onStateChange:function(e){
+          if(e.data===1||e.data===3) post(true);
+          else if(e.data===2||e.data===0||e.data===5) post(false);
+        }
+      }
+    });
+  }
+  function onPauseCmd(ev){
+    try{
+      var d = typeof ev.data==='string' ? JSON.parse(ev.data) : ev.data;
+      if(d && d.cmd==='pause' && player && player.pauseVideo) player.pauseVideo();
+    }catch(e){}
+  }
+  document.addEventListener('message', onPauseCmd);
+  window.addEventListener('message', onPauseCmd);
+  window.addEventListener('resize', layout);
+  window.onYouTubeIframeAPIReady = bootPlayer;
+  if(window.YT && window.YT.Player){ bootPlayer(); }
+</script>
+<script src="https://www.youtube.com/iframe_api"></script>
+</body></html>`;
+  }
+
   return `<!DOCTYPE html><html><head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
 <meta name="referrer" content="strict-origin-when-cross-origin"/>
 <style>
-  html,body{margin:0;padding:0;height:100%;background:#000;overflow:hidden}
-  iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+  html,body{margin:0;padding:0;width:100%;height:100%;background:#000;overflow:hidden}
+  body{display:flex;align-items:flex-start;justify-content:center}
+  #stage{width:100%;max-width:100%;max-height:100%;aspect-ratio:16/9;position:relative;background:#000}
+  #player,#player iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
 </style>
 </head><body>
-<iframe
-  src="https://www.youtube.com/embed/${id}?playsinline=1&rel=0&modestbranding=1&controls=1&enablejsapi=1${mute}"
-  title="lesson"
-  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-  allowfullscreen
-  referrerpolicy="strict-origin-when-cross-origin"
-></iframe>
+<div id="stage"><div id="player"></div></div>
+<script>
+  var VID=${JSON.stringify(id)};
+  var START_MUTE=${startMuted};
+  var player=null;
+  function post(playing){
+    try{ if(window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify({playing:!!playing})); }catch(e){}
+  }
+  function bootPlayer(){
+    player = new YT.Player('player',{
+      videoId:VID,
+      width:'100%',
+      height:'100%',
+      playerVars:{
+        playsinline:1,rel:0,modestbranding:1,controls:1,
+        mute:START_MUTE,fs:1,origin:${JSON.stringify(YT_EMBED_ORIGIN)}
+      },
+      events:{
+        onStateChange:function(e){
+          if(e.data===1||e.data===3) post(true);
+          else if(e.data===2||e.data===0||e.data===5) post(false);
+        }
+      }
+    });
+  }
+  function onPauseCmd(ev){
+    try{
+      var d = typeof ev.data==='string' ? JSON.parse(ev.data) : ev.data;
+      if(d && d.cmd==='pause' && player && player.pauseVideo) player.pauseVideo();
+    }catch(e){}
+  }
+  document.addEventListener('message', onPauseCmd);
+  window.addEventListener('message', onPauseCmd);
+  window.onYouTubeIframeAPIReady = bootPlayer;
+  if(window.YT && window.YT.Player){ bootPlayer(); }
+</script>
+<script src="https://www.youtube.com/iframe_api"></script>
 </body></html>`;
 }
 
-function youtubeWatchUri(videoId: string): string {
-  return `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
+async function ensureTukuaFolder(): Promise<string> {
+  const root = FileSystem.documentDirectory || FileSystem.cacheDirectory || '';
+  const dir = `${root}Tukua/`;
+  const info = await FileSystem.getInfoAsync(dir);
+  if (!info.exists) {
+    await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+  }
+  return dir;
 }
 
 export function ContentScreen() {
   const insets = useSafeAreaInsets();
   const focused = useIsFocused();
-  const { width: winW, height: winH } = useWindowDimensions();
+  const { width: winW } = useWindowDimensions();
   const { palette } = useAppTheme();
   const { selectedStudentId, selectedStudent, persona } = useDeskAuth();
   const { refreshBalance, showZeroTokenModal, isZeroBalance } = useTokenGate();
@@ -119,17 +225,34 @@ export function ContentScreen() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [tokensPerView, setTokensPerView] = useState(10);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [muted, setMuted] = useState(false);
+  const [playingItemId, setPlayingItemId] = useState<string | null>(null);
+  const [activeItemId, setActiveItemId] = useState<string | null>(null);
+  const [listH, setListH] = useState(0);
   const chargedRef = useRef<Set<string>>(new Set());
   const cursorRef = useRef<string | null>(null);
   const loadingMoreRef = useRef(false);
+  const webRefs = useRef<Map<string, WebView | null>>(new Map());
 
   const isDesktopWeb = Platform.OS === 'web' && winW >= 768;
   const frameW = isDesktopWeb ? Math.min(PHONE_FRAME_MAX, winW * 0.42) : winW;
-  const availableH = winH - TAB_BAR_BODY_HEIGHT - insets.bottom - (isDesktopWeb ? 24 : 0) - insets.top;
-  const itemH = Math.max(480, availableH);
+  const topPad = floatingHeaderInset(insets.top);
+  const itemH = listH > 0 ? listH : 560;
+
+  const pauseOthers = useCallback((exceptId: string | null) => {
+    webRefs.current.forEach((ref, id) => {
+      if (!ref || id === exceptId) return;
+      try {
+        ref.postMessage(JSON.stringify({ cmd: 'pause' }));
+        ref.injectJavaScript?.(
+          'try{if(player&&player.pauseVideo)player.pauseVideo();}catch(e){};true;',
+        );
+      } catch {
+        /* ignore */
+      }
+    });
+  }, []);
 
   const loadPage = useCallback(
     async (cursor: string | null, append: boolean) => {
@@ -153,10 +276,10 @@ export function ContentScreen() {
           const seen = new Set(prev.map((p) => p.id));
           return [...prev, ...batch.filter((b) => !seen.has(b.id))];
         });
+        if (!append && batch[0]?.id) setActiveItemId(batch[0].id);
         const nc = data?.next_cursor ?? null;
         setNextCursor(nc);
         cursorRef.current = nc;
-        if (typeof data?.tokens_per_view === 'number') setTokensPerView(data.tokens_per_view);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         log.warn('Content', msg);
@@ -178,8 +301,11 @@ export function ContentScreen() {
       chargedRef.current = new Set();
       cursorRef.current = null;
       void loadPage(null, false);
+    } else {
+      pauseOthers(null);
+      setPlayingItemId(null);
     }
-  }, [focused, loadPage]);
+  }, [focused, loadPage, pauseOthers, selectedStudentId, persona]);
 
   const chargeView = useCallback(
     async (item: FeedItem) => {
@@ -210,57 +336,60 @@ export function ContentScreen() {
     [isZeroBalance, refreshBalance, showZeroTokenModal],
   );
 
-  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+  const pauseOthersRef = useRef(pauseOthers);
+  pauseOthersRef.current = pauseOthers;
+  const chargeViewRef = useRef(chargeView);
+  chargeViewRef.current = chargeView;
+
+  const onViewableStable = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     const first = viewableItems.find((v) => v.isViewable)?.item as FeedItem | undefined;
-    if (first) void chargeView(first);
+    if (!first) return;
+    setActiveItemId((prev) => {
+      if (prev !== first.id) {
+        pauseOthersRef.current(first.id);
+        setPlayingItemId(null);
+      }
+      return first.id;
+    });
+    void chargeViewRef.current(first);
   }).current;
 
   const onEndReached = useCallback(() => {
     if (cursorRef.current) void loadPage(cursorRef.current, true);
   }, [loadPage]);
 
-  const openExternal = useCallback(async (item: FeedItem) => {
-    const url = item.youtube_id
-      ? youtubeWatchUri(item.youtube_id)
-      : item.download_url || '';
-    if (!url) return;
+  const downloadItem = useCallback(async (item: FeedItem) => {
+    const hosted = String(item.download_url || '').trim();
+    if (!hosted) return;
     try {
-      await Linking.openURL(url);
+      if (Platform.OS === 'web') {
+        await Linking.openURL(hosted);
+        return;
+      }
+      const dir = await ensureTukuaFolder();
+      const ext = hosted.split('?')[0].split('.').pop() || 'mp4';
+      const safe = item.id.replace(/[^a-z0-9_-]/gi, '_').slice(0, 80);
+      const dest = `${dir}${safe}.${ext}`;
+      const result = await FileSystem.downloadAsync(hosted, dest);
+      log.info('Content', 'saved to Tukua folder', result.uri);
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(result.uri, { dialogTitle: 'Saved in Tukua' });
+      }
     } catch (e) {
-      log.warn('Content', 'open external', e);
+      log.warn('Content', 'download', e);
     }
   }, []);
 
-  const downloadItem = useCallback(async (item: FeedItem) => {
-    const hosted = String(item.download_url || '').trim();
-    if (hosted) {
-      try {
-        if (Platform.OS === 'web') {
-          await Linking.openURL(hosted);
-          return;
-        }
-        const ext = hosted.split('?')[0].split('.').pop() || 'mp4';
-        const dest = `${FileSystem.cacheDirectory || FileSystem.documentDirectory}content-${item.id.replace(/[^a-z0-9_-]/gi, '_')}.${ext}`;
-        const result = await FileSystem.downloadAsync(hosted, dest);
-        if (await Sharing.isAvailableAsync()) {
-          await Sharing.shareAsync(result.uri);
-        } else {
-          await Linking.openURL(result.uri);
-        }
-      } catch (e) {
-        log.warn('Content', 'download', e);
-      }
-      return;
-    }
-    if (item.youtube_id) await openExternal(item);
-  }, [openExternal]);
+  const onListLayout = useCallback((e: LayoutChangeEvent) => {
+    const h = Math.round(e.nativeEvent.layout.height);
+    if (h > 0) setListH(h);
+  }, []);
 
   const levelLabel = selectedStudent?.className || '';
-  const listHeaderSpace = useMemo(() => 0, []);
 
   if (loading && !items.length) {
     return (
-      <View style={[styles.center, { backgroundColor: '#0a0a0a', paddingTop: insets.top }]}>
+      <View style={[styles.center, { backgroundColor: '#0a0a0a', paddingTop: topPad }]}>
         <ActivityIndicator color={palette.primary} size="large" />
         <Text style={styles.hint}>Loading content…</Text>
       </View>
@@ -269,7 +398,7 @@ export function ContentScreen() {
 
   if (error && !items.length) {
     return (
-      <View style={[styles.center, { backgroundColor: '#0a0a0a', paddingTop: insets.top }]}>
+      <View style={[styles.center, { backgroundColor: '#0a0a0a', paddingTop: topPad }]}>
         <Text style={styles.err}>{error}</Text>
         <Text style={styles.hint} onPress={() => void loadPage(null, false)}>
           Tap to retry
@@ -280,12 +409,12 @@ export function ContentScreen() {
 
   if (!items.length) {
     return (
-      <View style={[styles.center, { backgroundColor: '#0a0a0a', paddingTop: insets.top }]}>
+      <View style={[styles.center, { backgroundColor: '#0a0a0a', paddingTop: topPad }]}>
         <Text style={styles.emptyTitle}>No videos for this level yet</Text>
         <Text style={styles.hint}>
           {persona === 'parent' && levelLabel
             ? `Courses for ${levelLabel} will appear here.`
-            : 'When courses match your level (and levels below), lessons show here.'}
+            : 'Lessons for your level plus open catalog and How Tukua videos appear here.'}
         </Text>
       </View>
     );
@@ -293,68 +422,146 @@ export function ContentScreen() {
 
   const renderItem = ({ item }: { item: FeedItem }) => {
     const hosted = String(item.download_url || '').trim();
-    const webSource = item.youtube_id
-      ? { html: youtubeEmbedHtml(item.youtube_id, muted), baseUrl: YT_EMBED_ORIGIN }
-      : hosted
-        ? { uri: hosted }
-        : { html: '<html><body style="background:#000"></body></html>', baseUrl: YT_EMBED_ORIGIN };
+    const isShort = !!item.is_short;
+    const isActive = activeItemId === item.id;
+    const playing = playingItemId === item.id;
+    const videoH = isShort
+      ? itemH
+      : Math.min(Math.round(itemH * 0.48), Math.round((frameW * 9) / 16));
+    const videoW = frameW;
 
     return (
-      <View style={{ height: itemH, width: '100%', alignItems: 'center', backgroundColor: '#000' }}>
+      <View style={{ height: itemH, width: '100%', backgroundColor: '#000', overflow: 'hidden' }}>
         <View
           style={[
             styles.phoneFrame,
             {
               width: frameW,
               height: itemH,
+              alignSelf: 'center',
               borderRadius: isDesktopWeb ? 24 : 0,
               overflow: 'hidden',
             },
           ]}
         >
-          <WebView
-            originWhitelist={['*']}
-            source={webSource}
-            style={styles.web}
-            allowsFullscreenVideo
-            allowsInlineMediaPlayback
-            mediaPlaybackRequiresUserAction={false}
-            javaScriptEnabled
-            domStorageEnabled
-            setSupportMultipleWindows={false}
-            androidLayerType="hardware"
-            mixedContentMode="always"
-            userAgent={
-              Platform.OS === 'android'
-                ? 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
-                : undefined
-            }
-          />
-          <View style={[styles.caption, { paddingBottom: 16 + insets.bottom * 0.2 }]} pointerEvents="box-none">
-            <Text style={styles.course}>{item.course_title}</Text>
-            <Text style={styles.title} numberOfLines={2}>
-              {item.title}
-            </Text>
-            {item.description ? (
-              <Text style={styles.desc} numberOfLines={3}>
-                {item.description}
-              </Text>
-            ) : null}
-            <Text style={styles.meta}>
-              {tokensPerView} tokens · scroll for next
-              {levelLabel ? ` · ${levelLabel}` : ''}
-            </Text>
-            <View style={styles.controls}>
-              <Pressable style={styles.ctrlBtn} onPress={() => setMuted((m) => !m)}>
+          <View style={[styles.videoStage, { width: videoW, height: videoH }]}>
+            {isActive ? (
+              <WebView
+                ref={(r) => {
+                  webRefs.current.set(item.id, r);
+                }}
+                originWhitelist={['*']}
+                source={
+                  item.youtube_id
+                    ? {
+                        html: youtubeEmbedHtml(item.youtube_id, muted, isShort),
+                        baseUrl: YT_EMBED_ORIGIN,
+                      }
+                    : hosted
+                      ? { uri: hosted }
+                      : {
+                          html: '<html><body style="background:#000"></body></html>',
+                          baseUrl: YT_EMBED_ORIGIN,
+                        }
+                }
+                style={{ width: videoW, height: videoH, backgroundColor: '#000' }}
+                allowsFullscreenVideo={!isShort}
+                allowsInlineMediaPlayback
+                mediaPlaybackRequiresUserAction={false}
+                javaScriptEnabled
+                domStorageEnabled
+                setSupportMultipleWindows={false}
+                androidLayerType="hardware"
+                mixedContentMode="always"
+                onMessage={(ev) => {
+                  try {
+                    const data = JSON.parse(String(ev.nativeEvent?.data || '{}')) as {
+                      playing?: boolean;
+                    };
+                    if (data.playing === true) {
+                      pauseOthers(item.id);
+                      setPlayingItemId(item.id);
+                    } else if (data.playing === false) {
+                      setPlayingItemId((cur) => (cur === item.id ? null : cur));
+                    }
+                  } catch {
+                    /* ignore */
+                  }
+                }}
+                userAgent={
+                  Platform.OS === 'android'
+                    ? 'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
+                    : undefined
+                }
+              />
+            ) : (
+              <View style={[styles.placeholder, { width: videoW, height: videoH }]}>
+                <Text style={styles.placeholderTxt}>{isShort ? 'Short' : 'Video'}</Text>
+              </View>
+            )}
+          </View>
+
+          {!playing ? (
+            <View
+              style={[
+                isShort ? styles.captionOverlay : styles.caption,
+                { paddingBottom: 10 + insets.bottom * 0.15 },
+              ]}
+            >
+              <ScrollView
+                style={isShort ? undefined : styles.captionScroll}
+                contentContainerStyle={styles.captionScrollInner}
+                showsVerticalScrollIndicator={false}
+                nestedScrollEnabled
+              >
+                <Text style={styles.course}>{item.course_title}</Text>
+                <Text style={styles.title}>{item.title}</Text>
+                {item.description ? (
+                  <Text style={styles.desc} numberOfLines={isShort ? 4 : undefined}>
+                    {item.description}
+                  </Text>
+                ) : null}
+                <Text style={styles.meta}>
+                  swipe up for next
+                  {levelLabel ? ` · ${levelLabel}` : ''}
+                  {isShort ? ' · Short' : ''}
+                </Text>
+              </ScrollView>
+              <View style={styles.controls}>
+                <Pressable
+                  style={styles.ctrlBtn}
+                  onPress={() => {
+                    setPlayingItemId(null);
+                    setMuted((m) => !m);
+                  }}
+                >
+                  <Text style={styles.ctrlTxt}>{muted ? 'Unmute' : 'Mute'}</Text>
+                </Pressable>
+                {hosted ? (
+                  <Pressable style={styles.ctrlBtn} onPress={() => void downloadItem(item)}>
+                    <Text style={styles.ctrlTxt}>Download</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            </View>
+          ) : (
+            <View style={[styles.playingBar, { paddingBottom: 12 + insets.bottom * 0.2 }]}>
+              <Pressable
+                style={styles.ctrlBtn}
+                onPress={() => {
+                  setPlayingItemId(null);
+                  setMuted((m) => !m);
+                }}
+              >
                 <Text style={styles.ctrlTxt}>{muted ? 'Unmute' : 'Mute'}</Text>
               </Pressable>
-              {item.download_url ? (
+              {hosted ? (
                 <Pressable style={styles.ctrlBtn} onPress={() => void downloadItem(item)}>
                   <Text style={styles.ctrlTxt}>Download</Text>
                 </Pressable>
               ) : null}
             </View>
-          </View>
+          )}
         </View>
       </View>
     );
@@ -365,35 +572,46 @@ export function ContentScreen() {
       style={{
         flex: 1,
         backgroundColor: isDesktopWeb ? '#111' : '#000',
-        paddingTop: insets.top,
+        paddingTop: topPad,
         alignItems: 'center',
       }}
     >
-      {listHeaderSpace > 0 ? <View style={{ height: listHeaderSpace }} /> : null}
-      <FlatList
-        data={items}
-        keyExtractor={(it) => it.id}
-        style={{ width: isDesktopWeb ? frameW : '100%' }}
-        pagingEnabled
-        showsVerticalScrollIndicator={false}
-        snapToInterval={itemH}
-        decelerationRate="fast"
-        getItemLayout={(_, index) => ({ length: itemH, offset: itemH * index, index })}
-        onViewableItemsChanged={onViewableItemsChanged}
-        viewabilityConfig={{ itemVisiblePercentThreshold: 70 }}
-        onEndReached={onEndReached}
-        onEndReachedThreshold={0.6}
-        renderItem={renderItem}
-        ListFooterComponent={
-          loadingMore ? (
-            <View style={{ height: 48, alignItems: 'center', justifyContent: 'center' }}>
-              <ActivityIndicator color={palette.primary} />
-            </View>
-          ) : nextCursor ? (
-            <View style={{ height: 8 }} />
-          ) : null
-        }
-      />
+      <View
+        style={{ flex: 1, width: isDesktopWeb ? frameW : '100%' }}
+        onLayout={onListLayout}
+      >
+        {listH > 0 ? (
+          <FlatList
+            data={items}
+            keyExtractor={(it) => it.id}
+            style={{ flex: 1 }}
+            pagingEnabled
+            showsVerticalScrollIndicator={false}
+            snapToInterval={itemH}
+            snapToAlignment="start"
+            disableIntervalMomentum
+            decelerationRate="fast"
+            bounces={false}
+            overScrollMode="never"
+            windowSize={3}
+            maxToRenderPerBatch={2}
+            initialNumToRender={1}
+            removeClippedSubviews
+            getItemLayout={(_, index) => ({ length: itemH, offset: itemH * index, index })}
+            onViewableItemsChanged={onViewableStable}
+            viewabilityConfig={{ itemVisiblePercentThreshold: 80 }}
+            onEndReached={onEndReached}
+            onEndReachedThreshold={0.6}
+            renderItem={renderItem}
+            ListFooterComponent={null}
+          />
+        ) : null}
+        {loadingMore ? (
+          <View style={styles.loadMore} pointerEvents="none">
+            <ActivityIndicator color={palette.primary} />
+          </View>
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -403,22 +621,54 @@ const styles = StyleSheet.create({
   hint: { color: '#aaa', fontSize: 13, textAlign: 'center' },
   err: { color: '#f87171', fontSize: 14, textAlign: 'center' },
   emptyTitle: { color: '#fff', fontSize: 18, fontWeight: '700', textAlign: 'center' },
-  phoneFrame: { backgroundColor: '#000', maxWidth: PHONE_FRAME_MAX },
-  web: { flex: 1, backgroundColor: '#000' },
+  phoneFrame: { backgroundColor: '#000', maxWidth: PHONE_FRAME_MAX, flexDirection: 'column' },
+  videoStage: { width: '100%', backgroundColor: '#000' },
+  placeholder: {
+    backgroundColor: '#111',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  placeholderTxt: { color: 'rgba(255,255,255,0.35)', fontSize: 13, fontWeight: '600' },
   caption: {
+    flex: 1,
+    width: '100%',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    backgroundColor: '#0a0a0a',
+  },
+  captionOverlay: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
     paddingHorizontal: 16,
-    paddingTop: 40,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    paddingTop: 48,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  captionScroll: { flex: 1 },
+  captionScrollInner: { paddingBottom: 8, gap: 4 },
+  playingBar: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    bottom: 0,
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'flex-end',
+    alignItems: 'flex-end',
+  },
+  loadMore: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 10,
+    alignItems: 'center',
   },
   course: { color: Colors.primaryLight || '#86efac', fontSize: 12, fontWeight: '600', marginBottom: 4 },
   title: { color: '#fff', fontSize: 17, fontWeight: '800' },
-  desc: { color: 'rgba(255,255,255,0.85)', fontSize: 13, marginTop: 6, lineHeight: 18 },
+  desc: { color: 'rgba(255,255,255,0.85)', fontSize: 13, marginTop: 6, lineHeight: 19 },
   meta: { color: 'rgba(255,255,255,0.55)', fontSize: 11, marginTop: 8 },
-  controls: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  controls: { flexDirection: 'row', gap: 8, marginTop: 8 },
   ctrlBtn: {
     backgroundColor: 'rgba(255,255,255,0.16)',
     paddingHorizontal: 12,
