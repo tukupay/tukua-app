@@ -16,10 +16,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
 import { ModuleBackBar, ModuleEmpty, ModuleGlassCard, ModuleKicker, ModuleScreenHeader } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
-import { useWebViewControl } from '../../context/WebViewControlContext';
+import { useDeskAuth } from '../../context/DeskAuthContext';
 import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
 import { log } from '../../lib/logger';
+import { deskRoleLabel, SUPER_ADMIN_MOBILE_HATS } from '../../lib/deskRoles';
 import { fetchSchoolsRegistry, searchSchoolsDirectory, type SchoolRegistryRow } from '../../lib/adminPortalApi';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'SuperAdminSchools'>;
@@ -32,8 +33,8 @@ function schoolMeta(row: SchoolRegistryRow): string {
 
 export function SuperAdminSchoolsScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
-  const { navigate } = useWebViewControl();
-  const impersonateMode = route.params?.impersonate === true;
+  const { adoptSchoolRole } = useDeskAuth();
+  const switchMode = route.params?.impersonate === true;
 
   const [query, setQuery] = useState('');
   const [debounced, setDebounced] = useState('');
@@ -42,6 +43,8 @@ export function SuperAdminSchoolsScreen({ route, navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingSchool, setPendingSchool] = useState<SchoolRegistryRow | null>(null);
+  const [adopting, setAdopting] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setDebounced(query.trim()), 350);
@@ -76,20 +79,27 @@ export function SuperAdminSchoolsScreen({ route, navigation }: Props) {
     void load();
   }, [load]);
 
-  const openImpersonateWeb = (school: SchoolRegistryRow) => {
-    Alert.alert(
-      `Open ${school.name}?`,
-      'Full school-admin impersonation runs in Tukua web (localStorage session). This opens the super-admin schools list in the Chat web shell.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Open web',
-          onPress: () => {
-            navigate('/superadmin/schools/list?impersonate=school_admin');
-          },
-        },
-      ],
-    );
+  const onPickSchool = (school: SchoolRegistryRow) => {
+    if (!switchMode) return;
+    setPendingSchool(school);
+  };
+
+  const onPickRole = async (role: string) => {
+    if (!pendingSchool) return;
+    setAdopting(true);
+    try {
+      await adoptSchoolRole({
+        schoolId: pendingSchool.id,
+        schoolName: pendingSchool.name,
+        role,
+      });
+      navigation.popToTop();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      Alert.alert('Could not switch', msg);
+    } finally {
+      setAdopting(false);
+    }
   };
 
   return (
@@ -115,57 +125,92 @@ export function SuperAdminSchoolsScreen({ route, navigation }: Props) {
         }
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}>
-        <ModuleBackBar onBack={() => navigation.goBack()} />
+        <ModuleBackBar
+          onBack={() => {
+            if (pendingSchool) {
+              setPendingSchool(null);
+              return;
+            }
+            navigation.goBack();
+          }}
+        />
         <ModuleKicker>Platform</ModuleKicker>
         <ModuleScreenHeader
-          title={impersonateMode ? 'Impersonate school admin' : 'Schools registry'}
+          title={
+            pendingSchool
+              ? `Use as… · ${pendingSchool.name}`
+              : switchMode
+                ? 'Switch school & role'
+                : 'Schools registry'
+          }
           description={
-            impersonateMode
-              ? 'Pick a school · opens web impersonation flow'
-              : total
-                ? `${total} schools · GET /schools or /schools/search`
-                : 'Search schools by name or code'
+            pendingSchool
+              ? 'Teacher · Security · Parent · Student · Individual (native dashboards)'
+              : switchMode
+                ? 'Pick a school, then a mobile role. Security stays available.'
+                : total
+                  ? `${total} schools · GET /schools or /schools/search`
+                  : 'Search schools by name or code'
           }
         />
 
-        <TextInput
-          style={styles.search}
-          value={query}
-          onChangeText={setQuery}
-          placeholder="Search schools (min 2 chars for directory)…"
-          placeholderTextColor={Colors.mutedForeground}
-          autoCapitalize="none"
-          autoCorrect={false}
-          clearButtonMode="while-editing"
-        />
-
-        {loading ? (
-          <ActivityIndicator color={Colors.brandGreenMid} style={styles.loader} />
-        ) : error ? (
-          <ModuleEmpty title="Couldn't load schools" body={error} onRetry={() => void load()} />
-        ) : schools.length === 0 ? (
-          <ModuleEmpty
-            title="No schools found"
-            body={debounced ? 'Try a different search term.' : 'Registry returned no rows.'}
-          />
+        {pendingSchool ? (
+          <View style={styles.roleList}>
+            {SUPER_ADMIN_MOBILE_HATS.map((role) => (
+              <Pressable
+                key={role}
+                style={({ pressed }) => [styles.roleBtn, pressed && styles.roleBtnPressed]}
+                disabled={adopting}
+                onPress={() => void onPickRole(role)}>
+                <Ionicons
+                  name={role === 'security' ? 'shield-checkmark' : 'person'}
+                  size={18}
+                  color={Colors.primary}
+                />
+                <Text style={styles.roleBtnText}>{deskRoleLabel(role)}</Text>
+              </Pressable>
+            ))}
+            {adopting ? <ActivityIndicator color={Colors.brandGreenMid} style={styles.loader} /> : null}
+          </View>
         ) : (
-          schools.map((s) => (
-            <Pressable
-              key={s.id}
-              disabled={!impersonateMode}
-              onPress={() => impersonateMode && openImpersonateWeb(s)}>
-              <ModuleGlassCard>
-                <Text style={styles.title}>{s.name}</Text>
-                <Text style={styles.meta}>{schoolMeta(s)}</Text>
-                {impersonateMode ? (
-                  <View style={styles.impRow}>
-                    <Ionicons name="open-outline" size={14} color={Colors.primary} />
-                    <Text style={styles.impText}>Open as school admin (web)</Text>
-                  </View>
-                ) : null}
-              </ModuleGlassCard>
-            </Pressable>
-          ))
+          <>
+            <TextInput
+              style={styles.search}
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Search schools (min 2 chars for directory)…"
+              placeholderTextColor={Colors.mutedForeground}
+              autoCapitalize="none"
+              autoCorrect={false}
+              clearButtonMode="while-editing"
+            />
+
+            {loading ? (
+              <ActivityIndicator color={Colors.brandGreenMid} style={styles.loader} />
+            ) : error ? (
+              <ModuleEmpty title="Couldn't load schools" body={error} onRetry={() => void load()} />
+            ) : schools.length === 0 ? (
+              <ModuleEmpty
+                title="No schools found"
+                body={debounced ? 'Try a different search term.' : 'Registry returned no rows.'}
+              />
+            ) : (
+              schools.map((s) => (
+                <Pressable key={s.id} disabled={!switchMode} onPress={() => onPickSchool(s)}>
+                  <ModuleGlassCard>
+                    <Text style={styles.title}>{s.name}</Text>
+                    <Text style={styles.meta}>{schoolMeta(s)}</Text>
+                    {switchMode ? (
+                      <View style={styles.impRow}>
+                        <Ionicons name="swap-horizontal" size={14} color={Colors.primary} />
+                        <Text style={styles.impText}>Choose role at this school</Text>
+                      </View>
+                    ) : null}
+                  </ModuleGlassCard>
+                </Pressable>
+              ))
+            )}
+          </>
         )}
       </ScrollView>
     </View>
@@ -191,4 +236,18 @@ const styles = StyleSheet.create({
   meta: { marginTop: 4, fontSize: 12, color: Colors.mutedForeground },
   impRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
   impText: { fontSize: 13, fontWeight: '600', color: Colors.primary },
+  roleList: { gap: 10, marginTop: 8 },
+  roleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(21,65,29,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.9)',
+  },
+  roleBtnPressed: { opacity: 0.85 },
+  roleBtnText: { fontSize: 16, fontWeight: '700', color: Colors.brandGreenDark },
 });

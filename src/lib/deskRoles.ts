@@ -1,5 +1,9 @@
 /**
  * Desk (CBE/school) roles — mirrors yana/desktop packages/types + Login redirect hierarchy.
+ *
+ * Mobile dashboards (native): parent · student · teacher · security · individual.
+ * School-admin / finance / BOM hats map into those (Desk remains the admin/finance surface).
+ * Super-admin keeps a light switcher, then adopts one of the mobile hats.
  */
 
 export type DeskPersona =
@@ -11,19 +15,36 @@ export type DeskPersona =
   | 'super_admin'
   | 'individual';
 
-const SCHOOL_HUB_ROLES = new Set([
+/** Hats that have a first-class native mobile dashboard. */
+export const MOBILE_DASHBOARD_ROLES = [
+  'parent',
+  'student',
+  'teacher',
+  'security',
+  'individual',
+] as const;
+
+export type MobileDashboardRole = (typeof MOBILE_DASHBOARD_ROLES)[number];
+
+/** Principal / school hub ops → teacher dashboard on mobile (Desk for heavy admin). */
+const TEACHER_LIKE = new Set([
   'school_admin',
-  'finance_officer',
   'staff',
   'user',
+  'admin',
+  'principal',
+  'org_admin',
+]);
+
+/** Finance / board → light individual-style dashboard (Desk for accounts). */
+const INDIVIDUAL_LIKE = new Set([
   'bom',
   'board_member',
   'board',
   'bom_member',
-  'admin',
-  'principal',
   'accountant',
   'bursar',
+  'finance_officer',
 ]);
 
 function normalizeRole(raw: unknown): string {
@@ -53,6 +74,47 @@ export function normalizeDeskRoles(input: unknown): string[] {
 }
 
 /**
+ * Collapse Desk hub roles into the mobile dashboard hat.
+ * Platform SA stays `super_admin` until they adopt a school hat.
+ */
+export function mapRoleToMobileHat(role: string): string {
+  const r = normalizeRole(role);
+  if (r === 'super_admin' || r === 'superadmin') return 'super_admin';
+  if (r === 'security') return 'security';
+  if (r === 'teacher' || TEACHER_LIKE.has(r)) return 'teacher';
+  if (r === 'parent') return 'parent';
+  if (r === 'student') return 'student';
+  if (r === 'individual') return 'individual';
+  if (INDIVIDUAL_LIKE.has(r)) return 'individual';
+  if (r === 'school_admin') return 'teacher';
+  return r;
+}
+
+/** Role chips for the school picker / SA “use as” flow (no school_admin / SA hub). */
+export function mobilePickerRolesFrom(rolesInput: unknown): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of normalizeDeskRoles(rolesInput)) {
+    const hat = mapRoleToMobileHat(raw);
+    if (hat === 'super_admin' || hat === 'school_admin') continue;
+    if (!MOBILE_DASHBOARD_ROLES.includes(hat as MobileDashboardRole)) continue;
+    if (seen.has(hat)) continue;
+    seen.add(hat);
+    out.push(hat);
+  }
+  return sortDeskRolesForPicker(out);
+}
+
+/** SA can switch into any native mobile persona at any school. */
+export const SUPER_ADMIN_MOBILE_HATS: MobileDashboardRole[] = [
+  'teacher',
+  'security',
+  'parent',
+  'student',
+  'individual',
+];
+
+/**
  * Primary mobile dashboard persona after login.
  * - Desk Nest roles preferred when present
  * - Else Supabase org roles (same school roles)
@@ -63,23 +125,23 @@ export function resolveDeskPersona(
   opts?: { schoolId?: string | null; schoolLinked?: boolean; hasDeskSession?: boolean },
 ): DeskPersona {
   const roles = normalizeDeskRoles(rolesInput);
+  const hats = roles.map(mapRoleToMobileHat);
   const schoolLinked = Boolean(opts?.schoolLinked || opts?.schoolId);
 
-  if (roles.includes('super_admin') || roles.includes('superadmin')) {
+  // Explicit SA-only (no adopted hat yet) → light switcher dashboard.
+  if (hats.includes('super_admin') && !hats.some((h) => h !== 'super_admin')) {
     return 'super_admin';
   }
-  if (roles.includes('security')) return 'security';
-  // Teacher check BEFORE school hub roles
-  if (roles.includes('teacher')) return 'teacher';
-  if (roles.some((r) => SCHOOL_HUB_ROLES.has(r))) {
-    return 'school_admin';
-  }
-  if (roles.includes('parent')) return 'parent';
-  if (roles.includes('student')) return 'student';
 
-  if (schoolLinked && roles.length === 0) return 'individual';
-  if (schoolLinked) return 'school_admin';
+  // Prefer an adopted / concrete mobile hat over platform SA when both appear.
+  if (hats.includes('security')) return 'security';
+  if (hats.includes('teacher')) return 'teacher';
+  if (hats.includes('parent')) return 'parent';
+  if (hats.includes('student')) return 'student';
+  if (hats.includes('individual')) return 'individual';
+  if (hats.includes('super_admin')) return 'super_admin';
 
+  if (schoolLinked) return 'individual';
   return 'individual';
 }
 
@@ -94,7 +156,7 @@ export function personaLabel(persona: DeskPersona): string {
     case 'security':
       return 'Security';
     case 'school_admin':
-      return 'School admin';
+      return 'Teacher';
     case 'super_admin':
       return 'Super admin';
     case 'individual':
@@ -105,23 +167,24 @@ export function personaLabel(persona: DeskPersona): string {
 /** Human label for a raw org/desk role slug (picker cards). */
 export function deskRoleLabel(role: string): string {
   const r = normalizeRole(role);
-  if (r === 'parent') return 'Parent';
-  if (r === 'student') return 'Student';
-  if (r === 'teacher') return 'Teacher';
-  if (r === 'security') return 'Security';
-  if (r === 'finance_officer' || r === 'accountant' || r === 'bursar') return 'Finance';
-  if (r === 'school_admin' || r === 'org_admin' || r === 'admin' || r === 'principal') {
-    return 'School admin';
-  }
-  if (r === 'super_admin' || r === 'superadmin') return 'Super admin';
-  if (r === 'bom' || r === 'board_member' || r === 'board' || r === 'bom_member') return 'Board';
-  if (r === 'staff' || r === 'user') return 'Staff';
+  const hat = mapRoleToMobileHat(r);
+  if (hat === 'parent') return 'Parent';
+  if (hat === 'student') return 'Student';
+  if (hat === 'teacher') return 'Teacher';
+  if (hat === 'security') return 'Security';
+  if (hat === 'individual') return 'Individual';
+  if (hat === 'super_admin') return 'Super admin';
   return r.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 /** Stable display order for multi-role picker. */
 export function sortDeskRolesForPicker(roles: string[]): string[] {
   const order = [
+    'teacher',
+    'security',
+    'parent',
+    'student',
+    'individual',
     'super_admin',
     'superadmin',
     'school_admin',
@@ -131,11 +194,7 @@ export function sortDeskRolesForPicker(roles: string[]): string[] {
     'finance_officer',
     'accountant',
     'bursar',
-    'teacher',
-    'security',
     'staff',
-    'parent',
-    'student',
     'bom',
     'board_member',
   ];
@@ -147,5 +206,5 @@ export function sortDeskRolesForPicker(roles: string[]): string[] {
 }
 
 export function isParentDeskRole(role: string | null | undefined): boolean {
-  return normalizeRole(role) === 'parent';
+  return mapRoleToMobileHat(normalizeRole(role)) === 'parent';
 }

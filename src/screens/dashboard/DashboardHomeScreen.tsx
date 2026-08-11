@@ -47,7 +47,6 @@ import {
   PARENT_HERO,
   SECURITY_DASHBOARD_ACTIONS,
   SECURITY_HERO,
-  SCHOOL_ADMIN_DASHBOARD_ACTIONS,
   STUDENT_DASHBOARD_ACTIONS,
   STUDENT_HERO,
   SUPER_ADMIN_DASHBOARD_ACTIONS,
@@ -216,7 +215,8 @@ function actionsForPersona(persona: DeskPersona): DashboardAction[] {
     case 'security':
       return SECURITY_DASHBOARD_ACTIONS;
     case 'school_admin':
-      return SCHOOL_ADMIN_DASHBOARD_ACTIONS;
+      // Legacy: school_admin maps to teacher (Desk for admin ops).
+      return TEACHER_DASHBOARD_ACTIONS;
     case 'super_admin':
       return SUPER_ADMIN_DASHBOARD_ACTIONS;
     default:

@@ -34,12 +34,13 @@ import {
 } from '../lib/deskApi';
 import {
   DeskPersona,
-  deskRoleLabel,
   isParentDeskRole,
+  mapRoleToMobileHat,
+  mobilePickerRolesFrom,
   normalizeDeskRoles,
   personaLabel,
   resolveDeskPersona,
-  sortDeskRolesForPicker,
+  SUPER_ADMIN_MOBILE_HATS,
 } from '../lib/deskRoles';
 import { fetchUserSchools, flattenLinkedStudents, LinkedStudent, UserSchool } from '../lib/orgRoles';
 import { fetchParentChildren } from '../lib/parentPortalApi';
@@ -80,6 +81,15 @@ type DeskAuthContextType = {
   selectStudent: (student: LinkedStudent) => Promise<void>;
   selectSchool: (schoolId: string) => Promise<void>;
   selectRole: (role: string) => Promise<void>;
+  /**
+   * Super-admin: adopt any school + mobile hat (teacher/security/parent/student/individual)
+   * without requiring org membership at that school.
+   */
+  adoptSchoolRole: (opts: {
+    schoolId: string;
+    schoolName?: string | null;
+    role: string;
+  }) => Promise<void>;
   /** Step back within picker (role → school, student → role). */
   backInPicker: () => Promise<void>;
   /** Clear selection and show picker again. */
@@ -113,6 +123,7 @@ const DeskAuthContext = createContext<DeskAuthContextType>({
   selectStudent: async () => {},
   selectSchool: async () => {},
   selectRole: async () => {},
+  adoptSchoolRole: async () => {},
   backInPicker: async () => {},
   requestSchoolChange: async () => {},
   refreshSchools: async () => {},
@@ -178,15 +189,8 @@ function deskUserFromSession(
 }
 
 function uniqueSchoolRoles(roles: unknown): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const r of normalizeDeskRoles(roles)) {
-    if (!seen.has(r)) {
-      seen.add(r);
-      out.push(r);
-    }
-  }
-  return sortDeskRolesForPicker(out);
+  // Collapse hub roles (school_admin → teacher, finance → individual) for the picker.
+  return mobilePickerRolesFrom(roles);
 }
 
 function linkedStudentsAtSchool(linked: LinkedStudent[], schoolId: string): LinkedStudent[] {
@@ -247,8 +251,14 @@ function resolveContext(
 
   const school = schools.find((s) => s.id === schoolId)!;
   const schoolRoles = uniqueSchoolRoles(school.roles);
-  const storedRole = stored?.activeRole ? String(stored.activeRole).toLowerCase().trim() : null;
-  let activeRole = storedRole && schoolRoles.includes(storedRole) ? storedRole : null;
+  const storedRaw = stored?.activeRole ? String(stored.activeRole).toLowerCase().trim() : null;
+  const storedHat = storedRaw ? mapRoleToMobileHat(storedRaw) : null;
+  let activeRole =
+    storedHat && schoolRoles.includes(storedHat)
+      ? storedHat
+      : storedRaw && schoolRoles.includes(storedRaw)
+        ? storedRaw
+        : null;
 
   // ── Step 2: resolve role at school (never ask when exactly one role) ──
   if (schoolRoles.length === 1) {
@@ -593,19 +603,21 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
       const school = schools.find((s) => s.id === selectedSchoolId);
       if (!school) return;
       const roles = uniqueSchoolRoles(school.roles);
-      if (!roles.includes(role)) return;
+      const hat = mapRoleToMobileHat(role);
+      if (!roles.includes(role) && !roles.includes(hat)) return;
+      const activeHat = roles.includes(hat) ? hat : role;
 
       await setSelectedContext(authUserId, {
         schoolId: selectedSchoolId,
         studentId: null,
-        activeRole: role,
+        activeRole: activeHat,
       });
-      setSelectedRoleState(role);
+      setSelectedRoleState(activeHat);
       setDeskUser((prev) =>
-        prev ? { ...prev, school_id: selectedSchoolId, user_roles: [role] } : prev,
+        prev ? { ...prev, school_id: selectedSchoolId, user_roles: [activeHat] } : prev,
       );
 
-      if (isParentDeskRole(role)) {
+      if (isParentDeskRole(activeHat)) {
         const kids = linkedStudentsAtSchool(linkedStudents, selectedSchoolId);
         if (kids.length === 1) {
           await selectStudent(kids[0]);
@@ -618,7 +630,7 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
         setPickerMode('student');
         setDeskActiveContext({ schoolId: selectedSchoolId, studentId: null });
         log.info('DeskAuth', 'role selected → student pick', {
-          role,
+          role: activeHat,
           schoolId: selectedSchoolId,
           kids: kids.length,
         });
@@ -630,9 +642,79 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
       setNeedsSchoolPick(false);
       setPickerMode('school');
       setDeskActiveContext({ schoolId: selectedSchoolId, studentId: null });
-      log.info('DeskAuth', 'role selected', { role, schoolId: selectedSchoolId });
+      log.info('DeskAuth', 'role selected', { role: activeHat, schoolId: selectedSchoolId });
     },
     [authUserId, selectedSchoolId, schools, linkedStudents, selectStudent],
+  );
+
+  const adoptSchoolRole = useCallback(
+    async (opts: { schoolId: string; schoolName?: string | null; role: string }) => {
+      if (!authUserId) return;
+      const schoolId = String(opts.schoolId || '').trim();
+      if (!schoolId) return;
+      const hat = mapRoleToMobileHat(opts.role);
+      const allowed = new Set<string>(SUPER_ADMIN_MOBILE_HATS);
+      if (!allowed.has(hat)) {
+        log.warn('DeskAuth', 'adoptSchoolRole rejected hat', hat);
+        return;
+      }
+      const name = String(opts.schoolName || '').trim() || 'School';
+
+      setSchools((prev) => {
+        const existing = prev.find((s) => s.id === schoolId);
+        if (existing) {
+          const nextRoles = uniqueSchoolRoles([...(existing.roles || []), hat]);
+          return prev.map((s) => (s.id === schoolId ? { ...s, name: existing.name || name, roles: nextRoles } : s));
+        }
+        const row: UserSchool = {
+          id: schoolId,
+          name,
+          roles: [hat],
+        };
+        return [...prev, row];
+      });
+      setSchoolRoleOptions([...SUPER_ADMIN_MOBILE_HATS]);
+
+      await setSelectedContext(authUserId, {
+        schoolId,
+        studentId: null,
+        activeRole: hat,
+      });
+      setSelectedSchoolIdState(schoolId);
+      setSelectedRoleState(hat);
+      setDeskUser((prev) =>
+        prev
+          ? {
+              ...prev,
+              school_id: schoolId,
+              user_roles: [hat],
+            }
+          : prev,
+      );
+
+      if (isParentDeskRole(hat)) {
+        const kids = linkedStudentsAtSchool(linkedStudents, schoolId);
+        if (kids.length === 1) {
+          await selectStudent(kids[0]);
+          return;
+        }
+        setSelectedStudentIdState(null);
+        setStudentSnapshot(null);
+        setNeedsSchoolPick(true);
+        setPickerMode('student');
+        setDeskActiveContext({ schoolId, studentId: null });
+        log.info('DeskAuth', 'SA adopt → student pick', { schoolId, hat, kids: kids.length });
+        return;
+      }
+
+      setSelectedStudentIdState(null);
+      setStudentSnapshot(null);
+      setNeedsSchoolPick(false);
+      setPickerMode('school');
+      setDeskActiveContext({ schoolId, studentId: null });
+      log.info('DeskAuth', 'SA adopt school role', { schoolId, hat, name });
+    },
+    [authUserId, linkedStudents, selectStudent],
   );
 
   const selectSchool = useCallback(
@@ -1141,6 +1223,7 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
       selectStudent,
       selectSchool,
       selectRole,
+      adoptSchoolRole,
       backInPicker,
       requestSchoolChange,
       refreshSchools,
@@ -1167,6 +1250,7 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
       selectStudent,
       selectSchool,
       selectRole,
+      adoptSchoolRole,
       backInPicker,
       requestSchoolChange,
       refreshSchools,
