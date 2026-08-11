@@ -153,16 +153,10 @@ function youtubeEmbedHtml(videoId: string, muted: boolean, isShort: boolean, aut
   function layout(){
     var cw = Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
     var ch = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
-    // Contain 9:16 so YouTube controls stay visible (no cover-crop).
-    var playerW = cw;
-    var playerH = Math.ceil(playerW * 16 / 9);
-    if (playerH > ch) {
-      playerH = ch;
-      playerW = Math.floor(playerH * 9 / 16);
-    }
+    // Fill the RN WebView box; RN owns the thin side gutters.
     var stage = document.getElementById('stage');
-    if(stage){ stage.style.width = playerW + 'px'; stage.style.height = playerH + 'px'; }
-    try{ if(player && player.setSize) player.setSize(playerW, playerH); }catch(e){}
+    if(stage){ stage.style.width = cw + 'px'; stage.style.height = ch + 'px'; }
+    try{ if(player && player.setSize) player.setSize(cw, ch); }catch(e){}
   }
   function tryPlay(){
     try{
@@ -541,18 +535,22 @@ export function ContentScreen() {
     const shortFooterH = isShort ? shortTextH : CONTROLS_BAR_H + 10;
     const captionPadBottom = 4;
     const captionPadTop = isShort ? 6 : 10;
-    const availForShort = Math.max(220, itemH - shortFooterH);
+    const shortTopNudge = isShort ? 12 : 0; // nudge video block up a little
+    const availForShort = Math.max(220, itemH - shortFooterH - shortTopNudge);
     let videoW = frameW;
     let videoH: number;
+    let sidePad = 0;
     if (isShort) {
-      // Nearly full-bleed; 1pt side gutter. Height fills remaining space above bottom text.
-      videoW = Math.max(160, frameW - SHORT_SIDE_PT * 2);
-      videoH = Math.min(availForShort, Math.round((videoW * 16) / 9));
+      // Size to stage height; keep only 10% of the natural 9:16 side letterbox.
+      videoH = availForShort;
+      const naturalW = Math.max(160, Math.round((videoH * 9) / 16));
+      const naturalPad = Math.max(0, (frameW - naturalW) / 2);
+      sidePad = Math.max(0, Math.round(naturalPad * 0.1));
+      videoW = Math.max(160, frameW - sidePad * 2);
     } else {
       videoH = Math.min(Math.round(itemH * 0.36), Math.round((frameW * 9) / 16));
       videoW = frameW;
     }
-    const sidePad = isShort ? SHORT_SIDE_PT : 0;
     const notes = decodeHtmlEntities(String(item.unit_notes || '').trim());
     const desc = decodeHtmlEntities(String(item.description || '').trim());
     const courseTitle = decodeHtmlEntities(String(item.course_title || ''));
@@ -602,9 +600,10 @@ export function ContentScreen() {
               {
                 width: frameW,
                 height: isShort ? availForShort : videoH,
+                marginTop: shortTopNudge,
                 paddingHorizontal: sidePad,
                 alignItems: 'center',
-                justifyContent: 'center',
+                justifyContent: 'flex-start',
               },
             ]}
           >
