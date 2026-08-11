@@ -66,6 +66,9 @@ const YT_EMBED_ORIGIN = 'https://tukua.ai';
 const CONTROLS_BAR_H = 44;
 const NOTES_FONT = 16;
 const NOTES_LINE = 24;
+/** Shorts: hairline side inset + corner soft edges. */
+const SHORT_SIDE_PT = 1;
+const SHORT_RADIUS_PT = 1;
 
 function decodeHtmlEntities(raw: string): string {
   return String(raw || '')
