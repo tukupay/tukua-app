@@ -6,7 +6,7 @@ import { log } from './logger';
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
-/** Must match EXPO_PUBLIC_SUPABASE_URL project (prod twnzlk… vs staging jltzze…). */
+/** Must match EXPO_PUBLIC_SUPABASE_URL project (live jltzze… vs staging twnzlk…). */
 function supabaseProjectRef(): string {
   try {
     const host = new URL(SUPABASE_URL).hostname; // {ref}.supabase.co
