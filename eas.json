@@ -23,7 +23,6 @@
         "EXPO_PUBLIC_TUKUA_ENV": "production",
         "EXPO_PUBLIC_DESK_API_URL": "https://tukua.up.railway.app/api",
         "EXPO_PUBLIC_NEST_API_URL": "https://tukua.up.railway.app/api",
-        "EXPO_PUBLIC_DESK_WEB_URL": "",
         "EAS_BUILD_NO_EXPO_GO_WARNING": "true"
       },
       "android": {
@@ -42,7 +41,6 @@
         "EXPO_PUBLIC_TUKUA_ENV": "production",
         "EXPO_PUBLIC_DESK_API_URL": "https://tukua.up.railway.app/api",
         "EXPO_PUBLIC_NEST_API_URL": "https://tukua.up.railway.app/api",
-        "EXPO_PUBLIC_DESK_WEB_URL": "",
         "EAS_BUILD_NO_EXPO_GO_WARNING": "true"
       },
       "android": {
