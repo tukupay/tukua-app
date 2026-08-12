@@ -14,15 +14,15 @@
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_SUPABASE_URL": "https://jltzzevsnxxroylmwyna.supabase.co",
-        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpsdHp6ZXZzbnh4cm95bG13eW5hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMxNTEzMTEsImV4cCI6MjA5ODcyNzMxMX0.sZlubmgsFrPeVapd6kzuUWl_SIztBA0k2R2WH9FejW0",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://twnzlkcdhiotdgoclsib.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3bnpsa2NkaGlvdGRnb2Nsc2liIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5MDI4MDAsImV4cCI6MjA4ODQ3ODgwMH0.pv06lRIcOIIKtTOuFDpo4zKIJ1fsUB85UyJXDfCE4n8",
         "EXPO_PUBLIC_COMPAT_WEB_SESSION_KEY": "bankgpt_session",
         "EXPO_PUBLIC_TUKUPAY_API": "https://test.api.tuku.money",
-        "EXPO_PUBLIC_WEB_URL": "https://tukua.ai",
-        "EXPO_PUBLIC_TUKUA_WEB_URL": "https://tukua.ai",
-        "EXPO_PUBLIC_TUKUA_ENV": "production",
-        "EXPO_PUBLIC_DESK_API_URL": "https://tukua.up.railway.app/api",
-        "EXPO_PUBLIC_NEST_API_URL": "https://tukua.up.railway.app/api",
+        "EXPO_PUBLIC_WEB_URL": "https://v2.tukua.ai",
+        "EXPO_PUBLIC_TUKUA_WEB_URL": "https://v2.tukua.ai",
+        "EXPO_PUBLIC_TUKUA_ENV": "staging",
+        "EXPO_PUBLIC_DESK_API_URL": "https://tukua-api-staging-production.up.railway.app/api",
+        "EXPO_PUBLIC_NEST_API_URL": "https://tukua-api-staging-production.up.railway.app/api",
         "EAS_BUILD_NO_EXPO_GO_WARNING": "true"
       },
       "android": {
@@ -32,15 +32,15 @@
     },
     "production": {
       "env": {
-        "EXPO_PUBLIC_SUPABASE_URL": "https://jltzzevsnxxroylmwyna.supabase.co",
-        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpsdHp6ZXZzbnh4cm95bG13eW5hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODMxNTEzMTEsImV4cCI6MjA5ODcyNzMxMX0.sZlubmgsFrPeVapd6kzuUWl_SIztBA0k2R2WH9FejW0",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://twnzlkcdhiotdgoclsib.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR3bnpsa2NkaGlvdGRnb2Nsc2liIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5MDI4MDAsImV4cCI6MjA4ODQ3ODgwMH0.pv06lRIcOIIKtTOuFDpo4zKIJ1fsUB85UyJXDfCE4n8",
         "EXPO_PUBLIC_COMPAT_WEB_SESSION_KEY": "bankgpt_session",
         "EXPO_PUBLIC_TUKUPAY_API": "https://test.api.tuku.money",
-        "EXPO_PUBLIC_WEB_URL": "https://tukua.ai",
-        "EXPO_PUBLIC_TUKUA_WEB_URL": "https://tukua.ai",
-        "EXPO_PUBLIC_TUKUA_ENV": "production",
-        "EXPO_PUBLIC_DESK_API_URL": "https://tukua.up.railway.app/api",
-        "EXPO_PUBLIC_NEST_API_URL": "https://tukua.up.railway.app/api",
+        "EXPO_PUBLIC_WEB_URL": "https://v2.tukua.ai",
+        "EXPO_PUBLIC_TUKUA_WEB_URL": "https://v2.tukua.ai",
+        "EXPO_PUBLIC_TUKUA_ENV": "staging",
+        "EXPO_PUBLIC_DESK_API_URL": "https://tukua-api-staging-production.up.railway.app/api",
+        "EXPO_PUBLIC_NEST_API_URL": "https://tukua-api-staging-production.up.railway.app/api",
         "EAS_BUILD_NO_EXPO_GO_WARNING": "true"
       },
       "android": {
