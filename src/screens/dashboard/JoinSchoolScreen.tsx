@@ -29,6 +29,7 @@ import {
   leaveMyMembership,
   listJoinClasses,
   listJoinSubjects,
+  listMyJoinRequests,
   listMyMemberships,
   searchJoinSchools,
   searchJoinStudents,
@@ -37,6 +38,7 @@ import {
   type JoinStudentHit,
   type JoinSubjectHit,
   type MembershipHit,
+  type MyJoinRequestHit,
 } from '../../lib/joinRequestApi';
 
 type JoinRole = 'parent' | 'student' | 'teacher' | 'staff';
@@ -152,6 +154,8 @@ export function JoinSchoolScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [memberships, setMemberships] = useState<MembershipHit[]>([]);
   const [loadingMemberships, setLoadingMemberships] = useState(true);
+  const [pendingRequests, setPendingRequests] = useState<MyJoinRequestHit[]>([]);
+  const [loadingPending, setLoadingPending] = useState(true);
   const [leavingId, setLeavingId] = useState<string | null>(null);
 
   const schoolTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -171,13 +175,20 @@ export function JoinSchoolScreen() {
 
   const reloadMemberships = useCallback(async () => {
     setLoadingMemberships(true);
+    setLoadingPending(true);
     try {
-      const res = await listMyMemberships();
-      setMemberships(Array.isArray(res.memberships) ? res.memberships : []);
+      const [mem, mine] = await Promise.all([listMyMemberships(), listMyJoinRequests()]);
+      setMemberships(Array.isArray(mem.memberships) ? mem.memberships : []);
+      const reqs = Array.isArray(mine.requests) ? mine.requests : [];
+      setPendingRequests(
+        reqs.filter((r) => String(r.status || '').toLowerCase() === 'pending'),
+      );
     } catch {
       setMemberships([]);
+      setPendingRequests([]);
     } finally {
       setLoadingMemberships(false);
+      setLoadingPending(false);
     }
   }, []);
 
@@ -365,6 +376,18 @@ export function JoinSchoolScreen() {
 
   const submit = async () => {
     if (!school || !role || !canSubmit) return;
+    const alreadyPendingForSchool = pendingRequests.some(
+      (r) => r.school_id === school.id && String(r.role_slug || '').toLowerCase() === role,
+    );
+    if (alreadyPendingForSchool) {
+      showDialog({
+        title: 'Already pending',
+        message: `You already have a pending ${role} request for ${school.name}. Wait for school approval instead of sending again.`,
+        variant: 'warning',
+        icon: 'time-outline',
+      });
+      return;
+    }
     setSubmitting(true);
     try {
       const teacherRoles: string[] = [];
@@ -449,6 +472,47 @@ export function JoinSchoolScreen() {
     await markJoinPromptSeen();
     navigation.goBack();
   };
+
+  const pendingBox =
+    step === 'role' ? (
+      <View style={styles.joinedBox}>
+        <Text style={styles.joinedTitle}>Pending requests</Text>
+        <Text style={styles.joinedHint}>
+          These are waiting for school approval. You cannot send another request for the same school while pending.
+        </Text>
+        {loadingPending ? <ActivityIndicator color={hero} /> : null}
+        {!loadingPending && pendingRequests.length === 0 ? (
+          <Text style={styles.hint}>No pending join requests.</Text>
+        ) : null}
+        {pendingRequests.map((r) => (
+          <View key={r.id} style={styles.joinedCard}>
+            <View style={styles.joinedMain}>
+              <LogoAvatar name={r.school_name || 'School'} fallbackIcon="time" tint={hero} />
+              <View style={styles.cardText}>
+                <Text style={styles.cardTitle} numberOfLines={1}>
+                  {r.school_name || 'School'}
+                </Text>
+                <View style={styles.tagRow}>
+                  <View style={[styles.tag, { backgroundColor: `${hero}14` }]}>
+                    <Text style={[styles.tagText, { color: hero }]}>
+                      {(r.role_slug || 'member').replace(/_/g, ' ')}
+                    </Text>
+                  </View>
+                  <View style={[styles.tag, { backgroundColor: '#FEF3C7' }]}>
+                    <Text style={[styles.tagText, { color: '#B45309' }]}>pending</Text>
+                  </View>
+                </View>
+                {r.created_at ? (
+                  <Text style={styles.cardMeta} numberOfLines={1}>
+                    Sent {new Date(r.created_at).toLocaleString()}
+                  </Text>
+                ) : null}
+              </View>
+            </View>
+          </View>
+        ))}
+      </View>
+    ) : null;
 
   const alreadyJoined =
     step === 'role' ? (
@@ -557,6 +621,7 @@ export function JoinSchoolScreen() {
                 <Ionicons name="chevron-forward" size={18} color={Colors.mutedForeground} />
               </Pressable>
             ))}
+            {pendingBox}
             {alreadyJoined}
           </View>
         ) : null}

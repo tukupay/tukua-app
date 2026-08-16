@@ -13,10 +13,10 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
+import { PaymentProcessCard } from '../../components/dashboard/PaymentProcessCard';
 import { ModuleBackBar, ModuleScreenHeader, ModuleEmpty, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import {
-  contributeParentBursary,
   fetchParentBursary,
   ParentBursaryContribution,
   ParentBursaryProgram,
@@ -61,10 +61,9 @@ export function BursaryScreen({ navigation }: Props) {
   const [contributions, setContributions] = useState<ParentBursaryContribution[]>([]);
   const [kittyTotal, setKittyTotal] = useState(0);
   const [selectedProgram, setSelectedProgram] = useState<string | null>(null);
-  const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  const [showPay, setShowPay] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
   const [contribPage, setContribPage] = useState(0);
@@ -118,34 +117,6 @@ export function BursaryScreen({ navigation }: Props) {
   useEffect(() => {
     void load();
   }, [load]);
-
-  const onContribute = async () => {
-    setOk(null);
-    setError(null);
-    if (!isParent) {
-      setError('Only parents can contribute to the kitty from this screen.');
-      return;
-    }
-    const n = Number(amount);
-    if (!(n > 0)) {
-      setError('Enter a contribution amount greater than 0.');
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await contributeParentBursary({
-        amount: n,
-        program_id: selectedProgram || undefined,
-      });
-      setOk('Thank you — contribution recorded.');
-      setAmount('');
-      await load(true);
-    } catch (e) {
-      setError(humanizeError(e));
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
   return (
     <View style={styles.root}>
@@ -227,46 +198,40 @@ export function BursaryScreen({ navigation }: Props) {
             {isParent ? (
               <>
                 <Text style={styles.section}>Contribute</Text>
-                <ModuleGlassCard>
-                  <Text style={styles.fieldLabel}>Amount (KES)</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={amount}
-                    onChangeText={setAmount}
-                    keyboardType="decimal-pad"
-                    placeholder="e.g. 500"
-                    placeholderTextColor={Colors.mutedForeground}
-                    editable={!submitting}
-                  />
-                  {selectedProgram ? (
-                    <Text style={styles.programMeta}>
-                      Program ·{' '}
-                      {programs.find((p) => p.id === selectedProgram)?.title ||
-                        programs.find((p) => p.id === selectedProgram)?.name ||
-                        'Selected'}
-                    </Text>
-                  ) : (
-                    <Text style={styles.programMeta}>General vulnerable student kitty</Text>
-                  )}
-                  {error ? <Text style={styles.err}>{error}</Text> : null}
-                  {ok ? <Text style={styles.ok}>{ok}</Text> : null}
-                  <Pressable
-                    style={[styles.primaryBtn, submitting && { opacity: 0.7 }]}
-                    disabled={submitting}
-                    onPress={() => void onContribute()}>
-                    {submitting ? (
-                      <ActivityIndicator color="#fff" />
-                    ) : (
-                      <>
-                        <Ionicons name="heart" size={16} color={Colors.white} />
-                        <Text style={styles.primaryBtnText}>Contribute</Text>
-                      </>
-                    )}
+                {selectedProgram ? (
+                  <Text style={styles.programMeta}>
+                    Program ·{' '}
+                    {programs.find((p) => p.id === selectedProgram)?.title ||
+                      programs.find((p) => p.id === selectedProgram)?.name ||
+                      'Selected'}
+                  </Text>
+                ) : (
+                  <Text style={styles.programMeta}>General vulnerable student kitty</Text>
+                )}
+                {!showPay ? (
+                  <Pressable style={styles.primaryBtn} onPress={() => setShowPay(true)}>
+                    <Ionicons name="heart" size={16} color={Colors.white} />
+                    <Text style={styles.primaryBtnText}>Contribute with M-Pesa</Text>
                   </Pressable>
-                </ModuleGlassCard>
+                ) : (
+                  <PaymentProcessCard
+                    mode="bursary"
+                    title="Bursary contribution"
+                    subtitle="Pay via M-Pesa. Funds go to the school bursary kitty."
+                    defaultAmount="10"
+                    programId={selectedProgram}
+                    onRefresh={async () => {
+                      setOk('Thank you — M-Pesa contribution recorded.');
+                      await load(true);
+                    }}
+                    onClose={() => setShowPay(false)}
+                  />
+                )}
+                {error ? <Text style={styles.err}>{error}</Text> : null}
+                {ok ? <Text style={styles.ok}>{ok}</Text> : null}
               </>
             ) : (
-              <Text style={styles.sub}>Browse programs here. Parent accounts can record contributions.</Text>
+              <Text style={styles.sub}>Browse programs here. Parent accounts can contribute via M-Pesa.</Text>
             )}
 
             {isParent && contributions.length > 0 ? (

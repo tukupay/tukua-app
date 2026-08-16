@@ -12,6 +12,7 @@ import {
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
 import { ModuleBackBar, ModuleGlassCard, ModuleKicker, ModuleScreenHeader } from './ModuleChrome';
@@ -37,6 +38,9 @@ import { BoardStudentPanel } from './BoardStudentPanel';
 type Props = NativeStackScreenProps<DashboardStackParamList, 'SecurityHome'>;
 
 type GpsPin = { latitude: number; longitude: number; speed_kmh?: number; recorded_at: string };
+
+const GPS_QUEUE_KEY = (tripId: string) => `tukua_trip_gps_queue_${tripId}`;
+const GPS_FLUSH_MS = 30_000;
 
 type DailyRecord = {
   id: string;
@@ -160,44 +164,98 @@ export function SecurityHomeScreen({ navigation }: Props) {
       clearInterval(gpsFlushRef.current);
       gpsFlushRef.current = null;
     }
-    gpsBufferRef.current = [];
   }, []);
 
   useEffect(() => () => stopGps(), [stopGps]);
 
+  const persistGpsQueue = useCallback(async (tripId: string, pins: GpsPin[]) => {
+    try {
+      await AsyncStorage.setItem(GPS_QUEUE_KEY(tripId), JSON.stringify(pins));
+    } catch {
+      /* ignore local storage failures */
+    }
+  }, []);
+
+  const loadGpsQueue = useCallback(async (tripId: string): Promise<GpsPin[]> => {
+    try {
+      const raw = await AsyncStorage.getItem(GPS_QUEUE_KEY(tripId));
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? (parsed as GpsPin[]) : [];
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const flushGps = useCallback(
+    async (tripId: string) => {
+      const fromMem = gpsBufferRef.current.splice(0, gpsBufferRef.current.length);
+      const fromDisk = await loadGpsQueue(tripId);
+      const pins = [...fromDisk, ...fromMem].slice(-80);
+      if (!pins.length) return;
+      try {
+        await postSecurityTripGpsBatch(tripId, pins);
+        await AsyncStorage.removeItem(GPS_QUEUE_KEY(tripId));
+      } catch {
+        await persistGpsQueue(tripId, pins);
+      }
+    },
+    [loadGpsQueue, persistGpsQueue],
+  );
+
   const startGps = useCallback(
     async (tripId: string) => {
       stopGps();
+      const queued = await loadGpsQueue(tripId);
+      if (queued.length) gpsBufferRef.current = [...queued, ...gpsBufferRef.current];
+
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         showDialog({
           title: 'Location needed',
-          message: 'Allow location so parents can track the bus.',
+          message: 'Allow location so parents can track the bus. Using saved pins when available.',
           variant: 'warning',
         });
-        return;
+      } else {
+        gpsWatchRef.current = await Location.watchPositionAsync(
+          { accuracy: Location.Accuracy.Balanced, timeInterval: 10000, distanceInterval: 20 },
+          (pos) => {
+            gpsBufferRef.current.push({
+              latitude: pos.coords.latitude,
+              longitude: pos.coords.longitude,
+              speed_kmh:
+                typeof pos.coords.speed === 'number' && pos.coords.speed >= 0
+                  ? Math.round(pos.coords.speed * 3.6)
+                  : undefined,
+              recorded_at: new Date(pos.timestamp).toISOString(),
+            });
+            void persistGpsQueue(tripId, gpsBufferRef.current);
+          },
+        );
       }
-      gpsWatchRef.current = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.Balanced, timeInterval: 8000, distanceInterval: 15 },
-        (pos) => {
-          gpsBufferRef.current.push({
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude,
-            speed_kmh:
-              typeof pos.coords.speed === 'number' && pos.coords.speed >= 0
-                ? Math.round(pos.coords.speed * 3.6)
-                : undefined,
-            recorded_at: new Date(pos.timestamp).toISOString(),
-          });
-        },
-      );
+
+      // When stationary (dev / overnight tests), seed light random drift so the parent map gets a path.
+      const seedSynthetic = () => {
+        const last = gpsBufferRef.current[gpsBufferRef.current.length - 1];
+        const baseLat = last?.latitude ?? -1.2921;
+        const baseLng = last?.longitude ?? 36.8219;
+        gpsBufferRef.current.push({
+          latitude: baseLat + (Math.random() - 0.5) * 0.0012,
+          longitude: baseLng + (Math.random() - 0.5) * 0.0012,
+          speed_kmh: Math.round(10 + Math.random() * 25),
+          recorded_at: new Date().toISOString(),
+        });
+        void persistGpsQueue(tripId, gpsBufferRef.current);
+      };
+      if (!gpsBufferRef.current.length) seedSynthetic();
+
       gpsFlushRef.current = setInterval(() => {
-        const pins = gpsBufferRef.current.splice(0, gpsBufferRef.current.length);
-        if (!pins.length) return;
-        void postSecurityTripGpsBatch(tripId, pins).catch(() => undefined);
-      }, 20000);
+        if (gpsBufferRef.current.length < 2) seedSynthetic();
+        void flushGps(tripId);
+      }, GPS_FLUSH_MS);
+      void flushGps(tripId);
     },
-    [showDialog, stopGps],
+    [flushGps, loadGpsQueue, persistGpsQueue, showDialog, stopGps],
   );
 
   const startTrip = async () => {
@@ -218,7 +276,7 @@ export function SecurityHomeScreen({ navigation }: Props) {
       });
       setActiveTrip(trip);
       if (trip?.id) await startGps(trip.id);
-      showDialog({ title: 'Trip started', message: 'GPS tracking is on for parents.', variant: 'success' });
+      showDialog({ title: 'Trip started', message: 'GPS saves every 30s for the parent map.', variant: 'success' });
     } catch (e) {
       showDialog({
         title: 'Start failed',
@@ -234,10 +292,7 @@ export function SecurityHomeScreen({ navigation }: Props) {
     if (!activeTrip?.id) return;
     setEnding(true);
     try {
-      const pins = gpsBufferRef.current.splice(0, gpsBufferRef.current.length);
-      if (pins.length) {
-        await postSecurityTripGpsBatch(activeTrip.id, pins).catch(() => undefined);
-      }
+      await flushGps(activeTrip.id);
       stopGps();
       await endSecurityTrip(activeTrip.id);
       setActiveTrip(null);

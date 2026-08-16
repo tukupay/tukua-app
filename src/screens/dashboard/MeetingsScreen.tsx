@@ -129,20 +129,17 @@ export function MeetingsScreen({ navigation }: Props) {
     [navigation],
   );
 
-  const onJoin = useCallback(
-    async (m: SchoolMeeting) => {
-      if (!canJoin(m)) return;
-
-      if (!inAppJoin) {
-        setError('Add your name and phone to join this meeting.');
-        setProfileGate(m);
-        return;
-      }
-
-      await enterMember(m);
-    },
-    [enterMember, inAppJoin],
-  );
+  const onJoin = useCallback(async (m: SchoolMeeting) => {
+    if (!canJoin(m) && !m.meeting_url) return;
+    const external = String(m.meeting_url || '').trim();
+    if (external) {
+      await openExternalMeeting(external);
+      return;
+    }
+    setError(
+      'Ask the host to add a Google Meet, Zoom, or Teams link. In-app Jitsi rooms are disabled.',
+    );
+  }, []);
 
   const onHost = useCallback(
     async (m: SchoolMeeting) => {

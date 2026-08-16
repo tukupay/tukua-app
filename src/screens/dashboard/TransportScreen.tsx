@@ -31,6 +31,7 @@ import {
 import {
   DEFAULT_SCHOOL_PIN,
   googleMapsDirectionsUrl,
+  googleMapsEmbedPathUrl,
   googleMapsEmbedTwoPinUrl,
   googleMapsEmbedUrl,
   googleMapsSearchUrl,
@@ -267,11 +268,7 @@ export function TransportScreen({ navigation }: Props) {
   const liveStatus = liveTrip ? tripStatusLabel(liveTrip.status) : 'No active trip';
   const embed = useMemo(() => {
     if (liveRoutePoints.length >= 2) {
-      return googleMapsEmbedTwoPinUrl(
-        liveRoutePoints[0]!,
-        liveRoutePoints[liveRoutePoints.length - 1]!,
-        13,
-      );
+      return googleMapsEmbedPathUrl(liveRoutePoints, 13);
     }
     return googleMapsEmbedUrl(livePoint, 14);
   }, [liveRoutePoints, livePoint]);

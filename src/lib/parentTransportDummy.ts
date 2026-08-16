@@ -55,6 +55,22 @@ export function googleMapsEmbedTwoPinUrl(a: LatLng, b: LatLng): string {
   return `https://maps.google.com/maps?saddr=${a.lat},${a.lng}&daddr=${b.lat},${b.lng}&output=embed`;
 }
 
+/** Embed a multi-stop path (Google maps dir with waypoints when possible). */
+export function googleMapsEmbedPathUrl(points: LatLng[], zoom = 13): string {
+  const clean = points.filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+  if (clean.length === 0) return googleMapsEmbedUrl(DEFAULT_SCHOOL_PIN, zoom);
+  if (clean.length === 1) return googleMapsEmbedUrl(clean[0]!, zoom);
+  if (clean.length === 2) return googleMapsEmbedTwoPinUrl(clean[0]!, clean[1]!);
+  const origin = clean[0]!;
+  const dest = clean[clean.length - 1]!;
+  const mid = clean.slice(1, -1).slice(0, 8);
+  const wp = mid.map((p) => `${p.lat},${p.lng}`).join('|');
+  const qs = wp
+    ? `saddr=${origin.lat},${origin.lng}&daddr=${dest.lat},${dest.lng}&waypoints=${encodeURIComponent(wp)}`
+    : `saddr=${origin.lat},${origin.lng}&daddr=${dest.lat},${dest.lng}`;
+  return `https://maps.google.com/maps?${qs}&output=embed`;
+}
+
 /** Minimal map picker shell for WebView — no fabricated vehicle markers. */
 export function mapPickerHtml(center: LatLng): string {
   const { lat, lng } = center;

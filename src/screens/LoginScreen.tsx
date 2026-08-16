@@ -1,16 +1,13 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 
 import {
   ActivityIndicator,
-  Image,
-  ImageBackground,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
-  useWindowDimensions,
   View,
 } from 'react-native';
 
@@ -18,14 +15,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Ionicons } from '@expo/vector-icons';
 
-import MaskedView from '@react-native-masked-view/masked-view';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 
 import { LogoPartners } from '../components/auth/LogoPartners';
+import { LoginHeroCurve } from '../components/auth/LoginHeroCurve';
+import { ThemedPageSvg } from '../components/auth/ThemedPageSvg';
+import { CurveHProvider, CurvePaint, CurveText } from '../components/auth/CurvePaint';
 import { CertifyingAgenciesCarousel } from '../components/auth/CertifyingAgenciesCarousel';
 import { NewsHighlight } from '../components/auth/NewsHighlight';
-import { GreenPattern } from '../components/dashboard/DashboardBackground';
 
 import { AuthTextField } from '../components/auth/AuthTextField';
 
@@ -48,45 +46,20 @@ import { registerForPushNotifications } from '../lib/notifications';
 import { log } from '../lib/logger';
 import { getDeskApiDebugInfo, saveDeskCredentials } from '../lib/deskApi';
 
-import { Images } from '../constants/images';
-
 import { Colors } from '../theme/yana';
+import { useAuthScale } from '../components/auth/useAuthScale';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 
-const FORM_WIDTH = '88%';
-
 export function LoginScreen({ navigation }: Props) {
-
-  const { height, width } = useWindowDimensions();
 
   const { showDialog } = useDialog();
 
-  const layout = useMemo(() => {
+  const layout = useAuthScale(0.88);
 
-    const compact = height < 700;
-
-    const small = height < 640;
-
-    return {
-
-      compact,
-
-      small,
-
-      topCurveH: height * (small ? 0.22 : compact ? 0.26 : 0.3),
-
-      spacer: small ? 8 : compact ? 10 : 14,
-
-      formGap: small ? 10 : 12,
-
-      bottomPad: small ? 12 : 16,
-
-      scrollMinH: height - (Platform.OS === 'ios' ? 48 : 32),
-
-    };
-
-  }, [height]);
+  const { s, font } = layout;
+  /** Curve sits just above the form (was ~72% and overlapped fields). */
+  const curveH = Math.round(layout.height * 0.42);
 
   const { refreshProfile, adoptSession } = useAuth();
   const { connectDesk } = useDeskAuth();
@@ -301,26 +274,10 @@ export function LoginScreen({ navigation }: Props) {
 
   return (
     <View style={styles.root}>
-      <View style={[styles.topCurve, { height: layout.topCurveH }]} pointerEvents="none">
-        <ImageBackground
-          source={Images.curve1}
-          style={StyleSheet.absoluteFill}
-          resizeMode="cover"
-          imageStyle={styles.topCurveImage}
-        />
-        <MaskedView
-          style={StyleSheet.absoluteFill}
-          maskElement={
-            <View style={styles.curveMaskRoot}>
-              <Image source={Images.curve1} style={styles.curveMaskImage} resizeMode="cover" />
-            </View>
-          }>
-          <View style={styles.curvePattern}>
-            <GreenPattern darker />
-          </View>
-        </MaskedView>
-      </View>
+      <ThemedPageSvg />
+      <LoginHeroCurve height={curveH} />
 
+      <CurveHProvider height={curveH}>
       <SafeAreaView style={styles.safe}>
         <KeyboardAvoidingView
           style={styles.flex}
@@ -331,22 +288,25 @@ export function LoginScreen({ navigation }: Props) {
               {
                 minHeight: layout.scrollMinH,
                 paddingBottom: layout.bottomPad,
+                paddingHorizontal: layout.padH,
               },
             ]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}>
-            <View style={styles.centerBlock}>
-              <LogoPartners compact={layout.compact} onGreen />
+            <View style={[styles.centerBlock, { paddingTop: Math.max(s(24), Math.round(curveH * 0.12)) }]}>
+              <CurvePaint>
+                {(inside) => <LogoPartners compact={layout.compact} onGreen={inside} />}
+              </CurvePaint>
 
               <View style={{ height: layout.spacer }} />
 
-              <Text style={[styles.loginTitle, layout.small && styles.loginTitleSmall]}>
+              <CurveText style={[styles.loginTitle, { fontSize: font(16) }]}>
                 Login to your account
-              </Text>
+              </CurveText>
 
-              <View style={{ height: layout.formGap }} />
+              <View style={{ height: Math.max(layout.formGap, s(18)) }} />
 
-              <View style={[styles.form, { maxWidth: width * 0.88 }]}>
+              <View style={[styles.form, { width: layout.formWidth, marginTop: s(8) }]}>
 
                 <AuthTextField
 
@@ -386,8 +346,9 @@ export function LoginScreen({ navigation }: Props) {
 
                 <View style={{ height: layout.formGap }} />
 
-                <View style={styles.rememberRow}>
-
+                <CurvePaint style={styles.rememberRow} fullyInside>
+                  {(inside) => (
+                    <>
                   <TouchableOpacity
 
                     style={styles.rememberLeft}
@@ -398,23 +359,36 @@ export function LoginScreen({ navigation }: Props) {
 
                       name={rememberMe ? 'checkbox' : 'square-outline'}
 
-                      size={20}
+                      size={s(20)}
 
-                      color={rememberMe ? Colors.brandGreenDark : Colors.mutedForeground}
+                      color={
+                        inside
+                          ? rememberMe
+                            ? Colors.white
+                            : 'rgba(255,255,255,0.75)'
+                          : rememberMe
+                            ? Colors.brandGreenDark
+                            : Colors.mutedForeground
+                      }
 
                     />
 
-                    <Text style={styles.rememberText}>Remember Me</Text>
+                    <Text style={[styles.rememberText, { fontSize: font(12) }, inside ? styles.onPhotoText : styles.offPhotoText]}>
+                      Remember Me
+                    </Text>
 
                   </TouchableOpacity>
 
                   <TouchableOpacity onPress={handleForgot}>
 
-                    <Text style={styles.forgotText}>Forgotten Password?</Text>
+                    <Text style={[styles.forgotText, { fontSize: font(12) }, inside ? styles.onPhotoText : styles.offPhotoText]}>
+                      Forgotten Password?
+                    </Text>
 
                   </TouchableOpacity>
-
-                </View>
+                    </>
+                  )}
+                </CurvePaint>
 
                 <View style={{ height: layout.formGap }} />
 
@@ -422,11 +396,17 @@ export function LoginScreen({ navigation }: Props) {
 
                   {loading ? (
 
-                    <View style={styles.loadingBtn}>
+                    <CurvePaint style={{ flex: 1 }}>
+                      {(inside) => (
+                    <View style={[styles.doubleOuter, { borderWidth: Math.max(inside ? 2 : 1.5, s(inside ? 3.5 : 2)), borderRadius: s(14), borderColor: inside ? '#ffffff' : Colors.brandGreenDark }]}>
+                    <View style={[styles.loadingBtn, { height: s(48), borderRadius: s(12) }, styles.doubleInner, { borderWidth: Math.max(1.5, s(2.5)) }]}>
 
                       <ActivityIndicator color={Colors.white} />
 
                     </View>
+                    </View>
+                      )}
+                    </CurvePaint>
 
                   ) : (
 
@@ -436,34 +416,42 @@ export function LoginScreen({ navigation }: Props) {
 
                   {bioAvailable && !loading ? (
 
-                    <TouchableOpacity style={styles.fingerprint} onPress={handleBiometric}>
+                    <CurvePaint>
+                      {(inside) => (
+                    <View style={[styles.doubleOuter, { borderWidth: Math.max(inside ? 2 : 1.5, s(inside ? 3.5 : 2)), borderRadius: s(14), borderColor: inside ? '#ffffff' : Colors.brandGreenDark }]}>
+                    <TouchableOpacity
+                      style={[
+                        styles.fingerprint,
+                        { width: s(48), height: s(48), borderRadius: s(12) },
+                        styles.doubleInner,
+                        { borderWidth: Math.max(1.5, s(2.5)) },
+                      ]}
+                      onPress={handleBiometric}>
 
                       <Ionicons
 
                         name="finger-print"
 
-                        size={layout.compact ? 26 : 28}
+                        size={layout.compact ? s(26) : s(28)}
 
                         color={Colors.white}
 
                       />
 
                     </TouchableOpacity>
+                    </View>
+                      )}
+                    </CurvePaint>
 
                   ) : null}
 
                 </View>
 
               </View>
-
               <TouchableOpacity
-
-                style={styles.registerLink}
-
+                style={[styles.registerLink, { marginTop: s(20) }]}
                 onPress={() => navigation.navigate('Register')}>
-
-                <Text style={styles.registerLinkText}>Don't have an account? Create Account</Text>
-
+              <CurveText style={[styles.registerLinkText, { fontSize: font(14) }]}>Don't have an account? Create Account</CurveText>
               </TouchableOpacity>
 
             </View>
@@ -472,7 +460,7 @@ export function LoginScreen({ navigation }: Props) {
 
               <NewsHighlight />
 
-              <Text style={styles.partnerLabel}>Partner Institutions</Text>
+              <Text style={[styles.partnerLabel, { fontSize: font(10) }]}>Partner Institutions</Text>
 
               <CertifyingAgenciesCarousel compact={layout.compact} />
 
@@ -483,6 +471,7 @@ export function LoginScreen({ navigation }: Props) {
         </KeyboardAvoidingView>
 
       </SafeAreaView>
+      </CurveHProvider>
 
     </View>
 
@@ -500,29 +489,7 @@ const styles = StyleSheet.create({
 
   },
 
-  topCurve: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-  },
-  topCurveImage: {
-    resizeMode: 'cover',
-  },
-  curveMaskRoot: {
-    flex: 1,
-    backgroundColor: 'transparent',
-  },
-  curveMaskImage: {
-    ...StyleSheet.absoluteFillObject,
-    width: '100%',
-    height: '100%',
-  },
-  curvePattern: {
-    flex: 1,
-    opacity: 0.88,
-  },
-  safe: { flex: 1, width: '100%' },
+  safe: { flex: 1, width: '100%', zIndex: 2 },
 
   flex: { flex: 1 },
 
@@ -530,7 +497,6 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
   },
   centerBlock: {
     flex: 1,
@@ -565,11 +531,7 @@ const styles = StyleSheet.create({
 
   loginTitle: {
 
-    fontSize: 16,
-
     fontWeight: '700',
-
-    color: Colors.brandGreenDark,
 
     fontFamily: 'Poppins_700Bold',
 
@@ -577,15 +539,7 @@ const styles = StyleSheet.create({
 
   },
 
-  loginTitleSmall: {
-
-    fontSize: 15,
-
-  },
-
   form: {
-
-    width: FORM_WIDTH,
 
     alignItems: 'center',
 
@@ -619,8 +573,6 @@ const styles = StyleSheet.create({
 
     fontWeight: '600',
 
-    color: Colors.brandGreenDark,
-
     fontFamily: 'Poppins_600SemiBold',
 
   },
@@ -631,10 +583,18 @@ const styles = StyleSheet.create({
 
     fontWeight: '600',
 
-    color: Colors.brandGreenDark,
-
     fontFamily: 'Poppins_600SemiBold',
 
+  },
+
+  onPhotoText: {
+    color: Colors.white,
+    textShadowColor: 'rgba(0,0,0,0.35)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  offPhotoText: {
+    color: Colors.brandGreenDark,
   },
 
   loginRow: {
@@ -681,6 +641,16 @@ const styles = StyleSheet.create({
 
   },
 
+  doubleOuter: {
+    borderWidth: 3.5,
+    borderColor: '#ffffff',
+    borderRadius: 14,
+  },
+  doubleInner: {
+    borderWidth: 2.5,
+    borderColor: Colors.brandGreenDark,
+  },
+
   registerLink: {
 
     marginTop: 20,
@@ -690,8 +660,6 @@ const styles = StyleSheet.create({
   },
 
   registerLinkText: {
-
-    color: Colors.brandGreenDark,
 
     fontWeight: '700',
 

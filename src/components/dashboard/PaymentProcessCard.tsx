@@ -19,7 +19,12 @@ import { Colors } from '../../theme/yana';
 
 const HERO_GREEN = '#15411D';
 
-export type PaymentProcessMode = 'school_fees' | 'school_pocket' | 'teacher_tip' | 'bursary';
+export type PaymentProcessMode =
+  | 'school_fees'
+  | 'school_pocket'
+  | 'teacher_tip'
+  | 'bursary'
+  | 'school_event';
 
 /** Two product steps: send STK → wait for M-Pesa result (then receipt). */
 type Phase = 'form' | 'awaiting' | 'done' | 'error';
@@ -57,6 +62,7 @@ function titleFor(mode: PaymentProcessMode, fallback: string): string {
   if (mode === 'school_fees') return 'Pay school fees';
   if (mode === 'school_pocket') return 'Add pocket money';
   if (mode === 'teacher_tip') return 'Tip teacher';
+  if (mode === 'school_event') return 'Pay for event';
   return 'Contribute to bursary';
 }
 

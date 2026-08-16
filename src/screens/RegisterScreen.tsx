@@ -1,12 +1,10 @@
 /**
- * Native PEA registration — mirrors web Register (Individual/Student, Organisation, School).
- * Layout matches Login (curve + responsive). Nest REST only.
+ * Native PEA registration — Student / Parent / Teacher / school staff.
+ * Schools and organisations register on Tukua web. Nest REST only.
  */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Image,
-  ImageBackground,
   Keyboard,
   KeyboardAvoidingView,
   Linking,
@@ -15,21 +13,16 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import MaskedView from '@react-native-masked-view/masked-view';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { AuthButton } from '../components/auth/AuthButton';
-import { AuthSelect } from '../components/auth/AuthSelect';
 import { AuthTextField } from '../components/auth/AuthTextField';
 import { CountyPicker } from '../components/auth/CountyPicker';
-import { LogoPartners } from '../components/auth/LogoPartners';
+import { ThemedPageSvg } from '../components/auth/ThemedPageSvg';
 import { PeaRegistrationCard } from '../components/auth/PeaRegistrationCard';
-import { GreenPattern } from '../components/dashboard/DashboardBackground';
-import { Images } from '../constants/images';
 import { DEFAULT_PEA_CONFIG, fetchPeaConfig, PeaConfig } from '../lib/peaConfig';
 import {
   checkBlockedPhone,
@@ -42,11 +35,11 @@ import {
 } from '../lib/peaRegistrationFlow';
 import {
   joinSchoolAfterRegister,
-  listRegistrationOrgTypes,
   searchRegistrationSchools,
   type RegistrationSchoolHit,
 } from '../lib/platformAuthApi';
 import { Colors, TukuaWeb } from '../theme/yana';
+import { useAuthScale } from '../components/auth/useAuthScale';
 import { RootStackParamList } from '../navigation/types';
 import { signInWithNestIdentity } from '../lib/auth';
 import { useAuth } from '../context/AuthContext';
@@ -57,85 +50,79 @@ import { saveDeskCredentials } from '../lib/deskApi';
 import { humanizeError } from '../lib/humanizeError';
 import { log } from '../lib/logger';
 
-const FORM_WIDTH = '92%';
-
 type Props = NativeStackScreenProps<RootStackParamList, 'Register'>;
 type Step = 'type' | 'details' | 'schoolJoin' | 'payment';
 
-type OrgType = { id: string; slug: string; label: string; description: string | null };
+type PersonaId = 'student' | 'parent' | 'teacher' | 'school_admin';
 
-const ACCOUNT_TYPES = [
+const ACCOUNT_TYPES: Array<{
+  id: PersonaId;
+  label: string;
+  shortDesc: string;
+  fullDesc: string;
+  features: string[];
+  icon: keyof typeof Ionicons.glyphMap;
+}> = [
   {
-    id: 'individual',
-    label: 'Individual / Student',
-    shortDesc: 'Opportunities, courses & optional school join',
+    id: 'student',
+    label: 'Student',
+    shortDesc: 'Learner — courses, school link & opportunities',
     fullDesc:
-      'Access opportunities, AI guidance, and courses. After signup you can join a school as a student (auto-linked) or skip and use Tukua as an individual.',
-    features: [
-      'AI career guidance & CV analysis',
-      'Optional school link (students auto-approved)',
-      'Courses, scholarships & events',
-    ],
-    icon: 'school-outline' as const,
+      'Join as a student. Optionally link your school (auto-approved). Pay the student registration fee set by Tukua.',
+    features: ['School link (students auto-approved)', 'Courses & AI guidance', 'Opportunities & events'],
+    icon: 'school-outline',
   },
   {
-    id: 'organization',
-    label: 'Organisation Partner',
-    shortDesc: 'Post opportunities & recruit',
-    fullDesc: 'Business, NGO, SACCO, government — post opportunities and manage talent.',
-    features: ['Post opportunities', 'Applicant pipeline', 'Platform approval required'],
-    icon: 'business-outline' as const,
+    id: 'parent',
+    label: 'Parent',
+    shortDesc: 'Follow fees, grades & attendance',
+    fullDesc:
+      'Register as a parent. You can request to join a school; the school approves the link. Parent PEA applies.',
+    features: ['Join a school as parent (pending approval)', 'Fees, grades & attendance', 'Messages from school'],
+    icon: 'people-outline',
   },
   {
-    id: 'school',
-    label: 'School',
-    shortDesc: 'College, university or K–12',
+    id: 'teacher',
+    label: 'Teacher',
+    shortDesc: 'Teach, mark & manage your classes',
     fullDesc:
-      'Register your institution. After platform approval, use Tukua Desk for school ERP.',
-    features: ['School profile & admins', 'Tukua Desk ERP', 'Platform approval required'],
-    icon: 'library-outline' as const,
+      'Register as a teacher. Request to join your school; admin approval is required. Teacher PEA applies.',
+    features: ['Join a school as teacher (pending approval)', 'Classes, marks & attendance', 'Desk after school approval'],
+    icon: 'easel-outline',
+  },
+  {
+    id: 'school_admin',
+    label: 'School staff / admin',
+    shortDesc: 'Work at a school — not registering the school itself',
+    fullDesc:
+      'For principals, bursars and school staff as people. To register the school or an organisation, use Tukua on the web and download Desk.',
+    features: ['School-staff PEA', 'Use Desk after your school is on Tukua', 'Not a school or organisation signup'],
+    icon: 'briefcase-outline',
   },
 ];
 
 export function RegisterScreen({ navigation }: Props) {
-  const { height, width } = useWindowDimensions();
-  const layout = useMemo(() => {
-    const compact = height < 700;
-    const small = height < 640;
-    return {
-      compact,
-      small,
-      topCurveH: Math.min(height * (small ? 0.16 : compact ? 0.18 : 0.2), 160),
-      spacer: small ? 6 : 10,
-      formGap: small ? 10 : 12,
-      bottomPad: Math.max(28, height * 0.04),
-    };
-  }, [height]);
+  const layout = useAuthScale(0.92);
+  const { s, font, padH } = layout;
 
   const { refreshProfile, adoptSession } = useAuth();
   const { connectDesk } = useDeskAuth();
   const { showDialog } = useDialog();
 
   const [step, setStep] = useState<Step>('type');
-  const [accountType, setAccountType] = useState('individual');
+  const [accountType, setAccountType] = useState<PersonaId>('student');
   const [expandedType, setExpandedType] = useState<string | null>(null);
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [idNumber, setIdNumber] = useState('');
   const [county, setCounty] = useState('');
-  const [orgSubtype, setOrgSubtype] = useState('');
-  const [orgName, setOrgName] = useState('');
-  const [businessLocation, setBusinessLocation] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [obscure, setObscure] = useState(true);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [orgTypes, setOrgTypes] = useState<OrgType[]>([]);
-  const [orgTypesLoading, setOrgTypesLoading] = useState(false);
-  const [orgTypesError, setOrgTypesError] = useState<string | null>(null);
   const [peaConfig, setPeaConfig] = useState<PeaConfig>(DEFAULT_PEA_CONFIG);
   const [peaConfigLoaded, setPeaConfigLoaded] = useState(false);
   const [peaStatus, setPeaStatus] = useState<PeaStatus>('idle');
@@ -172,34 +159,11 @@ export function RegisterScreen({ navigation }: Props) {
     };
   }, []);
 
-  const isOrg = accountType === 'organization';
-  const isSchoolAccount = accountType === 'school';
-  const needsOrgFields = isOrg || isSchoolAccount;
   const selectedType = ACCOUNT_TYPES.find((t) => t.id === accountType);
   const peaAmount = peaConfig.amount;
-  const peaRole = isSchoolAccount ? 'school' : isOrg ? 'organization' : undefined;
-
-  const loadOrgTypes = useCallback(async () => {
-    setOrgTypesLoading(true);
-    setOrgTypesError(null);
-    try {
-      const r = await listRegistrationOrgTypes();
-      if (r.ok && r.data?.length) {
-        setOrgTypes(r.data);
-      } else {
-        setOrgTypes([]);
-        setOrgTypesError(r.message || 'Could not load organisation types. Pull to retry.');
-      }
-    } catch (e) {
-      setOrgTypesError(humanizeError(e));
-    } finally {
-      setOrgTypesLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadOrgTypes();
-  }, [loadOrgTypes]);
+  const peaRole = accountType;
+  const canJoinSchool =
+    accountType === 'student' || accountType === 'parent' || accountType === 'teacher';
 
   useEffect(() => {
     setPeaConfigLoaded(false);
@@ -231,28 +195,15 @@ export function RegisterScreen({ navigation }: Props) {
   }, [step, wantSchool, schoolQuery]);
 
   const canRegister = useMemo(() => {
-    const base =
+    return (
       fullName.trim().length >= 2 &&
       /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) &&
       phone.trim().length >= 9 &&
       password.length >= 6 &&
       password === confirmPassword &&
-      agreedToTerms;
-    if (isOrg) return base && orgSubtype.length > 0 && orgName.trim().length >= 2;
-    if (isSchoolAccount) return base && orgName.trim().length >= 2;
-    return base;
-  }, [
-    fullName,
-    email,
-    phone,
-    password,
-    confirmPassword,
-    agreedToTerms,
-    isOrg,
-    isSchoolAccount,
-    orgSubtype,
-    orgName,
-  ]);
+      agreedToTerms
+    );
+  }, [fullName, email, phone, password, confirmPassword, agreedToTerms]);
 
   const buildForm = (): RegistrationForm => ({
     fullName,
@@ -261,11 +212,12 @@ export function RegisterScreen({ navigation }: Props) {
     phone,
     idNumber,
     county,
-    accountType: isSchoolAccount ? 'organization' : accountType,
-    isOrg: needsOrgFields,
-    orgSubtype: isSchoolAccount ? 'school' : orgSubtype,
-    orgName: needsOrgFields ? orgName : '',
-    businessLocation: needsOrgFields ? businessLocation : '',
+    accountType,
+    role: accountType,
+    isOrg: false,
+    orgSubtype: '',
+    orgName: '',
+    businessLocation: '',
   });
 
   const validateForm = (): string | null => {
@@ -275,10 +227,6 @@ export function RegisterScreen({ navigation }: Props) {
     if (phone.replace(/\D/g, '').length < 9) return 'Please enter a valid phone number';
     if (password.length < 6) return 'Password must be at least 6 characters';
     if (password !== confirmPassword) return 'Passwords do not match';
-    if (isOrg && (!orgSubtype || !orgName.trim())) {
-      return 'Organization name and type are required';
-    }
-    if (isSchoolAccount && !orgName.trim()) return 'School / institution name is required';
     if (!agreedToTerms) return 'You must agree to the Terms & Conditions';
     return null;
   };
@@ -289,7 +237,7 @@ export function RegisterScreen({ navigation }: Props) {
     try {
       const r = await joinSchoolAfterRegister(accessToken, {
         organization_id: pending.organization_id,
-        role: 'student',
+        role: accountType === 'parent' || accountType === 'teacher' ? accountType : 'student',
         admission_number: pending.admission_number || null,
       });
       if (r.ok) {
@@ -328,20 +276,14 @@ export function RegisterScreen({ navigation }: Props) {
       }
       await refreshProfile();
       captureUserLocation().catch(() => {});
-      if (form.isOrg) {
-        showDialog({
-          title: 'Registration submitted',
-          message: isSchoolAccount
-            ? 'Your school account is pending platform approval. We will contact you within 48 hours.'
-            : 'Your organisation account is pending approval. We will contact you within 48 hours.',
-          variant: 'success',
-          icon: 'business-outline',
-          buttons: [{ text: 'OK', onPress: () => navigation.navigate('Login') }],
-        });
-      } else if (pendingSchoolJoinRef.current) {
+      if (pendingSchoolJoinRef.current) {
+        const joinRole = accountType === 'parent' ? 'parent' : accountType === 'teacher' ? 'teacher' : 'student';
         showDialog({
           title: 'Welcome to Tukua',
-          message: 'Account ready — you are linked to your school as a student. Desk can remove the link if needed.',
+          message:
+            joinRole === 'student'
+              ? 'Account ready — you are linked to your school as a student. Desk can remove the link if needed.'
+              : `Account ready — your ${joinRole} school request was sent. The school must approve it.`,
           variant: 'success',
           icon: 'checkmark-circle-outline',
         });
@@ -394,16 +336,16 @@ export function RegisterScreen({ navigation }: Props) {
       setError(humanizeError(validationError));
       return;
     }
-    if (accountType === 'individual' && wantSchool && !selectedSchool) {
+    if (canJoinSchool && wantSchool && !selectedSchool) {
       setError('Select a school, or go back and choose Skip.');
       setStep('schoolJoin');
       return;
     }
     pendingSchoolJoinRef.current =
-      accountType === 'individual' && wantSchool && selectedSchool
+      canJoinSchool && wantSchool && selectedSchool
         ? {
             organization_id: selectedSchool.id,
-            admission_number: admissionNumber.trim() || undefined,
+            admission_number: accountType === 'student' ? admissionNumber.trim() || undefined : undefined,
           }
         : null;
 
@@ -476,11 +418,11 @@ export function RegisterScreen({ navigation }: Props) {
       const { registerDeferredAccount } = await import('../lib/peaRegistrationFlow');
       const reg = await registerDeferredAccount(form);
       if (!reg.ok) throw new Error(reg.error || 'Account could not be created');
-      if (reg.accessToken && accountType === 'individual' && wantSchool && selectedSchool) {
+      if (reg.accessToken && canJoinSchool && wantSchool && selectedSchool) {
         await joinSchoolAfterRegister(reg.accessToken, {
           organization_id: selectedSchool.id,
-          role: 'student',
-          admission_number: admissionNumber.trim() || null,
+          role: accountType === 'parent' || accountType === 'teacher' ? accountType : 'student',
+          admission_number: accountType === 'student' ? admissionNumber.trim() || null : null,
         });
       }
       showDialog({
@@ -505,7 +447,7 @@ export function RegisterScreen({ navigation }: Props) {
       return;
     }
     setError('');
-    if (accountType === 'individual') {
+    if (canJoinSchool) {
       setStep('schoolJoin');
       return;
     }
@@ -514,39 +456,11 @@ export function RegisterScreen({ navigation }: Props) {
 
   const openTerms = () => Linking.openURL(`${TukuaWeb.base}/terms?type=${accountType}`);
   const openPrivacy = () => Linking.openURL(`${TukuaWeb.base}/privacy-policy`);
-
-  const orgSelectOptions = useMemo(
-    () =>
-      orgTypes.map((o) => ({
-        id: o.slug,
-        label: o.label,
-        description: o.description,
-      })),
-    [orgTypes],
-  );
+  const openWebRegister = () => Linking.openURL(`${TukuaWeb.base}${TukuaWeb.register}`);
 
   return (
     <View style={styles.root}>
-      <View style={[styles.topCurve, { height: layout.topCurveH }]} pointerEvents="none">
-        <ImageBackground
-          source={Images.curve1}
-          style={StyleSheet.absoluteFill}
-          resizeMode="cover"
-          imageStyle={styles.topCurveImage}
-        />
-        <MaskedView
-          style={StyleSheet.absoluteFill}
-          maskElement={
-            <View style={styles.curveMaskRoot}>
-              <Image source={Images.curve1} style={styles.curveMaskImage} resizeMode="cover" />
-            </View>
-          }>
-          <View style={styles.curvePattern}>
-            <GreenPattern darker />
-          </View>
-        </MaskedView>
-      </View>
-
+      <ThemedPageSvg />
       <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
         <KeyboardAvoidingView
           style={styles.flex}
@@ -556,9 +470,9 @@ export function RegisterScreen({ navigation }: Props) {
             ref={scrollRef}
             style={styles.scrollView}
             contentContainerStyle={{
-              paddingHorizontal: Math.max(16, width * 0.04),
-              paddingTop: 8,
-              paddingBottom: layout.bottomPad + 24 + keyboardPad,
+              paddingHorizontal: padH,
+              paddingTop: s(20),
+              paddingBottom: Math.max(layout.bottomPad, 28) + 24 + keyboardPad,
             }}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="interactive"
@@ -568,24 +482,18 @@ export function RegisterScreen({ navigation }: Props) {
             nestedScrollEnabled
             removeClippedSubviews={false}
             scrollEventThrottle={16}>
-            <View style={[styles.formCol, { width: FORM_WIDTH, maxWidth: width * 0.96, alignSelf: 'center' }]}>
-              <LogoPartners compact={layout.compact} onGreen />
-              <View style={{ height: layout.spacer }} />
-              <Text style={[styles.screenTitle, layout.small && styles.screenTitleSmall]}>
+            <View style={[styles.formCol, { width: layout.formWidth, alignSelf: 'center' }]}>
+              <Text style={[styles.screenTitle, { fontSize: font(22) }]}>Register</Text>
+              <Text style={[styles.screenSub, { fontSize: font(12) }]}>
                 {step === 'type'
-                  ? 'Join Tukua'
+                  ? 'Choose how you will use Tukua'
                   : step === 'schoolJoin'
-                    ? 'Join a school?'
+                    ? accountType === 'student'
+                      ? 'Students are linked automatically. Skip if you are not joining a school yet.'
+                      : `Request to join as ${selectedType?.label ?? accountType} — the school must approve.`
                     : step === 'payment'
-                      ? 'Complete registration'
-                      : 'Create your account'}
-              </Text>
-              <Text style={styles.screenSub}>
-                {step === 'type'
-                  ? "Kenya's Opportunity Platform — Open to All"
-                  : step === 'schoolJoin'
-                    ? 'Link as a student (auto-approved) or skip for an individual account'
-                    : `Registering as ${selectedType?.label ?? accountType}`}
+                      ? 'Pay to complete registration'
+                      : `Registering as ${selectedType?.label ?? accountType}`}
               </Text>
               <View style={{ height: layout.formGap }} />
 
@@ -597,27 +505,35 @@ export function RegisterScreen({ navigation }: Props) {
                     return (
                       <View key={t.id} style={styles.typeBlock}>
                         <TouchableOpacity
-                          style={[styles.typeCard, selected && styles.typeCardActive]}
+                        style={[
+                          styles.typeCard,
+                          selected && styles.typeCardActive,
+                          { gap: s(10), padding: s(14), borderRadius: s(14) },
+                        ]}
                           onPress={() => setAccountType(t.id)}
                           activeOpacity={0.85}>
                           <View style={[styles.typeIconWrap, selected && styles.typeIconActive]}>
                             <Ionicons
                               name={t.icon}
-                              size={22}
-                              color={selected ? Colors.brandGreenDark : Colors.mutedForeground}
+                              size={s(22)}
+                              color={selected ? Colors.white : Colors.mutedForeground}
                             />
                           </View>
                           <View style={styles.typeMeta}>
-                            <Text style={styles.typeLabel}>{t.label}</Text>
-                            <Text style={styles.typeDesc}>{t.shortDesc}</Text>
+                            <Text style={[styles.typeLabel, selected && styles.typeLabelOn, { fontSize: font(15) }]}>
+                              {t.label}
+                            </Text>
+                            <Text style={[styles.typeDesc, selected && styles.typeDescOn, { fontSize: font(12) }]}>
+                              {t.shortDesc}
+                            </Text>
                           </View>
                           <TouchableOpacity
                             onPress={() => setExpandedType(expanded ? null : t.id)}
                             hitSlop={8}>
                             <Ionicons
-                              name={expanded ? 'chevron-up' : 'information-circle-outline'}
-                              size={20}
-                              color={Colors.mutedForeground}
+                              name={expanded ? 'chevron-up' : selected ? 'checkmark-circle' : 'information-circle-outline'}
+                              size={s(22)}
+                              color={selected ? Colors.white : Colors.mutedForeground}
                             />
                           </TouchableOpacity>
                         </TouchableOpacity>
@@ -634,6 +550,15 @@ export function RegisterScreen({ navigation }: Props) {
                       </View>
                     );
                   })}
+                  <View style={styles.webHint}>
+                    <Text style={[styles.webHintText, { fontSize: font(11), lineHeight: font(16) }]}>
+                      Schools and organisations register on Tukua web, then download Tukua Desk. This app is for
+                      students, parents, teachers and school staff.
+                    </Text>
+                    <TouchableOpacity onPress={openWebRegister} hitSlop={8}>
+                      <Text style={[styles.webHintLink, { fontSize: font(12) }]}>Open Tukua web →</Text>
+                    </TouchableOpacity>
+                  </View>
                   <View style={styles.btnRow}>
                     <AuthButton text="Continue" onPress={() => setStep('details')} />
                   </View>
@@ -643,9 +568,8 @@ export function RegisterScreen({ navigation }: Props) {
               {step === 'details' ? (
                 <>
                   <TouchableOpacity onPress={() => setStep('type')} style={styles.backRow}>
-                    <Text style={styles.backText}>← Change ({selectedType?.label})</Text>
+                    <Text style={[styles.backText, { fontSize: font(13) }]}>← Change ({selectedType?.label})</Text>
                   </TouchableOpacity>
-
                   <AuthTextField
                     hint="Full name *"
                     suffixIcon="person-outline"
@@ -671,63 +595,6 @@ export function RegisterScreen({ navigation }: Props) {
                   <View style={{ height: layout.formGap }} />
                   <CountyPicker value={county} onChange={setCounty} />
                   <View style={{ height: layout.formGap }} />
-
-                  {isOrg ? (
-                    <>
-                      <AuthSelect
-                        value={orgSubtype || null}
-                        onChange={setOrgSubtype}
-                        options={orgSelectOptions}
-                        placeholder="Organisation type *"
-                        title="Organisation type"
-                        icon="briefcase-outline"
-                        loading={orgTypesLoading}
-                        emptyText={
-                          orgTypesError || 'No types loaded — check connection and reopen'
-                        }
-                        onOpen={() => {
-                          if (!orgTypes.length) void loadOrgTypes();
-                        }}
-                      />
-                      {orgTypesError ? (
-                        <TouchableOpacity onPress={() => void loadOrgTypes()}>
-                          <Text style={styles.retry}>{orgTypesError} · Tap to retry</Text>
-                        </TouchableOpacity>
-                      ) : null}
-                      <View style={{ height: layout.formGap }} />
-                      <AuthTextField
-                        hint="Organisation name *"
-                        suffixIcon="business-outline"
-                        value={orgName}
-                        onChangeText={setOrgName}
-                      />
-                      <View style={{ height: layout.formGap }} />
-                      <CountyPicker
-                        value={businessLocation}
-                        onChange={setBusinessLocation}
-                        placeholder="Business county"
-                      />
-                      <View style={{ height: layout.formGap }} />
-                    </>
-                  ) : null}
-
-                  {isSchoolAccount ? (
-                    <>
-                      <AuthTextField
-                        hint="School / institution name *"
-                        suffixIcon="library-outline"
-                        value={orgName}
-                        onChangeText={setOrgName}
-                      />
-                      <View style={{ height: layout.formGap }} />
-                      <CountyPicker
-                        value={businessLocation}
-                        onChange={setBusinessLocation}
-                        placeholder="School county"
-                      />
-                      <View style={{ height: layout.formGap }} />
-                    </>
-                  ) : null}
 
                   <AuthTextField
                     hint="Email address *"
@@ -763,10 +630,10 @@ export function RegisterScreen({ navigation }: Props) {
                     onPress={() => setAgreedToTerms((v) => !v)}>
                     <Ionicons
                       name={agreedToTerms ? 'checkbox' : 'square-outline'}
-                      size={22}
+                      size={s(22)}
                       color={agreedToTerms ? Colors.brandGreenDark : Colors.mutedForeground}
                     />
-                    <Text style={styles.termsText}>
+                    <Text style={[styles.termsText, { fontSize: font(11), lineHeight: font(16) }]}>
                       I agree to the{' '}
                       <Text style={styles.termsLink} onPress={openTerms}>
                         Terms
@@ -776,11 +643,6 @@ export function RegisterScreen({ navigation }: Props) {
                         Privacy Policy
                       </Text>
                       .
-                      {needsOrgFields ? (
-                        <Text style={styles.orgWarn}>
-                          {'\n'}School and organisation accounts need platform approval.
-                        </Text>
-                      ) : null}
                     </Text>
                   </TouchableOpacity>
 
@@ -799,40 +661,49 @@ export function RegisterScreen({ navigation }: Props) {
               {step === 'schoolJoin' ? (
                 <>
                   <TouchableOpacity onPress={() => setStep('details')} style={styles.backRow}>
-                    <Text style={styles.backText}>← Back to details</Text>
+                    <Text style={[styles.backText, { fontSize: font(13) }]}>← Back to details</Text>
                   </TouchableOpacity>
 
-                  <Text style={styles.prompt}>
-                    Do you want to join a school now? Students are linked automatically — the school
-                    can remove you later on Desk if needed. Parents still need school approval
-                    (use parent flow after signup).
+                  <Text style={[styles.prompt, { fontSize: font(13), lineHeight: font(19) }]}>
+                    {accountType === 'student'
+                      ? 'Join your school now? Students are linked automatically — the school can remove you later on Desk.'
+                      : `Join your school as ${selectedType?.label ?? 'staff'}? The school must approve before school features unlock.`}
                   </Text>
-
-                  <View style={styles.choiceRow}>
+                  <View style={[styles.choiceRow, { gap: s(10) }]}>
                     <TouchableOpacity
-                      style={[styles.choiceCard, wantSchool === true && styles.choiceCardOn]}
+                      style={[
+                        styles.choiceCard,
+                        wantSchool === true && styles.choiceCardOn,
+                        { padding: s(14), borderRadius: s(14) },
+                      ]}
                       onPress={() => setWantSchool(true)}>
                       <Ionicons
                         name="search"
-                        size={20}
+                        size={s(20)}
                         color={wantSchool ? Colors.brandGreenDark : Colors.mutedForeground}
                       />
-                      <Text style={styles.choiceTitle}>Find my school</Text>
-                      <Text style={styles.choiceHint}>Search & join as student</Text>
+                      <Text style={[styles.choiceTitle, { fontSize: font(14) }]}>Find my school</Text>
+                      <Text style={[styles.choiceHint, { fontSize: font(11) }]}>
+                        Search & join as {selectedType?.label ?? 'member'}
+                      </Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={[styles.choiceCard, wantSchool === false && styles.choiceCardOn]}
+                      style={[
+                        styles.choiceCard,
+                        wantSchool === false && styles.choiceCardOn,
+                        { padding: s(14), borderRadius: s(14) },
+                      ]}
                       onPress={() => {
                         setWantSchool(false);
                         setSelectedSchool(null);
                       }}>
                       <Ionicons
                         name="person-outline"
-                        size={20}
+                        size={s(20)}
                         color={wantSchool === false ? Colors.brandGreenDark : Colors.mutedForeground}
                       />
-                      <Text style={styles.choiceTitle}>Skip for now</Text>
-                      <Text style={styles.choiceHint}>Individual account only</Text>
+                      <Text style={[styles.choiceTitle, { fontSize: font(14) }]}>Skip for now</Text>
+                      <Text style={[styles.choiceHint, { fontSize: font(11) }]}>Continue without a school</Text>
                     </TouchableOpacity>
                   </View>
 
@@ -848,26 +719,26 @@ export function RegisterScreen({ navigation }: Props) {
                       {schoolSearching ? (
                         <ActivityIndicator color={Colors.brandGreen} style={{ marginVertical: 12 }} />
                       ) : null}
-                      {schoolHits.map((s) => {
-                        const on = selectedSchool?.id === s.id;
+                      {schoolHits.map((hit) => {
+                        const on = selectedSchool?.id === hit.id;
                         return (
                           <TouchableOpacity
-                            key={s.id}
-                            style={[styles.schoolRow, on && styles.schoolRowOn]}
-                            onPress={() => setSelectedSchool(s)}>
+                            key={hit.id}
+                            style={[styles.schoolRow, on && styles.schoolRowOn, { padding: s(12), borderRadius: s(12) }]}
+                            onPress={() => setSelectedSchool(hit)}>
                             <View style={{ flex: 1 }}>
-                              <Text style={styles.schoolName}>{s.name}</Text>
-                              <Text style={styles.schoolMeta}>
-                                {[s.code, s.county].filter(Boolean).join(' · ') || 'School'}
+                              <Text style={[styles.schoolName, { fontSize: font(14) }]}>{hit.name}</Text>
+                              <Text style={[styles.schoolMeta, { fontSize: font(11) }]}>
+                                {[hit.code, hit.county].filter(Boolean).join(' · ') || 'School'}
                               </Text>
                             </View>
                             {on ? (
-                              <Ionicons name="checkmark-circle" size={22} color={Colors.brandGreen} />
+                              <Ionicons name="checkmark-circle" size={s(22)} color={Colors.brandGreen} />
                             ) : null}
                           </TouchableOpacity>
                         );
                       })}
-                      {selectedSchool ? (
+                      {selectedSchool && accountType === 'student' ? (
                         <>
                           <View style={{ height: layout.formGap }} />
                           <AuthTextField
@@ -911,20 +782,20 @@ export function RegisterScreen({ navigation }: Props) {
               {step === 'payment' ? (
                 <>
                   <TouchableOpacity
-                    onPress={() =>
-                      setStep(accountType === 'individual' ? 'schoolJoin' : 'details')
-                    }
+                    onPress={() => setStep(canJoinSchool ? 'schoolJoin' : 'details')}
                     style={styles.backRow}>
-                    <Text style={styles.backText}>← Back</Text>
+                    <Text style={[styles.backText, { fontSize: font(13) }]}>← Back</Text>
                   </TouchableOpacity>
 
-                  {accountType === 'individual' && selectedSchool && wantSchool ? (
-                    <Text style={styles.linkedSchool}>
+                  {canJoinSchool && selectedSchool && wantSchool ? (
+                    <Text style={[styles.linkedSchool, { fontSize: font(13) }]}>
                       Joining: {selectedSchool.name}
                       {admissionNumber ? ` · Adm ${admissionNumber}` : ''}
                     </Text>
-                  ) : accountType === 'individual' ? (
-                    <Text style={styles.linkedSchool}>Individual account — no school linked</Text>
+                  ) : canJoinSchool && wantSchool === false ? (
+                    <Text style={[styles.linkedSchool, { fontSize: font(13) }]}>
+                      {selectedType?.label} account — no school linked yet
+                    </Text>
                   ) : null}
 
                   <PeaRegistrationCard
@@ -935,6 +806,7 @@ export function RegisterScreen({ navigation }: Props) {
                     freeTokens={peaConfig.free_tokens}
                     message={peaConfig.message}
                     loaded={peaConfigLoaded}
+                    roleLabel={selectedType?.label}
                   />
 
                   {error ? (
@@ -944,7 +816,7 @@ export function RegisterScreen({ navigation }: Props) {
                   ) : null}
 
                   {loading ? (
-                    <View style={styles.loadingBtn}>
+                    <View style={[styles.loadingBtn, { height: s(48), borderRadius: s(12) }]}>
                       <ActivityIndicator color={Colors.white} />
                     </View>
                   ) : (
@@ -969,10 +841,10 @@ export function RegisterScreen({ navigation }: Props) {
                         />
                       </View>
                       <TouchableOpacity
-                        style={styles.remindBtn}
+                        style={[styles.remindBtn, { height: s(44), borderRadius: s(12) }]}
                         onPress={() => void handleRemindMe()}
                         disabled={loading || peaStatus === 'pending' || peaStatus === 'sending'}>
-                        <Text style={styles.remindBtnText}>
+                        <Text style={[styles.remindBtnText, { fontSize: font(12) }]}>
                           Remind me later — save without paying now
                         </Text>
                       </TouchableOpacity>
@@ -982,9 +854,9 @@ export function RegisterScreen({ navigation }: Props) {
               ) : null}
 
               <TouchableOpacity
-                style={styles.loginLink}
+                style={[styles.loginLink, { marginTop: s(20) }]}
                 onPress={() => navigation.navigate('Login')}>
-                <Text style={styles.loginLinkText}>Already have an account? Sign in</Text>
+                <Text style={[styles.loginLinkText, { fontSize: font(14) }]}>Already have an account? Sign in</Text>
               </TouchableOpacity>
             </View>
           </ScrollView>
@@ -996,19 +868,13 @@ export function RegisterScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.background },
-  topCurve: { position: 'absolute', top: 0, left: 0, right: 0 },
-  topCurveImage: { resizeMode: 'cover' },
-  curveMaskRoot: { flex: 1, backgroundColor: 'transparent' },
-  curveMaskImage: { ...StyleSheet.absoluteFillObject, width: '100%', height: '100%' },
-  curvePattern: { flex: 1, opacity: 0.88 },
-  safe: { flex: 1, width: '100%' },
+  safe: { flex: 1, width: '100%', zIndex: 2 },
   flex: { flex: 1 },
   scrollView: { flex: 1 },
   formCol: { width: '100%' },
   screenTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: Colors.brandGreenDark,
     fontFamily: 'Poppins_700Bold',
     textAlign: 'center',
   },
@@ -1016,7 +882,6 @@ const styles = StyleSheet.create({
   screenSub: {
     marginTop: 4,
     fontSize: 12,
-    color: Colors.mutedForeground,
     fontFamily: 'Poppins_400Regular',
     textAlign: 'center',
     paddingHorizontal: 8,
@@ -1027,17 +892,24 @@ const styles = StyleSheet.create({
     gap: 10,
     padding: 14,
     borderRadius: 14,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: Colors.border,
     alignItems: 'center',
     backgroundColor: Colors.white,
   },
+  onPhotoText: {
+    color: Colors.white,
+    textShadowColor: 'rgba(0,0,0,0.35)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
   typeCardActive: {
-    borderColor: Colors.brandGreen,
-    backgroundColor: 'rgba(10,61,46,0.06)',
+    backgroundColor: Colors.orangeAccent,
+    borderColor: '#ffffff',
+    borderWidth: 2,
   },
   typeIconWrap: { padding: 8, borderRadius: 10, backgroundColor: Colors.muted },
-  typeIconActive: { backgroundColor: 'rgba(10,61,46,0.12)' },
+  typeIconActive: { backgroundColor: 'rgba(255,255,255,0.22)' },
   typeMeta: { flex: 1 },
   typeLabel: {
     fontSize: 15,
@@ -1045,7 +917,36 @@ const styles = StyleSheet.create({
     color: Colors.foreground,
     fontFamily: 'Poppins_600SemiBold',
   },
+  typeLabelOn: { color: Colors.white },
   typeDesc: { fontSize: 12, color: Colors.mutedForeground, marginTop: 2 },
+  typeDescOn: { color: 'rgba(255,255,255,0.92)' },
+  typeFee: {
+    marginTop: 4,
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.brandGreenDark,
+    fontFamily: 'Poppins_700Bold',
+  },
+  typeFeeOn: { color: Colors.white },
+  webHint: {
+    marginTop: 4,
+    marginBottom: 8,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.white,
+    gap: 6,
+  },
+  webHintText: {
+    color: Colors.mutedForeground,
+    fontFamily: 'Poppins_400Regular',
+  },
+  webHintLink: {
+    color: Colors.brandGreenDark,
+    fontFamily: 'Poppins_600SemiBold',
+    fontWeight: '700',
+  },
   expandBox: {
     marginTop: 4,
     padding: 12,
@@ -1058,7 +959,6 @@ const styles = StyleSheet.create({
   featureLine: { fontSize: 12, color: Colors.foreground, marginTop: 4 },
   backRow: { marginBottom: 12 },
   backText: {
-    color: Colors.brandGreenDark,
     fontWeight: '600',
     fontSize: 13,
     fontFamily: 'Poppins_600SemiBold',
@@ -1111,7 +1011,6 @@ const styles = StyleSheet.create({
   },
   loginLink: { marginTop: 20, paddingVertical: 8, alignItems: 'center' },
   loginLinkText: {
-    color: Colors.brandGreenDark,
     fontWeight: '700',
     fontSize: 14,
     fontFamily: 'Poppins_600SemiBold',
@@ -1119,7 +1018,6 @@ const styles = StyleSheet.create({
   },
   prompt: {
     fontSize: 13,
-    color: Colors.mutedForeground,
     lineHeight: 19,
     marginBottom: 14,
     fontFamily: 'Poppins_400Regular',
@@ -1167,7 +1065,6 @@ const styles = StyleSheet.create({
   linkedSchool: {
     fontSize: 13,
     fontFamily: 'Poppins_600SemiBold',
-    color: Colors.brandGreenDark,
     marginBottom: 10,
     textAlign: 'center',
   },

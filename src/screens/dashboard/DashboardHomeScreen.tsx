@@ -28,6 +28,7 @@ import {
   fetchParentPocketMoney,
 } from '../../lib/parentPortalApi';
 import {
+  fetchDailyStudentAttendance,
   fetchSecurityActiveTrip,
   fetchSecurityAssignment,
   type SecurityAssignment,
@@ -356,6 +357,8 @@ export function DashboardHomeScreen() {
   const [pocketBalance, setPocketBalance] = useState<number | null>(null);
   const [securityAssignment, setSecurityAssignment] = useState<SecurityAssignment | null>(null);
   const [securityActiveTrip, setSecurityActiveTrip] = useState<SecurityTripRun | null>(null);
+  const [securityBoardedTotal, setSecurityBoardedTotal] = useState<number | null>(null);
+  const [securityAttendanceToday, setSecurityAttendanceToday] = useState<number | null>(null);
 
   const fade = useRef(new Animated.Value(0)).current;
   const slide = useRef(new Animated.Value(16)).current;
@@ -429,18 +432,41 @@ export function DashboardHomeScreen() {
     if (!deskToken || persona !== 'security') {
       setSecurityAssignment(null);
       setSecurityActiveTrip(null);
+      setSecurityBoardedTotal(null);
+      setSecurityAttendanceToday(null);
       return;
     }
     try {
-      const [assignRes, tripRes] = await Promise.allSettled([
+      const today = new Date().toISOString().slice(0, 10);
+      const [assignRes, tripRes, attRes] = await Promise.allSettled([
         fetchSecurityAssignment(),
         fetchSecurityActiveTrip(),
+        fetchDailyStudentAttendance({ date: today, page: 1, limit: 1 }),
       ]);
       setSecurityAssignment(assignRes.status === 'fulfilled' ? assignRes.value?.assignment ?? null : null);
-      setSecurityActiveTrip(tripRes.status === 'fulfilled' ? tripRes.value?.trip ?? null : null);
+      if (tripRes.status === 'fulfilled') {
+        setSecurityActiveTrip(tripRes.value?.trip ?? null);
+        setSecurityBoardedTotal(
+          typeof tripRes.value?.boarded_total === 'number' ? tripRes.value.boarded_total : null,
+        );
+      } else {
+        setSecurityActiveTrip(null);
+        setSecurityBoardedTotal(null);
+      }
+      if (attRes.status === 'fulfilled') {
+        const total =
+          (attRes.value as { total?: number; count?: number })?.total ??
+          (attRes.value as { count?: number })?.count ??
+          ((attRes.value as { students?: unknown[] })?.students?.length ?? null);
+        setSecurityAttendanceToday(typeof total === 'number' ? total : null);
+      } else {
+        setSecurityAttendanceToday(null);
+      }
     } catch {
       setSecurityAssignment(null);
       setSecurityActiveTrip(null);
+      setSecurityBoardedTotal(null);
+      setSecurityAttendanceToday(null);
     }
   }, [deskToken, persona]);
 
@@ -716,6 +742,26 @@ export function DashboardHomeScreen() {
     return personaLabel;
   }, [personaLabel, selectedSchool?.name, selectedStudent]);
 
+  const roleIconName = useMemo((): keyof typeof Ionicons.glyphMap => {
+    switch (persona) {
+      case 'security':
+        return 'shield-checkmark';
+      case 'parent':
+        return 'people';
+      case 'teacher':
+        return 'school';
+      case 'student':
+        return 'person';
+      case 'school_admin':
+      case 'principal':
+        return 'briefcase';
+      case 'super_admin':
+        return 'sparkles';
+      default:
+        return 'person-circle';
+    }
+  }, [persona]);
+
   const avatarLabel = selectedStudent?.name || parentFirstName;
   const onAvatarPress = useCallback(() => {
     if (selectedStudent && showSwitch) {
@@ -753,6 +799,7 @@ export function DashboardHomeScreen() {
     }
     if (persona === 'security') {
       const active = next.find((s) => s.id === 'active-trip');
+      const boarded = next.find((s) => s.id === 'boarded');
       const assignmentStat = next.find((s) => s.id === 'assignment');
       if (active) {
         const onTrip = securityActiveTrip?.status === 'active';
@@ -760,6 +807,21 @@ export function DashboardHomeScreen() {
         active.subtitleValue = onTrip
           ? securityActiveTrip?.trip_kind?.replace(/_/g, ' ') ?? 'On run'
           : 'Start from Trips';
+      }
+      if (boarded) {
+        boarded.value =
+          securityBoardedTotal != null
+            ? String(securityBoardedTotal)
+            : securityAttendanceToday != null
+              ? String(securityAttendanceToday)
+              : '—';
+        boarded.subtitleValue =
+          securityBoardedTotal != null
+            ? 'This trip'
+            : securityAttendanceToday != null
+              ? 'Gate today'
+              : 'Students';
+        boarded.title = securityBoardedTotal != null ? 'Boarded' : 'Today attendance';
       }
       if (assignmentStat) {
         assignmentStat.value = securityAssignment?.vehicle_name ?? '—';
@@ -828,6 +890,8 @@ export function DashboardHomeScreen() {
     selectedStudent?.name,
     securityActiveTrip,
     securityAssignment,
+    securityAttendanceToday,
+    securityBoardedTotal,
     teacherHero,
     studentHero,
   ]);
@@ -872,9 +936,14 @@ export function DashboardHomeScreen() {
                 {headerName}
               </Text>
               {headerMeta ? (
-                <Text style={styles.contextMeta} numberOfLines={1}>
-                  {headerMeta}
-                </Text>
+                <View style={styles.contextMetaRow}>
+                  {!selectedStudent ? (
+                    <Ionicons name={roleIconName} size={13} color={Colors.mutedForeground} style={{ marginRight: 4 }} />
+                  ) : null}
+                  <Text style={styles.contextMeta} numberOfLines={1}>
+                    {headerMeta}
+                  </Text>
+                </View>
               ) : null}
             </View>
             <View style={styles.headerActions}>
@@ -920,6 +989,7 @@ export function DashboardHomeScreen() {
               </Text>
               <View style={styles.roleChipRow}>
                 <View style={styles.roleChip}>
+                  <Ionicons name={roleIconName} size={12} color={heroGreen} style={{ marginRight: 4 }} />
                   <Text style={styles.roleChipText}>{personaLabel}</Text>
                 </View>
               </View>
@@ -1104,6 +1174,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
     color: Colors.mutedForeground,
+    flexShrink: 1,
+  },
+  contextMetaRow: {
+    marginTop: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   roleRow: {
     flexDirection: 'row',
@@ -1127,6 +1203,8 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   roleChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 999,

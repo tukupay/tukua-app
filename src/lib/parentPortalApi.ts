@@ -169,7 +169,9 @@ export type SchoolCollectionPurpose =
   | 'school_fees'
   | 'school_pocket'
   | 'teacher_tip'
-  | 'bursary';
+  | 'bursary'
+  | 'school_event'
+  | 'event_payment';
 
 export async function quoteSchoolCollection(body: {
   purpose: SchoolCollectionPurpose;

@@ -269,6 +269,23 @@ export async function listMyMemberships() {
   );
 }
 
+export type MyJoinRequestHit = {
+  id: string;
+  school_id: string;
+  school_name?: string | null;
+  role_slug: string;
+  status: string;
+  created_at?: string | null;
+  target_student_id?: string | null;
+  source?: 'join_requests' | 'school_membership_requests';
+};
+
+export async function listMyJoinRequests() {
+  return nestJoinFetch<{ requests?: MyJoinRequestHit[]; count?: number }>(
+    '/parents/me/join-requests',
+  );
+}
+
 export async function leaveMyMembership(schoolId: string) {
   return nestJoinFetch<{ school_id?: string }>('/parents/me/memberships/leave', {
     method: 'POST',

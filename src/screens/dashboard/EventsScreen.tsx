@@ -16,12 +16,12 @@ import { useIsFocused } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
 import { ModuleTabPager } from '../../components/dashboard/ModuleTabPager';
+import { PaymentProcessCard } from '../../components/dashboard/PaymentProcessCard';
 import { ModuleBackBar, ModuleEmpty, ModuleGlassCard, ModuleKicker, ModuleScreenHeader } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import { useDeskAuth } from '../../context/DeskAuthContext';
 import {
   fetchParentEvents,
-  payParentEvent,
   rsvpParentEvent,
   scanParentRegister,
   fetchRegisterScanTodayStatus,
@@ -129,6 +129,7 @@ export function EventsScreen({ navigation }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [payingEvent, setPayingEvent] = useState<SchoolEvent | null>(null);
   const [scanned, setScanned] = useState(false);
   const [scanBusy, setScanBusy] = useState(false);
 
@@ -257,18 +258,7 @@ export function EventsScreen({ navigation }: Props) {
 
   const pay = async (ev: SchoolEvent) => {
     if (!ev.id) return;
-    setBusyId(ev.id);
-    try {
-      await payParentEvent(ev.id, {
-        student_id: studentContextId ?? undefined,
-        method: 'mobile',
-      });
-      await load(true);
-    } catch (e) {
-      log.warn('Events', 'pay failed', String(e));
-    } finally {
-      setBusyId(null);
-    }
+    setPayingEvent(ev);
   };
 
   const seed = async () => {
@@ -305,6 +295,23 @@ export function EventsScreen({ navigation }: Props) {
         <ModuleBackBar onBack={() => navigation.goBack()} />
         <ModuleKicker>Events</ModuleKicker>
         <ModuleScreenHeader title="School activities" description="RSVP, pay & scan check-in." />
+
+        {payingEvent ? (
+          <ModuleGlassCard>
+            <Text style={styles.cardTitle}>{payingEvent.title || 'Event'}</Text>
+            <PaymentProcessCard
+              mode="school_event"
+              title={`Pay · ${payingEvent.title || 'Event'}`}
+              subtitle="M-Pesa STK for this school event"
+              defaultAmount={String(payingEvent.fee_amount ?? 10)}
+              studentId={studentContextId}
+              onRefresh={async () => {
+                await load(true);
+              }}
+              onClose={() => setPayingEvent(null)}
+            />
+          </ModuleGlassCard>
+        ) : null}
 
         <ModuleTabPager
           tabs={[
