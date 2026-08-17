@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -22,7 +22,6 @@ import {
   ParentBursaryProgram,
 } from '../../lib/parentPortalApi';
 import { deskFetch } from '../../lib/deskApi';
-import { useDeskAuth } from '../../context/DeskAuthContext';
 import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
 import { log } from '../../lib/logger';
@@ -34,7 +33,7 @@ const HERO_GREEN = '#15411D';
 
 type ProgramRow = ParentBursaryProgram & {
   name?: string;
-  status?: string;
+  status?: string | null;
   closes_on?: string | null;
 };
 
@@ -43,19 +42,8 @@ function kes(n: number | undefined | null): string {
   return `KES ${v.toLocaleString()}`;
 }
 
-function rolesIncludeParent(roles: unknown): boolean {
-  const list = Array.isArray(roles)
-    ? roles.map(String)
-    : String(roles || '')
-        .split(',')
-        .map((r) => r.trim());
-  return list.some((r) => /parent/i.test(r));
-}
-
 export function BursaryScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
-  const { deskUser } = useDeskAuth();
-  const isParent = useMemo(() => rolesIncludeParent(deskUser?.user_roles), [deskUser?.user_roles]);
 
   const [programs, setPrograms] = useState<ProgramRow[]>([]);
   const [contributions, setContributions] = useState<ParentBursaryContribution[]>([]);
@@ -85,20 +73,17 @@ export function BursaryScreen({ navigation }: Props) {
           })),
         );
 
-        if (isParent) {
-          try {
-            const data = await fetchParentBursary();
-            if (!fromNest.length && Array.isArray(data?.programs)) {
-              setPrograms(data.programs);
-            }
-            setContributions(data?.contributions ?? []);
-            setKittyTotal(Number(data?.kitty_total ?? 0) || 0);
-          } catch (parentErr) {
-            log.warn('Bursary', 'parent kit', String(parentErr));
-            setContributions([]);
-            setKittyTotal(0);
+        // Kitty + contributions are the same for every school member (parent, staff,
+        // security) — the bursary module must look identical across personas.
+        try {
+          const data = await fetchParentBursary();
+          if (!fromNest.length && Array.isArray(data?.programs)) {
+            setPrograms(data.programs as ProgramRow[]);
           }
-        } else {
+          setContributions(data?.contributions ?? []);
+          setKittyTotal(Number(data?.kitty_total ?? 0) || 0);
+        } catch (kittyErr) {
+          log.warn('Bursary', 'kitty', String(kittyErr));
           setContributions([]);
           setKittyTotal(0);
         }
@@ -111,7 +96,7 @@ export function BursaryScreen({ navigation }: Props) {
         setRefreshing(false);
       }
     },
-    [isParent],
+    [],
   );
 
   useEffect(() => {
@@ -157,12 +142,10 @@ export function BursaryScreen({ navigation }: Props) {
           <ModuleEmpty title="Could not load bursary" body={error} onRetry={() => void load()} />
         ) : (
           <>
-            {isParent ? (
-              <ModuleGlassCard>
-                <Text style={styles.kittyLabel}>Your contributions total</Text>
-                <Text style={styles.kittyValue}>{kes(kittyTotal)}</Text>
-              </ModuleGlassCard>
-            ) : null}
+            <ModuleGlassCard>
+              <Text style={styles.kittyLabel}>Your contributions total</Text>
+              <Text style={styles.kittyValue}>{kes(kittyTotal)}</Text>
+            </ModuleGlassCard>
 
             <Text style={styles.section}>Open programs</Text>
             {programs.length === 0 ? (
@@ -195,46 +178,42 @@ export function BursaryScreen({ navigation }: Props) {
               })
             )}
 
-            {isParent ? (
-              <>
-                <Text style={styles.section}>Contribute</Text>
-                {selectedProgram ? (
-                  <Text style={styles.programMeta}>
-                    Program ·{' '}
-                    {programs.find((p) => p.id === selectedProgram)?.title ||
-                      programs.find((p) => p.id === selectedProgram)?.name ||
-                      'Selected'}
-                  </Text>
-                ) : (
-                  <Text style={styles.programMeta}>General vulnerable student kitty</Text>
-                )}
-                {!showPay ? (
-                  <Pressable style={styles.primaryBtn} onPress={() => setShowPay(true)}>
-                    <Ionicons name="heart" size={16} color={Colors.white} />
-                    <Text style={styles.primaryBtnText}>Contribute with M-Pesa</Text>
-                  </Pressable>
-                ) : (
-                  <PaymentProcessCard
-                    mode="bursary"
-                    title="Bursary contribution"
-                    subtitle="Pay via M-Pesa. Funds go to the school bursary kitty."
-                    defaultAmount="10"
-                    programId={selectedProgram}
-                    onRefresh={async () => {
-                      setOk('Thank you — M-Pesa contribution recorded.');
-                      await load(true);
-                    }}
-                    onClose={() => setShowPay(false)}
-                  />
-                )}
-                {error ? <Text style={styles.err}>{error}</Text> : null}
-                {ok ? <Text style={styles.ok}>{ok}</Text> : null}
-              </>
-            ) : (
-              <Text style={styles.sub}>Browse programs here. Parent accounts can contribute via M-Pesa.</Text>
-            )}
+            <>
+              <Text style={styles.section}>Contribute</Text>
+              {selectedProgram ? (
+                <Text style={styles.programMeta}>
+                  Program ·{' '}
+                  {programs.find((p) => p.id === selectedProgram)?.title ||
+                    programs.find((p) => p.id === selectedProgram)?.name ||
+                    'Selected'}
+                </Text>
+              ) : (
+                <Text style={styles.programMeta}>General vulnerable student kitty</Text>
+              )}
+              {!showPay ? (
+                <Pressable style={styles.primaryBtn} onPress={() => setShowPay(true)}>
+                  <Ionicons name="heart" size={16} color={Colors.white} />
+                  <Text style={styles.primaryBtnText}>Contribute with M-Pesa</Text>
+                </Pressable>
+              ) : (
+                <PaymentProcessCard
+                  mode="bursary"
+                  title="Bursary contribution"
+                  subtitle="Pay via M-Pesa. Funds go to the school bursary kitty."
+                  defaultAmount="10"
+                  programId={selectedProgram}
+                  onRefresh={async () => {
+                    setOk('Thank you — M-Pesa contribution recorded.');
+                    await load(true);
+                  }}
+                  onClose={() => setShowPay(false)}
+                />
+              )}
+              {error ? <Text style={styles.err}>{error}</Text> : null}
+              {ok ? <Text style={styles.ok}>{ok}</Text> : null}
+            </>
 
-            {isParent && contributions.length > 0 ? (
+            {contributions.length > 0 ? (
               <>
                 <Text style={styles.section}>Past contributions</Text>
                 <ModuleGlassCard>

@@ -181,7 +181,10 @@ export function JoinSchoolScreen() {
       setMemberships(Array.isArray(mem.memberships) ? mem.memberships : []);
       const reqs = Array.isArray(mine.requests) ? mine.requests : [];
       setPendingRequests(
-        reqs.filter((r) => String(r.status || '').toLowerCase() === 'pending'),
+        reqs.filter((r) => {
+          const s = String(r.status || '').toLowerCase();
+          return s === 'pending' || s === 'rejected';
+        }),
       );
     } catch {
       setMemberships([]);
@@ -377,7 +380,10 @@ export function JoinSchoolScreen() {
   const submit = async () => {
     if (!school || !role || !canSubmit) return;
     const alreadyPendingForSchool = pendingRequests.some(
-      (r) => r.school_id === school.id && String(r.role_slug || '').toLowerCase() === role,
+      (r) =>
+        r.school_id === school.id &&
+        String(r.role_slug || '').toLowerCase() === role &&
+        String(r.status || '').toLowerCase() === 'pending',
     );
     if (alreadyPendingForSchool) {
       showDialog({
@@ -476,41 +482,58 @@ export function JoinSchoolScreen() {
   const pendingBox =
     step === 'role' ? (
       <View style={styles.joinedBox}>
-        <Text style={styles.joinedTitle}>Pending requests</Text>
+        <Text style={styles.joinedTitle}>Your requests</Text>
         <Text style={styles.joinedHint}>
-          These are waiting for school approval. You cannot send another request for the same school while pending.
+          Pending requests are waiting for school approval. You cannot send another request for the same school while
+          pending.
         </Text>
         {loadingPending ? <ActivityIndicator color={hero} /> : null}
         {!loadingPending && pendingRequests.length === 0 ? (
-          <Text style={styles.hint}>No pending join requests.</Text>
+          <Text style={styles.hint}>No join requests yet.</Text>
         ) : null}
-        {pendingRequests.map((r) => (
-          <View key={r.id} style={styles.joinedCard}>
-            <View style={styles.joinedMain}>
-              <LogoAvatar name={r.school_name || 'School'} fallbackIcon="time" tint={hero} />
-              <View style={styles.cardText}>
-                <Text style={styles.cardTitle} numberOfLines={1}>
-                  {r.school_name || 'School'}
-                </Text>
-                <View style={styles.tagRow}>
-                  <View style={[styles.tag, { backgroundColor: `${hero}14` }]}>
-                    <Text style={[styles.tagText, { color: hero }]}>
-                      {(r.role_slug || 'member').replace(/_/g, ' ')}
-                    </Text>
-                  </View>
-                  <View style={[styles.tag, { backgroundColor: '#FEF3C7' }]}>
-                    <Text style={[styles.tagText, { color: '#B45309' }]}>pending</Text>
-                  </View>
-                </View>
-                {r.created_at ? (
-                  <Text style={styles.cardMeta} numberOfLines={1}>
-                    Sent {new Date(r.created_at).toLocaleString()}
+        {pendingRequests.map((r) => {
+          const rejected = String(r.status || '').toLowerCase() === 'rejected';
+          return (
+            <View key={r.id} style={styles.joinedCard}>
+              <View style={styles.joinedMain}>
+                <LogoAvatar
+                  name={r.school_name || 'School'}
+                  fallbackIcon={rejected ? 'close-circle' : 'time'}
+                  tint={rejected ? '#B91C1C' : hero}
+                />
+                <View style={styles.cardText}>
+                  <Text style={styles.cardTitle} numberOfLines={1}>
+                    {r.school_name || 'School'}
                   </Text>
-                ) : null}
+                  <View style={styles.tagRow}>
+                    <View style={[styles.tag, { backgroundColor: `${hero}14` }]}>
+                      <Text style={[styles.tagText, { color: hero }]}>
+                        {(r.role_slug || 'member').replace(/_/g, ' ')}
+                      </Text>
+                    </View>
+                    <View
+                      style={[styles.tag, { backgroundColor: rejected ? '#FEE2E2' : '#FEF3C7' }]}>
+                      <Text style={[styles.tagText, { color: rejected ? '#B91C1C' : '#B45309' }]}>
+                        {rejected ? 'not approved' : 'pending'}
+                      </Text>
+                    </View>
+                  </View>
+                  {rejected ? (
+                    <Text style={styles.rejectedNote}>
+                      Your request was not approved by {r.school_name || 'the school'}. Talk to the school office, then
+                      send a new request.
+                    </Text>
+                  ) : null}
+                  {r.created_at ? (
+                    <Text style={styles.cardMeta} numberOfLines={1}>
+                      Sent {new Date(r.created_at).toLocaleString()}
+                    </Text>
+                  ) : null}
+                </View>
               </View>
             </View>
-          </View>
-        ))}
+          );
+        })}
       </View>
     ) : null;
 
@@ -1205,6 +1228,7 @@ const styles = StyleSheet.create({
   cardText: { flex: 1, minWidth: 0 },
   cardTitle: { fontSize: 15, fontWeight: '700', color: Colors.ink },
   cardMeta: { marginTop: 2, fontSize: 12, color: Colors.mutedForeground },
+  rejectedNote: { marginTop: 4, fontSize: 12, lineHeight: 17, color: '#B91C1C' },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(10,61,46,0.18)',
