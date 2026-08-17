@@ -183,6 +183,7 @@ export function PaymentProcessCard({
       setStatusLine(res?.customer_message || 'Check your phone and enter your M-Pesa PIN.');
 
       let found = false;
+      let paid = false;
       const POLL_MAX = 24;
       for (let i = 0; i < POLL_MAX; i++) {
         if (cancelled.current) return;
@@ -196,6 +197,8 @@ export function PaymentProcessCard({
             });
             const status = String(st?.status || (st?.data as any)?.status || '').toLowerCase();
             if (status === 'completed' || status === 'success') {
+              paid = true;
+              setStatusLine('Payment confirmed — posting your receipt…');
               try {
                 await deskFetch('/accounts/collections/apply-completed', {
                   method: 'POST',
@@ -220,6 +223,14 @@ export function PaymentProcessCard({
         if (onRefresh) await onRefresh();
         found = hasNewReceipt();
         if (found) break;
+        // Daraja said paid — give the receipt one grace refresh, then stop counting.
+        if (paid) {
+          await sleep(3000);
+          if (cancelled.current) return;
+          if (onRefresh) await onRefresh();
+          found = hasNewReceipt();
+          break;
+        }
 
         setStatusLine(
           i < 2
@@ -232,12 +243,14 @@ export function PaymentProcessCard({
       }
 
       if (cancelled.current) return;
-      setReceiptFound(found);
+      setReceiptFound(found || paid);
       setPhase('done');
       setStatusLine(
         found
           ? 'Payment received — your receipt appears in the list below.'
-          : 'No new receipt yet. If you entered your PIN, M-Pesa may still be processing — pull to refresh in a minute.',
+          : paid
+            ? 'Payment confirmed by M-Pesa. Your receipt will appear here shortly.'
+            : 'No new receipt yet. If you entered your PIN, M-Pesa may still be processing — pull to refresh in a minute.',
       );
     } catch (e) {
       if (cancelled.current) return;
