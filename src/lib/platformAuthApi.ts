@@ -106,6 +106,7 @@ export async function platformRegister(body: {
   full_name?: string;
   username?: string;
   account_type?: string;
+  role?: string;
 }) {
   return nestPost<{ access_token?: string; refresh_token?: string; user?: unknown }>(
     '/platform/auth/register',

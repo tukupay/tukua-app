@@ -10,12 +10,14 @@ import {
 import { AgencyLogo } from './AgencyLogo';
 import { CertifyingAgency, fetchCertifyingAgencies } from '../../lib/certifyingAgencies';
 import { Colors } from '../../theme/yana';
+import { useAuthScale } from './useAuthScale';
 
 type Props = { compact?: boolean };
 
 const SCROLL_STEP = 0.35;
 
 export function CertifyingAgenciesCarousel({ compact }: Props) {
+  const { s, font } = useAuthScale();
   const scrollRef = useRef<ScrollView>(null);
   const [agencies, setAgencies] = useState<CertifyingAgency[]>([]);
   const [loopWidth, setLoopWidth] = useState(0);
@@ -64,7 +66,7 @@ export function CertifyingAgenciesCarousel({ compact }: Props) {
   if (!agencies.length) return null;
 
   return (
-    <View style={[styles.wrap, compact && styles.wrapCompact]}>
+    <View style={[styles.wrap, compact && styles.wrapCompact, { maxWidth: s(320) }]}>
       <ScrollView
         ref={scrollRef}
         horizontal
@@ -80,15 +82,15 @@ export function CertifyingAgenciesCarousel({ compact }: Props) {
         }}
         contentContainerStyle={styles.scrollContent}>
         {loopItems.map((a, i) => (
-          <View key={`${a.id}-${i}`} style={styles.item}>
+          <View key={`${a.id}-${i}`} style={[styles.item, { width: s(52) }]}>
             <AgencyLogo
               logoUrl={a.logo_url}
               slug={a.slug ?? a.id}
               name={a.name}
               shortName={a.short_name}
-              size={32}
+              size={s(32)}
             />
-            <Text style={styles.label} numberOfLines={1}>
+            <Text style={[styles.label, { fontSize: font(7), lineHeight: font(9) }]} numberOfLines={1}>
               {a.short_name || a.name.split(' ')[0]}
             </Text>
           </View>

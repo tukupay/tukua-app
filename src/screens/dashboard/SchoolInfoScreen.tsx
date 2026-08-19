@@ -18,7 +18,6 @@ import { ModuleBackBar, ModuleEmpty, ModuleKicker, ModuleScreenHeader } from './
 import { useDeskAuth } from '../../context/DeskAuthContext';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import { deskFetch } from '../../lib/deskApi';
-import { supabase } from '../../lib/supabase';
 import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
 import { log } from '../../lib/logger';
@@ -63,7 +62,7 @@ function asNum(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** Nest returns nested contact + details; Supabase org is flatter. */
+/** Nest returns nested contact + details. */
 function normalizeSchool(raw: Record<string, unknown>, fallbackName?: string): SchoolView {
   const contact = (raw.contact && typeof raw.contact === 'object'
     ? (raw.contact as Record<string, unknown>)
@@ -187,39 +186,10 @@ export function SchoolInfoScreen({ navigation }: Props) {
     setLoading(true);
     setError(null);
     try {
-      try {
-        const data = await deskFetch<Record<string, unknown>>(`/schools/${schoolId}`);
-        setSchool(normalizeSchool(data ?? {}, selectedSchool?.name));
-        return;
-      } catch (deskErr) {
-        log.warn('SchoolInfo', 'desk /schools/:id failed, trying supabase', String(deskErr));
-      }
-
-      const { data, error: sbErr } = await supabase
-        .from('organizations')
-        .select(
-          'id, name, short_name, description, logo_url, website, county, contact_email, contact_phone, location',
-        )
-        .eq('id', schoolId)
-        .maybeSingle();
-
-      if (sbErr || !data) {
-        throw new Error(sbErr?.message || 'School not found');
-      }
-
-      setSchool(
-        normalizeSchool(
-          {
-            ...data,
-            email: data.contact_email,
-            phone: data.contact_phone,
-            city: data.county,
-            address: data.location,
-          } as Record<string, unknown>,
-          selectedSchool?.name,
-        ),
-      );
+      const data = await deskFetch<Record<string, unknown>>(`/schools/${schoolId}`);
+      setSchool(normalizeSchool(data ?? {}, selectedSchool?.name));
     } catch (e) {
+      log.warn('SchoolInfo', 'desk /schools/:id failed', String(e));
       setError(e instanceof Error ? e.message : String(e));
       setSchool(null);
     } finally {

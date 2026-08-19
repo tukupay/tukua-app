@@ -60,6 +60,9 @@ type FaceStatus = {
   embedding_status?: 'ready' | 'pending' | 'invalid' | null;
   image_url?: string | null;
   updated_at?: string | null;
+  model_version?: string | null;
+  name?: string | null;
+  student_number?: string | null;
 };
 
 function resolveDeskMediaUrl(pathOrUrl: string | null | undefined): string | null {
@@ -119,6 +122,9 @@ export function SecurityFaceEnrollScreen({ navigation }: Props) {
           embedding_status: res?.embedding_status ?? null,
           image_url: res?.image_url ?? null,
           updated_at: res?.updated_at ?? null,
+          model_version: res?.model_version ?? null,
+          name: res?.name ?? null,
+          student_number: res?.student_number ?? null,
         });
       } catch {
         if (!cancelled) setFaceStatus({ enrolled: false });
@@ -217,7 +223,7 @@ export function SecurityFaceEnrollScreen({ navigation }: Props) {
       });
       if (!photo?.base64) throw new Error('Could not capture photo');
       // Nest saves image immediately and embeds in background — skip client jpeg-js detect/embed.
-      await enrollTransportFaceImage({
+      const enrolled = await enrollTransportFaceImage({
         student_id: personType === 'student' ? selected.id : undefined,
         person_id: selected.id,
         person_type: personType,
@@ -227,7 +233,15 @@ export function SecurityFaceEnrollScreen({ navigation }: Props) {
       setCameraOpen(false);
       showDialog({
         title: 'Face saved',
-        message: `Photo stored for ${selected.name} — ready for boarding match.`,
+        message: [
+          `${enrolled?.name || selected.name} is ready for boarding match.`,
+          enrolled?.student_number ? `Admission ${enrolled.student_number}.` : null,
+          enrolled?.face_confidence != null
+            ? `Face confidence ${(enrolled.face_confidence * 100).toFixed(1)}%.`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(' '),
         variant: 'success',
       });
       setSelected(null);
@@ -351,6 +365,18 @@ export function SecurityFaceEnrollScreen({ navigation }: Props) {
                             ? 'Processing match vector…'
                             : 'Saved — you can re-enroll to replace it'}
                       </Text>
+                      {faceStatus.student_number || faceStatus.updated_at ? (
+                        <Text style={styles.existingMeta}>
+                          {[
+                            faceStatus.student_number ? `Admission ${faceStatus.student_number}` : null,
+                            faceStatus.updated_at
+                              ? `Updated ${new Date(faceStatus.updated_at).toLocaleDateString()}`
+                              : null,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </Text>
+                      ) : null}
                     </View>
                   </View>
                 ) : (

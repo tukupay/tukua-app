@@ -28,7 +28,7 @@ import { getBiometricCredentials } from '../lib/biometricStorage';
 import { SchoolPickerScreen, ContextPickLoader } from '../screens/SchoolPickerScreen';
 import { PushNotificationBootstrap } from '../components/notifications/PushNotificationBootstrap';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { navigateDashboard } from './AppNavigator';
+import { navigateDashboard } from './rootNavigation';
 import { JOIN_PROMPT_SEEN_KEY } from '../screens/dashboard/JoinSchoolScreen';
 import { TokenGateProvider, useTokenGate } from '../context/TokenGateContext';
 

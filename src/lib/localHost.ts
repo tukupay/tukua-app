@@ -1,7 +1,7 @@
 /**
  * Hosted URL resolution for Expo.
  *
- * Mobile ERP + chat always hit **Railway Nest → Supabase** (staging/production).
+ * Mobile ERP + chat always hit **Railway Nest** (staging/production).
  * Desk Electron (`:3251` / proxy `:3255`) is offline sync for the Desk app only —
  * phones never call it by default.
  *
@@ -98,7 +98,7 @@ export function getWebBaseUrl(): string {
 
 /**
  * Nest REST for chat / courses / platform (WebView inject) and mobile ERP.
- * Always Supabase-backed Nest (staging/production) unless overridden.
+ * Always hosted Nest (staging/production) unless overridden.
  */
 export function getNestApiBaseUrl(): string {
   return resolveLocalUrl(process.env.EXPO_PUBLIC_NEST_API_URL || profile().nestApi);

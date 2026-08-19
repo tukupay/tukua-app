@@ -5,7 +5,7 @@ import { useDeskAuth } from '../../context/DeskAuthContext';
 import { getNotificationHref, registerMobilePushToken } from '../../lib/pushNotifications';
 import { resolveNotificationHref } from '../../lib/notificationDeepLink';
 import { useWebViewControl } from '../../context/WebViewControlContext';
-import { navigateDashboard } from '../../navigation/AppNavigator';
+import { navigateDashboard } from '../../navigation/rootNavigation';
 import { log } from '../../lib/logger';
 
 const isExpoGo = Constants.appOwnership === 'expo';

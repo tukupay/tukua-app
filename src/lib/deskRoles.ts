@@ -117,7 +117,7 @@ export const SUPER_ADMIN_MOBILE_HATS: MobileDashboardRole[] = [
 /**
  * Primary mobile dashboard persona after login.
  * - Desk Nest roles preferred when present
- * - Else Supabase org roles (same school roles)
+ * - Else Nest org roles (same school roles)
  * - No roles / no school → individual (Tukua learner)
  */
 export function resolveDeskPersona(

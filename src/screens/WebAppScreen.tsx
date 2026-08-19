@@ -19,7 +19,7 @@ import {
   buildPreloadSessionScript,
   buildSessionResyncScript,
   buildSpaNavigateScript,
-  buildSupabaseRefreshAndNavigateScript,
+  buildNestRefreshAndNavigateScript,
   buildThemeChromeInjectScript,
   buildFontChromeInjectScript,
   applyWebSessionTokens,
@@ -94,16 +94,34 @@ export function WebAppScreen({ path, label }: Props) {
   const { selectedSchool, selectedStudent, selectedRole, persona } = useDeskAuth();
   const { themeId, chatBgPattern, palette } = useAppTheme();
   const { webFamily, webWeight, webStyle, fontSize } = useFontPreference();
+  const [nestTok, setNestTok] = useState<string | null>(null);
+  const [nestTokReady, setNestTokReady] = useState(!session);
 
   useEffect(() => {
     let cancelled = false;
     nestTokRef.current = null;
-    if (!session) return;
+    if (!session) {
+      setNestTok(null);
+      setNestTokReady(true);
+      return;
+    }
+    setNestTokReady(false);
+    const fallback = setTimeout(() => {
+      if (cancelled || nestTokRef.current) return;
+      nestTokRef.current = session.access_token;
+      setNestTok(session.access_token);
+      setNestTokReady(true);
+    }, 2500);
     void resolveNestAccessTokenForWebView().then((tok) => {
-      if (!cancelled) nestTokRef.current = tok;
+      if (cancelled) return;
+      const next = tok || session.access_token;
+      nestTokRef.current = next;
+      setNestTok(next);
+      setNestTokReady(true);
     });
     return () => {
       cancelled = true;
+      clearTimeout(fallback);
     };
   }, [session?.user?.id, session?.access_token]);
 
@@ -141,11 +159,11 @@ export function WebAppScreen({ path, label }: Props) {
     );
   }, [tabBarInsetPx]);
 
-  const sessionInjectKey = session ? `${session.user.id}:${session.access_token}` : null;
+  const sessionInjectKey = session ? `${session.user.id}:${session.access_token}:${nestTok || ''}` : null;
   const preInject = useMemo(() => {
-    if (!session) return null;
-    return buildPreloadSessionScript(session, nestTokRef.current);
-  }, [sessionInjectKey, session]);
+    if (!session || !nestTokReady) return null;
+    return buildPreloadSessionScript(session, nestTok || session.access_token);
+  }, [sessionInjectKey, session, nestTokReady, nestTok]);
 
   useEffect(() => {
     return register(path, webRef);
@@ -203,7 +221,9 @@ export function WebAppScreen({ path, label }: Props) {
       void (async () => {
         try {
           const nestTok =
-            nestTokRef.current ?? (await resolveNestAccessTokenForWebView());
+            nestTokRef.current ??
+            (await resolveNestAccessTokenForWebView()) ??
+            session.access_token;
           nestTokRef.current = nestTok;
           if (!webRef.current) return;
           const deskPayload = {
@@ -224,9 +244,10 @@ export function WebAppScreen({ path, label }: Props) {
               true;
             })();
           `;
-          const script = chatMode
-            ? buildSupabaseRefreshAndNavigateScript(session, path, nestTok)
-            : buildFastTabNavigateScript(session, path, nestTok);
+          const script =
+            chatMode || path === '/courses' || path.startsWith('/courses/')
+              ? buildNestRefreshAndNavigateScript(session, path, nestTok)
+              : buildFastTabNavigateScript(session, path, nestTok);
           webRef.current.injectJavaScript(`${deskInject}\n${script}\ntrue;`);
         } finally {
           setTimeout(() => {
@@ -572,7 +593,7 @@ export function WebAppScreen({ path, label }: Props) {
           setCurrentPathname(pending);
         }
       } else if (msg.type === 'TUKUA_CHAT_RELOAD') {
-        log.info('WebApp', 'chat shell reload for supabase hydrate');
+        log.info('WebApp', 'chat shell reload for nest hydrate');
         // Soft re-hydrate — keep chat visible; avoid a long opaque loader
         bootstrapPendingRef.current = false;
         if (session && webRef.current) {
@@ -588,7 +609,7 @@ export function WebAppScreen({ path, label }: Props) {
           setTimeout(() => {
             if (session && webRef.current) {
               webRef.current.injectJavaScript(
-                `${buildSupabaseRefreshAndNavigateScript(session, target, nestTokRef.current)}\ntrue;`,
+                `${buildNestRefreshAndNavigateScript(session, target, nestTokRef.current)}\ntrue;`,
               );
               setCurrentPathname(target);
             }
@@ -631,7 +652,7 @@ export function WebAppScreen({ path, label }: Props) {
           setPageLoading(false);
         }
       } else if (msg.type === 'TUKUA_SESSION_SYNCED') {
-        log.info('WebApp', 'supabase session synced');
+        log.info('WebApp', 'nest session synced');
         if (chatMode) {
           bootstrappedRef.current = true;
           bootstrapPendingRef.current = false;
@@ -651,7 +672,7 @@ export function WebAppScreen({ path, label }: Props) {
           void applyWebSessionTokens(msg.access_token, msg.refresh_token);
         }
       } else if (msg.type === 'TUKUA_SESSION_SYNC_WARN') {
-        log.warn('WebApp', 'supabase refresh warn', { status: msg.status });
+        log.warn('WebApp', 'session refresh warn', { status: msg.status });
       } else if (msg.type === 'TUKUA_BOOTSTRAP_ERR') {
         log.error('WebApp', 'bootstrap err', { error: msg.error });
         setPageLoading(false);

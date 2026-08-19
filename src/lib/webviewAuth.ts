@@ -1,22 +1,10 @@
-import { Session } from '@supabase/supabase-js';
-import { supabase } from './supabase';
+import type { Session } from './auth';
 import { TukuaWeb } from '../theme/yana';
 import { getNestApiBaseUrl, isAppWebHost } from './localHost';
 import { log } from './logger';
 
-const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
-const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
-/** Must match EXPO_PUBLIC_SUPABASE_URL project (live jltzze… vs staging twnzlk…). */
-function supabaseProjectRef(): string {
-  try {
-    const host = new URL(SUPABASE_URL).hostname; // {ref}.supabase.co
-    return host.split('.')[0] || 'unknown';
-  } catch {
-    return 'unknown';
-  }
-}
-const SUPABASE_STORAGE_KEY = `sb-${supabaseProjectRef()}-auth-token`;
 const TUKUA_SESSION_KEY = 'tukua_session';
+const NEST_ACCESS_KEY = 'tukua_nest_access_token';
 const COMPAT_SESSION_KEY = process.env.EXPO_PUBLIC_COMPAT_WEB_SESSION_KEY;
 const TUKUA_APP_SOURCE_MOBILE = 'mobile_app';
 const TUKUA_APP_SOURCE_WEB = 'web';
@@ -51,14 +39,39 @@ const SPA_CLIENT_ROUTES = [
   '/data-deletion',
 ];
 
+function decodeJwtUserId(token: string | null | undefined): string | null {
+  if (!token) return null;
+  try {
+    const part = token.split('.')[1];
+    if (!part) return null;
+    const padded = part.replace(/-/g, '+').replace(/_/g, '/');
+    const json = JSON.parse(atob(padded));
+    const id = String(json.sub || json.user_id || '').trim();
+    return id || null;
+  } catch {
+    return null;
+  }
+}
+
+function nestTokenForInject(session: Session, nestAccessToken?: string | null) {
+  return (nestAccessToken && nestAccessToken.trim()) || session.access_token;
+}
+
+function sessionUserIdForInject(session: Session, nestAccessToken?: string | null) {
+  const fromSession = String(session.user?.id || '').trim();
+  if (fromSession) return fromSession;
+  return decodeJwtUserId(nestTokenForInject(session, nestAccessToken)) || '';
+}
+
 function buildWebSessionPayload(session: Session, nestAccessToken?: string | null) {
   const meta = session.user.user_metadata ?? {};
   const fullName = (meta.full_name as string) ?? session.user.email ?? '';
   const [firstName, ...rest] = fullName.split(' ');
-  const access = (nestAccessToken && nestAccessToken.trim()) || session.access_token;
+  const access = nestTokenForInject(session, nestAccessToken);
+  const userId = sessionUserIdForInject(session, nestAccessToken);
   return {
     user: {
-      id: session.user.id,
+      id: userId,
       email: session.user.email ?? '',
       first_name: firstName ?? '',
       last_name: rest.join(' '),
@@ -70,28 +83,11 @@ function buildWebSessionPayload(session: Session, nestAccessToken?: string | nul
     access_token: access,
     refresh_token: session.refresh_token,
     token_type: 'bearer',
-    token_source: nestAccessToken ? 'nest_identity' : 'supabase',
+    token_source: 'nest_identity',
   };
 }
 
-function nestTokenForInject(session: Session, nestAccessToken?: string | null) {
-  return (nestAccessToken && nestAccessToken.trim()) || session.access_token;
-}
-
-function supabaseStoragePayload(session: Session) {
-  const expiresAt =
-    session.expires_at ?? Math.floor(Date.now() / 1000) + (session.expires_in ?? 3600);
-  return JSON.stringify({
-    access_token: session.access_token,
-    refresh_token: session.refresh_token,
-    expires_at: expiresAt,
-    expires_in: session.expires_in ?? 3600,
-    token_type: 'bearer',
-    user: session.user,
-  });
-}
-
-/** SPA shell — production S3 used to 404 on /chat/; local Vite is fine either way. Always boot from /. */
+/** Inject Nest REST auth into localStorage for the SPA WebView. */
 export function tukuaSpaShellUrl() {
   const base = TukuaWeb.base.replace(/\/$/, '');
   return `${base}/`;
@@ -281,56 +277,43 @@ function dispatchStorageSync(key: string) {
   `;
 }
 
-function buildSetSessionViaFetchScript() {
-  return `
-    try {
-      var raw = localStorage.getItem('${SUPABASE_STORAGE_KEY}');
-      if (!raw) return;
-      var parsed = JSON.parse(raw);
-      if (!parsed.access_token || !parsed.refresh_token) return;
-      fetch('${SUPABASE_URL}/auth/v1/user', {
-        headers: {
-          'apikey': ${JSON.stringify(SUPABASE_ANON_KEY)},
-          'Authorization': 'Bearer ' + parsed.access_token,
-        },
-      }).then(function(res) {
-        if (res.ok) {
-          window.__TUKUA_SB_READY__ = true;
-        }
-      }).catch(function() {});
-    } catch (e) {}
-  `;
-}
-
-/** Inject Nest REST auth (+ optional legacy Supabase storage) into localStorage. */
-export function buildSessionStorageScript(session: Session, nestAccessToken?: string | null) {
-  const supabasePayload = supabaseStoragePayload(session);
+function nestStorageJs(session: Session, nestAccessToken?: string | null) {
   const nestTok = nestTokenForInject(session, nestAccessToken);
   const webSession = JSON.stringify(buildWebSessionPayload(session, nestAccessToken));
-
   const compatLine = COMPAT_SESSION_KEY
     ? `localStorage.setItem('${COMPAT_SESSION_KEY}', ${JSON.stringify(webSession)});`
     : '';
+  return {
+    nestTok,
+    webSession,
+    writes: `
+        localStorage.setItem('${TUKUA_SESSION_KEY}', ${JSON.stringify(webSession)});
+        localStorage.setItem('tukua_nest_api_base', ${JSON.stringify(NEST_API_BASE)});
+        localStorage.setItem('${NEST_ACCESS_KEY}', ${JSON.stringify(nestTok)});
+        ${compatLine}
+        ${dispatchStorageSync(TUKUA_SESSION_KEY)}
+        ${dispatchStorageSync(NEST_ACCESS_KEY)}
+    `,
+  };
+}
+
+/** Inject Nest REST auth into localStorage. */
+export function buildSessionStorageScript(session: Session, nestAccessToken?: string | null) {
+  const { writes } = nestStorageJs(session, nestAccessToken);
 
   return `
     (function() {
       try {
-        var uid = ${JSON.stringify(session.user.id)};
+        var uid = ${JSON.stringify(sessionUserIdForInject(session, nestAccessToken))};
         if (sessionStorage.getItem('tukua_mobile_uid') !== uid) {
           sessionStorage.removeItem('${CHAT_BOOT_KEY}');
           sessionStorage.setItem('tukua_mobile_uid', uid);
         }
-        localStorage.setItem('${SUPABASE_STORAGE_KEY}', ${JSON.stringify(supabasePayload)});
-        localStorage.setItem('${TUKUA_SESSION_KEY}', ${JSON.stringify(webSession)});
-        localStorage.setItem('tukua_nest_api_base', ${JSON.stringify(NEST_API_BASE)});
-        localStorage.setItem('tukua_nest_access_token', ${JSON.stringify(nestTok)});
-        ${compatLine}
+        ${writes}
         ${notifyAppSourceEvent()}
         ${notifySpaRouteSyncScript()}
         ${notifyMobileBackBridgeScript()}
-        ${dispatchStorageSync(SUPABASE_STORAGE_KEY)}
         ${notifyMobileSessionEvent()}
-        ${buildSetSessionViaFetchScript()}
       } catch (e) {}
       true;
     })();
@@ -372,23 +355,14 @@ export function buildFastTabNavigateScript(
   targetPath: string,
   nestAccessToken?: string | null,
 ) {
-  const supabasePayload = supabaseStoragePayload(session);
-  const nestTok = nestTokenForInject(session, nestAccessToken);
-  const webSession = JSON.stringify(buildWebSessionPayload(session, nestAccessToken));
+  const { writes } = nestStorageJs(session, nestAccessToken);
   const target = targetPath.startsWith('/') ? targetPath : `/${targetPath}`;
-  const compatLine = COMPAT_SESSION_KEY
-    ? `localStorage.setItem('${COMPAT_SESSION_KEY}', ${JSON.stringify(webSession)});`
-    : '';
 
   return `
     (function() {
       try {
         if (!window.location.hostname) return;
-        localStorage.setItem('${SUPABASE_STORAGE_KEY}', ${JSON.stringify(supabasePayload)});
-        localStorage.setItem('${TUKUA_SESSION_KEY}', ${JSON.stringify(webSession)});
-        localStorage.setItem('tukua_nest_api_base', ${JSON.stringify(NEST_API_BASE)});
-        localStorage.setItem('tukua_nest_access_token', ${JSON.stringify(nestTok)});
-        ${compatLine}
+        ${writes}
         ${notifyAppSourceEvent()}
         ${notifyMobileSessionEvent()}
         var target = ${JSON.stringify(target)};
@@ -495,12 +469,7 @@ export function buildMobileChatTabBarStylesScript(tabBarPx: number, topInsetPx =
 
 /** Preload for About → public pages. Uses web mode so yana route guard does not redirect to /chat. */
 export function buildPublicPagePreloadScript(session: Session, nestAccessToken?: string | null) {
-  const supabasePayload = supabaseStoragePayload(session);
-  const nestTok = nestTokenForInject(session, nestAccessToken);
-  const webSession = JSON.stringify(buildWebSessionPayload(session, nestAccessToken));
-  const compatLine = COMPAT_SESSION_KEY
-    ? `localStorage.setItem('${COMPAT_SESSION_KEY}', ${JSON.stringify(webSession)});`
-    : '';
+  const { writes } = nestStorageJs(session, nestAccessToken);
 
   return `
     (function() {
@@ -509,12 +478,7 @@ export function buildPublicPagePreloadScript(session: Session, nestAccessToken?:
         window.__TUKUA_APP_SOURCE__ = '${TUKUA_APP_SOURCE_WEB}';
         document.documentElement.dataset.tukuaSource = '${TUKUA_APP_SOURCE_WEB}';
         document.documentElement.classList.remove('tukua-mobile-app');
-        localStorage.setItem('${SUPABASE_STORAGE_KEY}', ${JSON.stringify(supabasePayload)});
-        localStorage.setItem('${TUKUA_SESSION_KEY}', ${JSON.stringify(webSession)});
-        localStorage.setItem('tukua_nest_api_base', ${JSON.stringify(NEST_API_BASE)});
-        localStorage.setItem('tukua_nest_access_token', ${JSON.stringify(nestTok)});
-        ${compatLine}
-        ${dispatchStorageSync(SUPABASE_STORAGE_KEY)}
+        ${writes}
         window.dispatchEvent(new CustomEvent('TUKUA_APP_SOURCE'));
       } catch (e) {}
       true;
@@ -533,39 +497,28 @@ export function buildPreloadSessionScript(session: Session, nestAccessToken?: st
 }
 
 /**
- * Inject Nest REST auth, then navigate. Skips GoTrue refresh when a Nest identity
- * token is provided (chat/courses use tukua_nest_access_token only).
+ * Inject Nest REST auth, then navigate. Chat/courses use tukua_nest_access_token only.
  */
-export function buildSupabaseRefreshAndNavigateScript(
+export function buildNestRefreshAndNavigateScript(
   session: Session,
   targetPath = '/chat',
   nestAccessToken?: string | null,
 ) {
-  const supabasePayload = supabaseStoragePayload(session);
-  const nestTok = nestTokenForInject(session, nestAccessToken);
-  const preferNest = Boolean(nestAccessToken && nestAccessToken.trim());
-  const webSession = JSON.stringify(buildWebSessionPayload(session, nestAccessToken));
+  const { writes, nestTok } = nestStorageJs(session, nestAccessToken);
   const target = targetPath.startsWith('/') ? targetPath : `/${targetPath}`;
   const isChat = target === '/chat';
-
-  const compatLine = COMPAT_SESSION_KEY
-    ? `localStorage.setItem('${COMPAT_SESSION_KEY}', ${JSON.stringify(webSession)});`
-    : '';
 
   log.info('WebSession', `building bootstrap for ${target}`, {
     userId: session.user.id,
     isChat,
-    preferNest,
     nestBase: NEST_API_BASE,
     keys: COMPAT_SESSION_KEY ? [TUKUA_SESSION_KEY, COMPAT_SESSION_KEY] : [TUKUA_SESSION_KEY],
   });
 
   return `
     (async function() {
-      var storageKey = '${SUPABASE_STORAGE_KEY}';
       var target = ${JSON.stringify(target)};
       var isChat = ${isChat ? 'true' : 'false'};
-      var preferNest = ${preferNest ? 'true' : 'false'};
       var nestTok = ${JSON.stringify(nestTok)};
       var bootKey = '${CHAT_BOOT_KEY}';
       var notify = function(type, detail) {
@@ -585,13 +538,8 @@ export function buildSupabaseRefreshAndNavigateScript(
 
       try {
         if (!window.location.hostname) return;
-        localStorage.setItem(storageKey, ${JSON.stringify(supabasePayload)});
-        localStorage.setItem('${TUKUA_SESSION_KEY}', ${JSON.stringify(webSession)});
-        localStorage.setItem('tukua_nest_api_base', ${JSON.stringify(NEST_API_BASE)});
-        localStorage.setItem('tukua_nest_access_token', nestTok);
-        ${compatLine}
+        ${writes}
         ${notifyAppSourceEvent()}
-        ${dispatchStorageSync(SUPABASE_STORAGE_KEY)}
         ${notifyMobileSessionEvent()}
 
         if (!isChat) {
@@ -599,56 +547,7 @@ export function buildSupabaseRefreshAndNavigateScript(
           notify('TUKUA_BOOTSTRAP_OK', { path: target });
         }
 
-        // Nest identity JWT is enough for chat/courses — do not overwrite with GoTrue.
-        if (!preferNest) {
-          var refreshAt = parseInt(sessionStorage.getItem('tukua_token_refresh_at') || '0', 10);
-          var skipRefresh = refreshAt && (Date.now() - refreshAt) < 120000;
-
-          if (!skipRefresh) {
-          var refreshRes = await fetch('${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'apikey': ${JSON.stringify(SUPABASE_ANON_KEY)},
-              'Authorization': 'Bearer ' + ${JSON.stringify(SUPABASE_ANON_KEY)},
-            },
-            body: JSON.stringify({ refresh_token: ${JSON.stringify(session.refresh_token)} }),
-          });
-
-          if (refreshRes.ok) {
-            var data = await refreshRes.json();
-            if (data.access_token) {
-              var stored = JSON.stringify({
-                access_token: data.access_token,
-                refresh_token: data.refresh_token,
-                expires_at: Math.floor(Date.now() / 1000) + (data.expires_in || 3600),
-                expires_in: data.expires_in || 3600,
-                token_type: 'bearer',
-                user: data.user,
-              });
-              localStorage.setItem(storageKey, stored);
-              localStorage.setItem('${TUKUA_SESSION_KEY}', ${JSON.stringify(webSession)});
-              localStorage.setItem('tukua_nest_api_base', ${JSON.stringify(NEST_API_BASE)});
-              localStorage.setItem('tukua_nest_access_token', data.access_token);
-              ${compatLine}
-              ${dispatchStorageSync(SUPABASE_STORAGE_KEY)}
-              ${notifyMobileSessionEvent()}
-              notify('TUKUA_SESSION_SYNCED', { ok: true });
-              notify('TUKUA_SESSION_UPDATED', {
-                access_token: data.access_token,
-                refresh_token: data.refresh_token,
-              });
-            }
-          } else {
-            notify('TUKUA_SESSION_SYNC_WARN', { status: refreshRes.status });
-          }
-          sessionStorage.setItem('tukua_token_refresh_at', String(Date.now()));
-          } else {
-            notify('TUKUA_SESSION_SYNCED', { ok: true, cached: true });
-          }
-        } else {
-          notify('TUKUA_SESSION_SYNCED', { ok: true, nest: true });
-        }
+        notify('TUKUA_SESSION_SYNCED', { ok: true, nest: true });
 
         var host = window.location.hostname || '';
         var isLocalDev =
@@ -691,7 +590,7 @@ export function buildWebViewBootstrapScript(
   targetPath = '/chat',
   nestAccessToken?: string | null,
 ) {
-  return buildSupabaseRefreshAndNavigateScript(session, targetPath, nestAccessToken);
+  return buildNestRefreshAndNavigateScript(session, targetPath, nestAccessToken);
 }
 
 export function buildWebViewSessionScript(
@@ -780,54 +679,30 @@ export function buildSessionResyncScript(session: Session, nestAccessToken?: str
 }
 
 export async function applyWebSessionTokens(accessToken: string, refreshToken: string) {
-  const { data: existing } = await supabase.auth.getSession();
-  if (
-    existing.session?.access_token === accessToken &&
-    existing.session?.refresh_token === refreshToken
-  ) {
-    return existing.session;
-  }
-  // Same user + unexpired access token — adopt refresh quietly without firing SIGNED_IN churn.
-  if (
-    existing.session?.user &&
-    existing.session.access_token &&
-    existing.session.expires_at &&
-    existing.session.expires_at * 1000 > Date.now() + 60_000
-  ) {
-    // Still update if refresh token rotated, but avoid full setSession when access unchanged.
-    if (existing.session.access_token === accessToken) {
-      return existing.session;
-    }
-  }
-
-  const { data, error } = await supabase.auth.setSession({
-    access_token: accessToken,
-    refresh_token: refreshToken,
-  });
-  if (error) {
-    log.warn('WebSession', 'apply web tokens failed', error.message);
+  const { persistPlatformNestSession } = await import('./platformNestAuth');
+  const { persistSession, fetchProfileFromNest, nestSessionFromProfile } = await import('./auth');
+  await persistPlatformNestSession(accessToken, refreshToken);
+  const profile = await fetchProfileFromNest(accessToken);
+  if (!profile) {
+    log.warn('WebSession', 'apply nest tokens failed — no profile');
     return null;
   }
-  if (data.session) {
-    const { persistSession } = await import('./auth');
-    await persistSession(data.session);
-    log.info('WebSession', 'desk supabase tokens adopted', {
-      project: supabaseProjectRef(),
-      userId: data.session.user.id,
-    });
-  }
-  return data.session;
+  const session = nestSessionFromProfile(accessToken, refreshToken || accessToken, profile);
+  await persistSession(session);
+  log.info('WebSession', 'nest tokens adopted', { userId: session.user.id });
+  return session;
 }
 
 export async function getActiveSessionScript(targetPath?: string) {
-  const { data } = await supabase.auth.getSession();
-  if (!data.session) {
-    log.warn('WebSession', 'no active supabase session for inject');
+  const { restoreSession } = await import('./auth');
+  const session = await restoreSession();
+  if (!session) {
+    log.warn('WebSession', 'no nest session for inject');
     return null;
   }
   const { resolveNestAccessTokenForWebView } = await import('./platformNestAuth');
   const nestTok = await resolveNestAccessTokenForWebView();
-  return buildWebViewSessionScript(data.session, targetPath ?? '/chat', nestTok);
+  return buildWebViewSessionScript(session, targetPath ?? '/chat', nestTok);
 }
 
 function isTukuaStaticAsset(pathname: string) {
@@ -959,8 +834,9 @@ export function buildRegisterPreloadScript() {
     (function() {
       try {
         if (!sessionStorage.getItem('tukua_reg_init')) {
-          localStorage.removeItem('${SUPABASE_STORAGE_KEY}');
           localStorage.removeItem('${TUKUA_SESSION_KEY}');
+          localStorage.removeItem('${NEST_ACCESS_KEY}');
+          localStorage.removeItem('tukua_nest_api_base');
           ${compatClear}
           sessionStorage.setItem('tukua_reg_init', '1');
         }
@@ -976,10 +852,8 @@ export function buildRegisterPreloadScript() {
 
 /**
  * Client-navigate the shell to a target auth route (default /register) and
- * install a one-shot watcher that reports the Supabase session back to native
- * the moment web registration/sign-in establishes one. This makes the whole
- * registration flow the canonical web flow while the native app simply adopts
- * the resulting session.
+ * install a watcher that reports the Nest session back to native the moment
+ * web registration/sign-in establishes one.
  */
 export function buildRegisterWatchScript(targetPath = '/register') {
   const target = targetPath.startsWith('/') ? targetPath : `/${targetPath}`;
@@ -994,23 +868,30 @@ export function buildRegisterWatchScript(targetPath = '/register') {
         }
         if (window.__TUKUA_REG_WATCH__) return;
         window.__TUKUA_REG_WATCH__ = true;
-        var key = '${SUPABASE_STORAGE_KEY}';
+        var nestKey = '${NEST_ACCESS_KEY}';
+        var sessionKey = '${TUKUA_SESSION_KEY}';
         var seen = null;
         setInterval(function() {
           try {
-            var raw = localStorage.getItem(key);
-            if (!raw) return;
-            var parsed = JSON.parse(raw);
-            if (!parsed || !parsed.access_token || !parsed.refresh_token) return;
-            var uid = parsed.user && parsed.user.id;
-            if (!uid) return;
-            if (seen === parsed.access_token) return;
-            seen = parsed.access_token;
+            var nestTok = localStorage.getItem(nestKey);
+            var raw = localStorage.getItem(sessionKey);
+            var access = nestTok;
+            var refresh = nestTok;
+            if (raw) {
+              var parsed = JSON.parse(raw);
+              if (parsed && parsed.access_token) {
+                access = parsed.access_token;
+                refresh = parsed.refresh_token || parsed.access_token;
+              }
+            }
+            if (!access) return;
+            if (seen === access) return;
+            seen = access;
             window.ReactNativeWebView && window.ReactNativeWebView.postMessage(
               JSON.stringify({
                 type: 'TUKUA_SESSION_UPDATED',
-                access_token: parsed.access_token,
-                refresh_token: parsed.refresh_token
+                access_token: access,
+                refresh_token: refresh || access
               })
             );
           } catch (e) {}

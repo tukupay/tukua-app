@@ -23,6 +23,8 @@ export type SchoolMeeting = {
   short_code?: string;
   short_url?: string;
   join_url?: string;
+  meeting_url?: string | null;
+  meeting_provider?: string | null;
   is_public?: boolean;
   join_window?: JoinWindow;
 };
@@ -86,6 +88,8 @@ export async function createSchoolMeeting(body: {
   join_opens_minutes_before?: number;
   is_public?: boolean;
   school_id?: string;
+  meeting_url?: string;
+  meeting_provider?: string;
 }) {
   return deskFetch<SchoolMeeting>('/meetings', { method: 'POST', body });
 }

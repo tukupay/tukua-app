@@ -38,7 +38,7 @@ export async function authenticateDevice(reason: string) {
 
 /**
  * Device unlock only — returns stored email/password for the caller to run
- * the same Nest-then-Supabase login path as password login.
+ * the same Nest REST login path as password login.
  */
 export async function unlockBiometricCredentials(): Promise<
   { email: string; password: string } | null

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
 import { Colors } from '../../theme/yana';
+import { useAuthScale } from './useAuthScale';
 
 const ROLE_TAGS = [
   { label: 'Parents', bg: '#E8F5EF', fg: '#0A3D2E', border: 'rgba(10,61,46,0.22)' },
@@ -11,21 +12,40 @@ const ROLE_TAGS = [
 
 /** Compact school-roles strip — sits in login footer without shifting the logo/form. */
 export function NewsHighlight() {
+  const { s, font } = useAuthScale();
   return (
-    <View style={styles.wrap}>
+    <View
+      style={[
+        styles.wrap,
+        {
+          maxWidth: s(320),
+          borderRadius: s(12),
+          paddingHorizontal: s(12),
+          paddingVertical: s(10),
+          marginBottom: s(6),
+        },
+      ]}>
       <View style={styles.copy}>
-        <Text style={styles.title} numberOfLines={1}>
+        <Text style={[styles.title, { fontSize: font(12), lineHeight: font(15) }]} numberOfLines={1}>
           Now with school features
         </Text>
-        <Text style={styles.subtitle} numberOfLines={1}>
+        <Text style={[styles.subtitle, { fontSize: font(10), lineHeight: font(13) }]} numberOfLines={1}>
           Fees, grades, attendance & more on Tukua.
         </Text>
-        <View style={styles.tags}>
+        <View style={[styles.tags, { gap: s(6), marginTop: s(6) }]}>
           {ROLE_TAGS.map((tag) => (
             <View
               key={tag.label}
-              style={[styles.tag, { backgroundColor: tag.bg, borderColor: tag.border }]}>
-              <Text style={[styles.tagText, { color: tag.fg }]}>{tag.label}</Text>
+              style={[
+                styles.tag,
+                {
+                  backgroundColor: tag.bg,
+                  borderColor: tag.border,
+                  paddingHorizontal: s(10),
+                  paddingVertical: s(4),
+                },
+              ]}>
+              <Text style={[styles.tagText, { color: tag.fg, fontSize: font(10) }]}>{tag.label}</Text>
             </View>
           ))}
         </View>

@@ -9,12 +9,12 @@ import { log } from './logger';
 
 const DESK_TOKEN_KEY = 'tukua_desk_auth_token';
 const DESK_USER_KEY = 'tukua_desk_user';
-/** 'nest' = password login JWT (required for /parents/me/*). 'supabase' = soft-adopt. */
+/** 'nest' = password login JWT (required for /parents/me/*). */
 const DESK_TOKEN_SOURCE_KEY = 'tukua_desk_token_source';
 /** Email+password for Nest soft-reconnect after app restart (SecureStore). */
 const DESK_CREDS_KEY = 'tukua_desk_login_creds';
 
-type DeskTokenSource = 'nest' | 'supabase';
+type DeskTokenSource = 'nest';
 
 export type DeskUser = {
   id?: string;
@@ -32,8 +32,6 @@ export type DeskUser = {
 export type DeskLoginResult = {
   token: string;
   user: DeskUser;
-  supabase_access_token?: string;
-  supabase_refresh_token?: string;
   loginType?: 'offline' | 'online';
 };
 
@@ -121,7 +119,7 @@ export async function getDeskTokenSource(): Promise<DeskTokenSource | null> {
   if (memoryTokenSource) return memoryTokenSource;
   try {
     const raw = await SecureStore.getItemAsync(DESK_TOKEN_SOURCE_KEY);
-    if (raw === 'nest' || raw === 'supabase') {
+    if (raw === 'nest') {
       memoryTokenSource = raw;
       return raw;
     }
@@ -131,7 +129,7 @@ export async function getDeskTokenSource(): Promise<DeskTokenSource | null> {
   return null;
 }
 
-/** True when Desk Bearer came from Nest password login (not soft-adopted Supabase JWT). */
+/** True when Desk Bearer came from Nest password login. */
 export async function hasNestDeskToken(): Promise<boolean> {
   return (await getDeskTokenSource()) === 'nest';
 }
@@ -166,7 +164,7 @@ export async function clearDeskCredentials(): Promise<void> {
 
 /**
  * After app restart / session restore, Nest parent APIs need a Nest JWT.
- * Soft-adopted Supabase tokens get 401 on /parents/me/* — reconnect with stored password.
+ * Reconnect with stored password when the desk token is missing.
  */
 export async function ensureNestDeskSession(): Promise<boolean> {
   if (await hasNestDeskToken()) {
@@ -195,31 +193,6 @@ export async function awaitDeskLoginInFlight(): Promise<DeskLoginResult | null> 
   } catch {
     return null;
   }
-}
-
-/**
- * Desk Nest shares the same Supabase project — adopt the Supabase access token
- * as the desk Bearer so Dashboard modules work without a separate Nest password login.
- * Never overwrite a Nest password JWT (Supabase JWT gets 401 on /parents/me/*).
- */
-export async function adoptSupabaseTokenAsDeskSession(
-  accessToken: string,
-  user: DeskUser,
-): Promise<void> {
-  if (!accessToken) return;
-  if (await hasNestDeskToken()) {
-    log.info('DeskApi', 'kept nest desk token (skip supabase adopt)', {
-      email: user.email,
-      schoolId: user.school_id,
-    });
-    return;
-  }
-  await persistDeskSession(accessToken, user, 'supabase');
-  log.info('DeskApi', 'adopted supabase access token as desk session', {
-    email: user.email,
-    roles: user.user_roles,
-    schoolId: user.school_id,
-  });
 }
 
 export async function clearDeskSession() {
@@ -315,7 +288,7 @@ export async function deskFetch<T = unknown>(
 
   if (!res.ok) {
     const isLogin = path.includes('/auth/login');
-    // Soft-adopted Supabase JWT → 401 on /parents/*; reconnect Nest once if we have password.
+    // Missing Nest JWT → 401 on /parents/*; reconnect Nest once if we have password.
     if (
       res.status === 401 &&
       !isLogin &&
@@ -369,8 +342,6 @@ export async function deskLogin(email: string, password: string): Promise<DeskLo
       token?: string;
       access_token?: string;
       user?: DeskUser;
-      supabase_access_token?: string;
-      supabase_refresh_token?: string;
       loginType?: 'offline' | 'online';
     }>('/auth/login', {
       method: 'POST',
@@ -399,15 +370,12 @@ export async function deskLogin(email: string, password: string): Promise<DeskLo
       email: deskUser.email,
       roles: deskUser.user_roles,
       schoolId: deskUser.school_id,
-      hasSupabaseTokens: Boolean(data.supabase_access_token),
       tokenSource: 'nest',
     });
 
     return {
       token,
       user: deskUser,
-      supabase_access_token: data.supabase_access_token,
-      supabase_refresh_token: data.supabase_refresh_token,
       loginType: data.loginType,
     };
   })();
@@ -421,7 +389,7 @@ export async function deskLogin(email: string, password: string): Promise<DeskLo
 
 export async function deskFetchMe(): Promise<DeskUser | null> {
   try {
-    // Desk Electron can hang validating a Supabase JWT — never block UI on this.
+    // Never block UI if /auth/me is slow.
     const user = await Promise.race([
       deskFetch<DeskUser>('/auth/me'),
       new Promise<null>((resolve) => {
@@ -436,7 +404,7 @@ export async function deskFetchMe(): Promise<DeskUser | null> {
   } catch (error) {
     const msg = String(error);
     log.warn('DeskApi', 'auth/me failed', msg);
-    // Do NOT clear adopted Supabase tokens — hosted Nest may reject them while Chat still works.
+    // Keep desk token on /auth/me miss — Chat still uses platform Nest JWT.
     return null;
   }
 }

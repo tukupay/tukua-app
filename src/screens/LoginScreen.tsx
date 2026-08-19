@@ -104,7 +104,7 @@ export function LoginScreen({ navigation }: Props) {
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && password.trim().length >= 6;
 
   const finishLogin = async (loginEmail: string, loginPass: string) => {
-    // Nest JWT first — Supabase JWT gets 401 on /parents/me/* (names/class).
+    // Nest desk JWT first — required for /parents/me/* (names/class).
     // Must finish before SIGNED_IN soft-adopt, and nest token is overwrite-locked in deskApi.
     // Always stash password so soft-reconnect works if Desk/proxy was down at login time.
     try {
@@ -133,7 +133,7 @@ export function LoginScreen({ navigation }: Props) {
       );
     }
 
-    // Nest identity first (PEA accounts); falls back to Supabase inside signInWithEmail.
+    // Nest identity (PEA / platform accounts).
     const signed = await signInWithEmail(loginEmail.trim(), loginPass);
     const nestSession = (signed as { session?: { access_token?: string; user?: { id?: string; app_metadata?: { provider?: string } } } })
       ?.session;
@@ -224,7 +224,7 @@ export function LoginScreen({ navigation }: Props) {
         });
         return;
       }
-      // Same Nest-then-Supabase path as password login
+      // Same Nest REST login path as password login
       await finishLogin(unlocked.email, unlocked.password);
     } catch (err: any) {
       hideSystemStatusBar();

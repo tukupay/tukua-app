@@ -7,8 +7,6 @@ import React, {
   ReactNode,
 } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
-import type { Session } from '@supabase/supabase-js';
-import { supabase } from '../lib/supabase';
 import {
   fetchProfile,
   fetchProfileFromNest,
@@ -18,6 +16,7 @@ import {
   restoreSession,
   signOut,
   UserProfile,
+  type Session,
 } from '../lib/auth';
 import { clearPlatformNestToken } from '../lib/platformNestAuth';
 import { getSavageModeEnabled, getSavageModeForUser } from '../lib/userPreferences';
@@ -35,7 +34,7 @@ type AuthContextType = {
   refreshUserPreferences: () => Promise<void>;
   setSavageMode: (enabled: boolean) => void;
   ensureFreshSession: () => Promise<Session | null>;
-  /** Adopt Nest identity session after PEA / Nest login (no GoTrue required). */
+  /** Adopt Nest identity session after PEA / Nest login. */
   adoptSession: (session: Session) => Promise<void>;
   logout: () => Promise<void>;
 };
@@ -62,7 +61,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loadUserPreferences = useCallback(async (userId: string) => {
     try {
-      // Nest JWT first — PostgREST `users` fails for Nest-only sessions (no auth.uid()).
       const enabled = (await getSavageModeEnabled()) || (await getSavageModeForUser(userId));
       setSavageMode(enabled);
       log.info('Auth', 'user preferences loaded', { savageMode: enabled });
@@ -82,52 +80,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshProfile = useCallback(async () => {
     try {
-      // Nest JWT session (PEA / Nest login) — no GoTrue user.
-      if (session?.access_token && session.user?.app_metadata?.provider === 'nest') {
-        const p = await fetchProfileFromNest(session.access_token);
-        if (p) {
-          setProfile(p);
-          await loadUserPreferences(p.id);
-        }
-        return;
-      }
-      const { data, error } = await supabase.auth.getUser();
-      if (error) {
-        log.warn('Auth', 'getUser failed during profile refresh', error.message);
-        // Nest-only sessions have no GoTrue user — "Auth session missing!" must NOT sign out.
-        const nestTok = session?.access_token && session?.user?.app_metadata?.provider === 'nest';
-        if (nestTok || /auth session missing/i.test(error.message)) {
-          if (nestTok) {
-            const p = await fetchProfileFromNest(session!.access_token);
-            if (p) {
-              setProfile(p);
-              await loadUserPreferences(p.id);
-            }
-          }
-          return;
-        }
-        // Only clear on confirmed JWT death — never bare "session" (matches "Auth session missing!").
-        if (
-          /invalid jwt|jwt expired|token expired|refresh_token|session not found/i.test(error.message) &&
-          !/network|fetch|offline|timeout/i.test(error.message)
-        ) {
-          await clearDeskSession();
-          await signOut();
-          setSession(null);
-          setProfile(null);
-          setSavageMode(false);
-        }
-        return;
-      }
-      if (data.user) {
-        const p = await fetchProfile(data.user.id);
+      if (!session?.access_token) return;
+      const p =
+        (await fetchProfileFromNest(session.access_token)) ||
+        (session.user?.id ? await fetchProfile(session.user.id) : null);
+      if (p) {
         setProfile(p);
-        await loadUserPreferences(data.user.id);
+        await loadUserPreferences(p.id);
       }
     } catch (error) {
       log.warn('Auth', 'refreshProfile error', String(error));
     }
-  }, [loadUserPreferences, session?.access_token, session?.user?.app_metadata?.provider]);
+  }, [loadUserPreferences, session]);
 
   const adoptSession = useCallback(
     async (next: Session) => {
@@ -136,11 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (next.user?.id) {
         const cached = await getCachedProfile();
         if (cached?.id === next.user.id) setProfile(cached);
-        const fromNest =
-          next.user.app_metadata?.provider === 'nest'
-            ? await fetchProfileFromNest(next.access_token)
-            : null;
-        const p = fromNest || (await fetchProfile(next.user.id));
+        const p = (await fetchProfileFromNest(next.access_token)) || (await fetchProfile(next.user.id));
         if (p) setProfile(p);
         await loadUserPreferences(next.user.id);
       }
@@ -149,20 +109,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const ensureFreshSession = useCallback(async () => {
-    const { data: before } = await supabase.auth.getSession();
     const fresh = await refreshSessionIfNeeded();
     setSession((prev) => {
-      const next = fresh ?? before.session ?? prev;
+      const next = fresh ?? prev;
       if (prev?.access_token === next?.access_token && prev?.expires_at === next?.expires_at) {
         return prev;
       }
-      return next;
+      return next ?? null;
     });
-    const resolved = fresh ?? before.session;
-    if (!resolved) {
+    if (!fresh) {
       setProfile(null);
     }
-    return resolved;
+    return fresh;
   }, []);
 
   useEffect(() => {
@@ -175,7 +133,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           log.info('Auth', 'session restored', { email: active.user.email });
           const cached = await getCachedProfile();
           setProfile(cached);
-          void refreshProfile();
+          const p =
+            (await fetchProfileFromNest(active.access_token)) ||
+            (await fetchProfile(active.user.id));
+          if (p) setProfile(p);
+          void loadUserPreferences(active.user.id);
         } else {
           log.info('Auth', 'no session on boot');
           setSavageMode(false);
@@ -186,61 +148,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setLoading(false);
       }
     })();
-
-    const { data: sub } = supabase.auth.onAuthStateChange(async (event, nextSession) => {
-      log.info('Auth', `state change: ${event}`, {
-        email: nextSession?.user?.email ?? null,
-      });
-      // Don't let GoTrue SIGNED_OUT / null wipe a Nest-only session.
-      if (!nextSession) {
-        if (event === 'SIGNED_OUT') {
-          setSession((prev) => {
-            if (prev?.user?.app_metadata?.provider === 'nest' && prev.access_token) {
-              return prev;
-            }
-            setProfile(null);
-            setSavageMode(false);
-            return null;
-          });
-          return;
-        }
-        setSession((prev) =>
-          prev?.user?.app_metadata?.provider === 'nest' && prev.access_token ? prev : null,
-        );
-        return;
-      }
-      setSession(nextSession);
-      if (nextSession?.user) {
-        if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') {
-          await persistSession(nextSession);
-        }
-        void refreshProfile();
-      }
-    });
-
-    return () => sub.subscription.unsubscribe();
-  }, [refreshProfile]);
+  }, [loadUserPreferences]);
 
   useEffect(() => {
     const onAppStateChange = (state: AppStateStatus) => {
       if (state !== 'active') return;
       void (async () => {
         log.info('Auth', 'app foreground — refreshing session');
-        const { data: before } = await supabase.auth.getSession();
         const fresh = await refreshSessionIfNeeded();
         setSession((prev) => {
-          const next = fresh ?? before.session ?? prev;
+          const next = fresh ?? prev;
           if (prev?.access_token === next?.access_token && prev?.expires_at === next?.expires_at) {
             return prev;
           }
-          return next;
+          return next ?? null;
         });
-        const resolved = fresh ?? before.session;
-        if (!resolved) {
+        if (!fresh) {
           setProfile(null);
           setSavageMode(false);
-        } else if (resolved.user) {
-          void loadUserPreferences(resolved.user.id);
+        } else if (fresh.user?.id) {
+          void loadUserPreferences(fresh.user.id);
         }
       })();
     };

@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../theme/yana';
+import { useAuthScale } from './useAuthScale';
 
 export type AuthSelectOption = {
   id: string;
@@ -47,6 +48,7 @@ export function AuthSelect({
 }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const { s, font } = useAuthScale();
 
   const selected = options.find((o) => o.id === value);
   const filtered = useMemo(() => {
@@ -67,22 +69,43 @@ export function AuthSelect({
 
   return (
     <>
-      <TouchableOpacity style={styles.trigger} onPress={openSheet} activeOpacity={0.85}>
-        <View style={styles.iconBubble}>
-          <Ionicons name={icon} size={16} color={Colors.brandGreenDark} />
+      <View
+        style={[
+          styles.triggerOuter,
+          { borderWidth: Math.max(1.5, s(2)), borderRadius: s(12) },
+        ]}>
+      <TouchableOpacity
+        style={[
+          styles.trigger,
+          {
+            minHeight: s(52),
+            borderWidth: Math.max(1, s(1)),
+            borderRadius: s(10),
+            paddingHorizontal: s(12),
+            paddingVertical: s(10),
+            gap: s(10),
+          },
+        ]}
+        onPress={openSheet}
+        activeOpacity={0.85}>
+        <View style={[styles.iconBubble, { width: s(32), height: s(32), borderRadius: s(10) }]}>
+          <Ionicons name={icon} size={s(16)} color={Colors.brandGreenDark} />
         </View>
         <View style={styles.triggerMeta}>
-          <Text style={[styles.triggerText, !selected && styles.placeholder]} numberOfLines={1}>
+          <Text
+            style={[styles.triggerText, { fontSize: font(14) }, !selected && styles.placeholder]}
+            numberOfLines={1}>
             {selected?.label || placeholder}
           </Text>
           {selected?.description ? (
-            <Text style={styles.triggerHint} numberOfLines={1}>
+            <Text style={[styles.triggerHint, { fontSize: font(11) }]} numberOfLines={1}>
               {selected.description}
             </Text>
           ) : null}
         </View>
-        <Ionicons name="chevron-down" size={18} color={Colors.mutedForeground} />
+        <Ionicons name="chevron-down" size={s(18)} color={Colors.mutedForeground} />
       </TouchableOpacity>
+      </View>
 
       <Modal visible={open} animationType="slide" transparent onRequestClose={() => setOpen(false)}>
         <Pressable style={styles.overlay} onPress={() => setOpen(false)}>
@@ -156,22 +179,18 @@ export function AuthSelect({
 }
 
 const styles = StyleSheet.create({
-  trigger: {
-    minHeight: 52,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
+  triggerOuter: {
+    width: '100%',
+    borderColor: '#ffffff',
     backgroundColor: Colors.white,
   },
+  trigger: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.white,
+    borderColor: Colors.border,
+  },
   iconBubble: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
     backgroundColor: 'rgba(10,61,46,0.08)',
     alignItems: 'center',
     justifyContent: 'center',

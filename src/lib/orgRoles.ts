@@ -1,6 +1,6 @@
 /**
  * School memberships via Nest REST (`POST /platform/db` + `/parents/me/children`).
- * Supports multi-school parents/teachers. No supabase.from PostgREST.
+ * Supports multi-school parents/teachers via Nest REST.
  */
 
 import { getNestApiBaseUrl } from './localHost';

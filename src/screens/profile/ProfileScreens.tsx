@@ -58,7 +58,7 @@ import {
 } from '../../lib/profileApi';
 import { pollMpesaTopUpStatus, tokensFromKes, topUpViaMpesa, TOPUP_PRESETS } from '../../lib/wallet';
 import type { ProfileStackParamList } from '../../navigation/ProfileStack';
-import { navigateDashboard } from '../../navigation/AppNavigator';
+import { navigateDashboard } from '../../navigation/rootNavigation';
 import { useAppTheme } from '../../context/AppThemeContext';
 import { useFontPreference } from '../../context/FontPreferenceContext';
 import { MOBILE_FONT_OPTIONS, findFontOption, resolveNativeFontFamily } from '../../lib/mobileFonts';

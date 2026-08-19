@@ -3,6 +3,10 @@ export const Images = {
   curve2: require('../../assets/images/curve2.png'),
   /** Full-bleed artistic wash for brand lettering */
   brandArt: require('../../assets/images/notes.png'),
+  /** Desk-matching knockout fill for login wordmark */
+  wordmarkFill: require('../../assets/images/wordmark-fill.jpg'),
+  /** Desk login hero photo, clipped to the curve SVG */
+  loginHero: require('../../assets/images/login-hero.jpg'),
   brandArtAlt: require('../../assets/images/samples/planting.jpg'),
   /** Square trimmed bird master */
   logoTrimmed: require('../../assets/images/logo/logo-trimmed.png'),

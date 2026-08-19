@@ -131,6 +131,22 @@ export async function fetchParentEvents(opts?: {
   );
 }
 
+export async function fetchCalendarReminderSettings() {
+  return deskFetch<{
+    school_reminders_enabled?: boolean;
+    reminder_lead_hours?: number;
+    my_reminders_enabled?: boolean;
+    can_manage_school?: boolean;
+  }>('/events/reminder-settings');
+}
+
+export async function updateMyCalendarReminders(enabled: boolean) {
+  return deskFetch<{ my_reminders_enabled?: boolean }>('/events/reminder-settings/me', {
+    method: 'PUT',
+    body: { enabled },
+  });
+}
+
 export async function rsvpParentEvent(
   eventId: string,
   body: { status: 'attending' | 'declined' | 'maybe'; student_id?: string; note?: string },

@@ -1,5 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 
 const SELECTED_CONTEXT_PREFIX = 'tukua_selected_context_';
 

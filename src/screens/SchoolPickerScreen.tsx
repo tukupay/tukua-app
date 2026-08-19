@@ -289,7 +289,7 @@ export function SchoolPickerScreen() {
     setDeskKidsFetched(false);
     void (async () => {
       try {
-        // Session restore often has Supabase JWT only — Nest reconnect first.
+        // Session restore may have platform JWT only — Nest desk reconnect first.
         await ensureNestDeskSession();
         if (cancelled) return;
         const data = await deskFetch<{ children?: DeskChild[] }>('/parents/me/children');

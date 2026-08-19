@@ -20,7 +20,7 @@ import { useDialog } from '../../context/DialogContext';
 import { GreenPattern } from '../dashboard/DashboardBackground';
 import { ProfileAvatar } from './ProfileAvatar';
 import { Colors } from '../../theme/yana';
-import { navigateProfile } from '../../navigation/AppNavigator';
+import { navigateProfile } from '../../navigation/rootNavigation';
 
 type ChatHit = {
   id: string;

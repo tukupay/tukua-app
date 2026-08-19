@@ -17,7 +17,7 @@ try {
       })) as () => `${string}-${string}-${string}-${string}-${string}`;
   }
 } catch {
-  /* ignore — Supabase may still work without UUID polyfill */
+  /* ignore — some hosts expose a read-only crypto object */
 }
 
 import {
@@ -44,6 +44,7 @@ import { Nunito_400Regular, Nunito_700Bold } from '@expo-google-fonts/nunito';
 import { Raleway_400Regular, Raleway_700Bold } from '@expo-google-fonts/raleway';
 import { OpenSans_400Regular, OpenSans_700Bold } from '@expo-google-fonts/open-sans';
 import { PlayfairDisplay_400Regular, PlayfairDisplay_700Bold } from '@expo-google-fonts/playfair-display';
+import { AlexBrush_400Regular } from '@expo-google-fonts/alex-brush';
 import { Merriweather_400Regular, Merriweather_700Bold } from '@expo-google-fonts/merriweather';
 import { WorkSans_400Regular, WorkSans_700Bold } from '@expo-google-fonts/work-sans';
 import { DMSans_400Regular, DMSans_700Bold } from '@expo-google-fonts/dm-sans';
@@ -89,6 +90,7 @@ export default function App() {
     OpenSans_700Bold,
     PlayfairDisplay_400Regular,
     PlayfairDisplay_700Bold,
+    AlexBrush_400Regular,
     Merriweather_400Regular,
     Merriweather_700Bold,
     WorkSans_400Regular,

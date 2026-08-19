@@ -13,6 +13,7 @@ type Props = {
   login?: boolean;
   /** Light outline for wordmark on green patterned surfaces. */
   onGreen?: boolean;
+  scale?: number;
 };
 
 const GRADIENT = ['#0A3D2E', '#E85D04'] as const;
@@ -28,6 +29,36 @@ const STROKE_OFFSETS: Array<[number, number]> = [
   [1.2, 1.2],
 ];
 
+/** ~3px white letter stroke to match Desk login. */
+const STROKE_OFFSETS_LOGIN: Array<[number, number]> = [
+  [-2.8, -2.8],
+  [0, -3.2],
+  [2.8, -2.8],
+  [-3.2, 0],
+  [3.2, 0],
+  [-2.8, 2.8],
+  [0, 3.2],
+  [2.8, 2.8],
+  [-1.6, -3],
+  [1.6, -3],
+  [-1.6, 3],
+  [1.6, 3],
+  [-3, -1.6],
+  [3, -1.6],
+  [-3, 1.6],
+  [3, 1.6],
+];
+
+export function loginWordmarkMetrics(text: string, compact?: boolean, scale = 1) {
+  const fontSize = (compact ? 36 : 44) * scale;
+  const letterSpacing = (compact ? 0.4 : 0.6) * scale;
+  const maskW = Math.ceil(
+    text.length * fontSize * 0.58 + Math.max(0, text.length - 1) * letterSpacing + 18 * scale,
+  );
+  const maskH = (compact ? 46 : 56) * scale;
+  return { fontSize, letterSpacing, maskW, maskH };
+}
+
 /**
  * Brand wordmark. Login: transparent letter cutout over HD art + letter outline.
  * Elsewhere: green→orange gradient mask.
@@ -38,6 +69,7 @@ export function ColorChangingText({
   showStar = false,
   login = false,
   onGreen = false,
+  scale = 1,
 }: Props) {
   const slideProgress = useRef(new Animated.Value(0)).current;
   const panProgress = useRef(new Animated.Value(0)).current;
@@ -52,8 +84,8 @@ export function ColorChangingText({
     );
     const panLoop = Animated.loop(
       Animated.sequence([
-        Animated.timing(panProgress, { toValue: 1, duration: 18000, useNativeDriver: true }),
-        Animated.timing(panProgress, { toValue: 0, duration: 18000, useNativeDriver: true }),
+        Animated.timing(panProgress, { toValue: 1, duration: 22000, useNativeDriver: true }),
+        Animated.timing(panProgress, { toValue: 0, duration: 22000, useNativeDriver: true }),
       ]),
     );
     const glowLoop = Animated.loop(
@@ -90,19 +122,27 @@ export function ColorChangingText({
     login && compact && styles.textLoginCompact,
   ];
 
-  // Compact centered wordmark — room for “Tukua Ai”
-  const fontSize = login ? (compact ? 30 : 36) : compact ? 46 : 54;
-  const letterSpacing = login ? (compact ? 1.4 : 1.8) : 1.2;
-  const maskW = Math.ceil(text.length * fontSize * 0.58 + Math.max(0, text.length - 1) * letterSpacing + 14);
-  const maskH = login ? (compact ? 40 : 46) : compact ? 44 : 50;
+  const loginMetrics = loginWordmarkMetrics(text, compact, scale);
+  const fontSize = login ? loginMetrics.fontSize : compact ? 46 : 54;
+  const letterSpacing = login ? loginMetrics.letterSpacing : 1.2;
+  const maskW = login
+    ? loginMetrics.maskW
+    : Math.ceil(text.length * fontSize * 0.58 + Math.max(0, text.length - 1) * letterSpacing + 18);
+  const maskH = login ? loginMetrics.maskH : compact ? 44 : 50;
   const artW = maskW * 2.2;
   const artH = maskH * 2.4;
+  const strokeOffsets = (login ? STROKE_OFFSETS_LOGIN : STROKE_OFFSETS).map(
+    ([dx, dy]) => [dx * scale, dy * scale] as [number, number],
+  );
+  const loginType = login
+    ? { fontSize, lineHeight: fontSize + 6 * scale, letterSpacing }
+    : null;
 
   if (login) {
     return (
-      <Animated.View style={[styles.outer, styles.outerLogin, { transform: [{ translateX }] }]}>
+      <View style={[styles.outer, styles.outerLogin]}>
         <View style={[styles.loginWrap, { width: maskW, height: maskH }]}>
-          {STROKE_OFFSETS.map(([dx, dy], i) => (
+          {strokeOffsets.map(([dx, dy], i) => (
             <View
               key={`stroke-${i}`}
               pointerEvents="none"
@@ -113,6 +153,7 @@ export function ColorChangingText({
               <Text
                 style={[
                   textStyle,
+                  loginType,
                   onGreen ? styles.strokeLetterOnGreen : styles.strokeLetter,
                 ]}>
                 {text}
@@ -124,12 +165,12 @@ export function ColorChangingText({
             style={{ width: maskW, height: maskH }}
             maskElement={
               <View style={[styles.maskRoot, { width: maskW, height: maskH }]}>
-                <Text style={[textStyle, styles.maskInk]}>{text}</Text>
+                <Text style={[textStyle, loginType, styles.maskInk]}>{text}</Text>
               </View>
             }>
             <View style={[styles.artClip, { width: maskW, height: maskH }]}>
               <Animated.Image
-                source={Images.brandArt}
+                source={Images.wordmarkFill}
                 style={[
                   styles.artImage,
                   {
@@ -144,7 +185,7 @@ export function ColorChangingText({
             </View>
           </MaskedView>
         </View>
-      </Animated.View>
+      </View>
     );
   }
 
@@ -210,7 +251,7 @@ const styles = StyleSheet.create({
     color: Colors.brandGreenDark,
   },
   strokeLetterOnGreen: {
-    color: 'rgba(255,255,255,0.92)',
+    color: '#ffffff',
   },
   maskRoot: {
     backgroundColor: 'transparent',
@@ -242,15 +283,17 @@ const styles = StyleSheet.create({
     lineHeight: 50,
   },
   textLogin: {
-    fontSize: 36,
-    lineHeight: 44,
-    letterSpacing: 1.8,
+    fontSize: 44,
+    lineHeight: 50,
+    letterSpacing: 0.6,
+    fontFamily: 'PlayfairDisplay_700Bold',
+    fontWeight: '700',
     textAlign: 'center',
   },
   textLoginCompact: {
-    fontSize: 30,
-    lineHeight: 36,
-    letterSpacing: 1.4,
+    fontSize: 36,
+    lineHeight: 42,
+    letterSpacing: 0.4,
     textAlign: 'center',
   },
   masked: {

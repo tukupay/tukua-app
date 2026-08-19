@@ -19,7 +19,9 @@ export type RegistrationForm = {
   phone: string;
   idNumber: string;
   county: string;
+  /** Profile persona — student / parent / teacher / school_admin (people, not orgs). */
   accountType: string;
+  role: string;
   isOrg: boolean;
   orgSubtype: string;
   orgName: string;
@@ -176,7 +178,9 @@ export async function finalizePeaAccount(
     return { ok: false, error: 'Missing payment reference. Complete M-Pesa first.' };
   }
 
-  const role = form.isOrg ? form.orgSubtype || 'organization' : 'individual';
+  const role = form.isOrg
+    ? form.orgSubtype || 'organization'
+    : form.role || form.accountType || 'individual';
   const pea = await peaCompleteSignup({
     email: form.email.trim(),
     password: form.password,
@@ -185,7 +189,7 @@ export async function finalizePeaAccount(
     phone: phoneE164,
     phone_number: phoneE164,
     role,
-    account_type: form.accountType,
+    account_type: form.isOrg ? form.accountType : 'individual',
     county: form.county || null,
     id_number: form.idNumber || null,
     org_subtype: form.isOrg ? form.orgSubtype : null,
@@ -236,7 +240,8 @@ export async function registerDeferredAccount(form: RegistrationForm): Promise<{
     phone: phoneE164 || undefined,
     password: form.password,
     full_name: form.fullName.trim(),
-    account_type: form.accountType,
+    account_type: form.isOrg ? form.accountType : 'individual',
+    role: form.role || form.accountType || 'individual',
   });
   if (!reg.ok) {
     return { ok: false, error: reg.message || reg.error || 'Could not create account' };

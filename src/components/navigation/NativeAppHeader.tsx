@@ -24,7 +24,7 @@ import { TokenBalancePill } from './TokenBalancePill';
 import { NativeChatDrawer } from './NativeChatDrawer';
 import { Colors } from '../../theme/yana';
 import { FLOATING_HEADER_BODY as NATIVE_HEADER_BODY_HEIGHT } from '../../constants/layout';
-import { navigateDashboard, navigateProfile } from '../../navigation/AppNavigator';
+import { navigateDashboard, navigateProfile } from '../../navigation/rootNavigation';
 import { useAppTheme } from '../../context/AppThemeContext';
 
 export { NATIVE_HEADER_BODY_HEIGHT };

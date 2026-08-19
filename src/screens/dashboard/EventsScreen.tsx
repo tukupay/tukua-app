@@ -7,6 +7,7 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   View,
 } from 'react-native';
@@ -26,6 +27,8 @@ import {
   scanParentRegister,
   fetchRegisterScanTodayStatus,
   seedParentDemoData,
+  fetchCalendarReminderSettings,
+  updateMyCalendarReminders,
 } from '../../lib/parentPortalApi';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useDialog } from '../../context/DialogContext';
@@ -132,6 +135,9 @@ export function EventsScreen({ navigation }: Props) {
   const [payingEvent, setPayingEvent] = useState<SchoolEvent | null>(null);
   const [scanned, setScanned] = useState(false);
   const [scanBusy, setScanBusy] = useState(false);
+  const [myReminders, setMyReminders] = useState(false);
+  const [schoolReminders, setSchoolReminders] = useState(false);
+  const [remindersSaving, setRemindersSaving] = useState(false);
 
   const fetchRegisterStatus = useCallback(async () => {
     const data = await fetchRegisterScanTodayStatus();
@@ -158,6 +164,13 @@ export function EventsScreen({ navigation }: Props) {
           studentId: studentContextId,
         });
         setItems(unwrapEvents(data));
+        try {
+          const prefs = await fetchCalendarReminderSettings();
+          setSchoolReminders(Boolean(prefs?.school_reminders_enabled));
+          setMyReminders(Boolean(prefs?.my_reminders_enabled));
+        } catch {
+          /* reminders stay off */
+        }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         log.warn('Events', msg);
@@ -295,6 +308,33 @@ export function EventsScreen({ navigation }: Props) {
         <ModuleBackBar onBack={() => navigation.goBack()} />
         <ModuleKicker>Events</ModuleKicker>
         <ModuleScreenHeader title="School activities" description="RSVP, pay & scan check-in." />
+
+        <ModuleGlassCard>
+          <View style={styles.remindRow}>
+            <View style={styles.remindCopy}>
+              <Text style={styles.cardTitle}>Remind me before events</Text>
+              <Text style={styles.meta}>
+                {schoolReminders
+                  ? 'Off until you switch it on.'
+                  : 'This school has calendar reminders deactivated.'}
+              </Text>
+            </View>
+            <Switch
+              value={myReminders}
+              disabled={remindersSaving || !schoolReminders}
+              onValueChange={(v) => {
+                const previous = myReminders;
+                setMyReminders(v);
+                setRemindersSaving(true);
+                void updateMyCalendarReminders(v)
+                  .catch(() => setMyReminders(previous))
+                  .finally(() => setRemindersSaving(false));
+              }}
+              trackColor={{ false: 'rgba(10,61,46,0.18)', true: Colors.brandGreenMid }}
+              thumbColor={Colors.white}
+            />
+          </View>
+        </ModuleGlassCard>
 
         {payingEvent ? (
           <ModuleGlassCard>
@@ -670,6 +710,8 @@ const styles = StyleSheet.create({
   },
   cardBody: { flex: 1 },
   cardTitle: { fontSize: 15, fontWeight: '700', color: Colors.brandGreenDark },
+  remindRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  remindCopy: { flex: 1 },
   meta: { marginTop: 3, fontSize: 12, color: Colors.mutedForeground },
   loc: { marginTop: 10, fontSize: 13, color: Colors.mutedForeground },
   desc: {

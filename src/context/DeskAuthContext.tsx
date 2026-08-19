@@ -14,9 +14,8 @@ import React, {
   ReactNode,
 } from 'react';
 import { AppState } from 'react-native';
-import { Session } from '@supabase/supabase-js';
+import type { Session } from '../lib/auth';
 import {
-  adoptSupabaseTokenAsDeskSession,
   clearDeskSession,
   deskFetchMe,
   deskLogin,
@@ -25,7 +24,6 @@ import {
   getCachedDeskUser,
   getDeskApiDebugInfo,
   getDeskToken,
-  hasNestDeskToken,
   ensureNestDeskSession,
   onDeskSessionCleared,
   saveDeskCredentials,
@@ -50,7 +48,6 @@ import {
   setSelectedContext,
   StoredContext,
 } from '../lib/selectedContext';
-import { supabase } from '../lib/supabase';
 import { log } from '../lib/logger';
 
 type DeskAuthContextType = {
@@ -360,7 +357,7 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
   const [schoolsReady, setSchoolsReady] = useState(false);
   const [authUserId, setAuthUserId] = useState<string | null>(null);
   const authUserIdRef = useRef<string | null>(null);
-  /** Keep Nest password JWT — do not overwrite with Supabase soft-adopt (needed for /parents/me/*). */
+  /** Keep Nest password JWT (needed for /parents/me/*). */
   const preferNestDeskTokenRef = useRef(false);
 
   useEffect(() => {
@@ -869,7 +866,7 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
     [authUserId, applySchoolsForUser],
   );
 
-  const syncSupabaseAsDesk = useCallback(
+  const syncAuthSessionAsDesk = useCallback(
     async (session: Session | null, opts?: { quiet?: boolean; forceSchoolPick?: boolean }) => {
       if (!session?.access_token || !session.user) {
         setAuthUserId(null);
@@ -903,51 +900,41 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
 
       const user = deskUserFromSession(session, roles, schoolId);
 
-      // Nest password login already stored a desk JWT — keep it (Supabase JWT fails many /parents/me routes).
-      if (preferNestDeskTokenRef.current || (await hasNestDeskToken())) {
-        preferNestDeskTokenRef.current = true;
-        let existing = await getDeskToken();
-        if (!existing) {
-          await awaitDeskLoginInFlight();
-          existing = await getDeskToken();
-        }
-        if (!existing) {
-          await ensureNestDeskSession();
-          existing = await getDeskToken();
-        }
-        if (existing) {
-          setDeskToken(existing);
-          setDeskUser((prev) => ({
-            ...(prev ?? user),
-            ...user,
-            school_id: schoolId ?? prev?.school_id ?? user.school_id,
-            // Prefer restored hat; never wipe a saved role with a full multi-role Nest payload.
-            user_roles: activeRole
-              ? [activeRole]
-              : prev?.user_roles?.length
-                ? prev.user_roles
-                : user.user_roles,
-          }));
-          return;
-        }
+      preferNestDeskTokenRef.current = true;
+      let existing = await getDeskToken();
+      if (!existing) {
+        await awaitDeskLoginInFlight();
+        existing = await getDeskToken();
+      }
+      if (!existing) {
+        await ensureNestDeskSession();
+        existing = await getDeskToken();
+      }
+      if (existing) {
+        setDeskToken(existing);
+        setDeskUser((prev) => ({
+          ...(prev ?? user),
+          ...user,
+          school_id: schoolId ?? prev?.school_id ?? user.school_id,
+          user_roles: activeRole
+            ? [activeRole]
+            : prev?.user_roles?.length
+              ? prev.user_roles
+              : user.user_roles,
+        }));
+        return;
       }
 
-      await adoptSupabaseTokenAsDeskSession(session.access_token, user);
-      setDeskToken(await getDeskToken());
-      setDeskUser(user);
-
-      // Never await auth/me on the picker / session path — Desk can hang on Supabase JWTs.
-      if (!quiet) {
-        void deskFetchMe().then((me) => {
-          if (!me || preferNestDeskTokenRef.current) return;
-          setDeskUser({
-            ...user,
-            ...me,
-            user_roles: me.user_roles ?? user.user_roles,
-            school_id: schoolId ?? me.school_id ?? user.school_id,
-          });
-        });
-      }
+      setDeskUser((prev) => ({
+        ...(prev ?? user),
+        ...user,
+        school_id: schoolId ?? prev?.school_id ?? user.school_id,
+        user_roles: activeRole
+          ? [activeRole]
+          : prev?.user_roles?.length
+            ? prev.user_roles
+            : user.user_roles,
+      }));
     },
     [applySchoolsForUser],
   );
@@ -955,13 +942,7 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
   const hydrate = useCallback(async () => {
     let schoolsMarked = false;
     try {
-      const [{ data: sessionData }, cached] = await Promise.all([
-        supabase.auth.getSession(),
-        getCachedDeskUser(),
-      ]);
-      const session = sessionData.session;
-
-      // Nest JWT required for /parents/me/* — reconnect before soft-adopting Supabase.
+      const cached = await getCachedDeskUser();
       const nestOk = await ensureNestDeskSession();
       let nestUser = nestOk ? (await getCachedDeskUser()) ?? cached : cached;
       if (nestOk) {
@@ -969,35 +950,29 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
         const token = await getDeskToken();
         setDeskToken(token);
         if (nestUser) {
-          // Do not trust nestUser.user_roles yet — syncSupabaseAsDesk restores the saved hat.
           setDeskUser(nestUser);
         }
         log.info('DeskAuth', 'nest session ready on hydrate');
       }
 
-      if (session?.access_token) {
-        await syncSupabaseAsDesk(session, { quiet: true });
+      const { restoreSession } = await import('../lib/auth');
+      const nestAuth = await restoreSession();
+
+      if (nestAuth?.access_token && nestAuth.user?.id) {
+        await syncAuthSessionAsDesk(nestAuth, { quiet: true });
         schoolsMarked = true;
       } else if (nestOk) {
-        // Nest-only login (PEA / platform) — no GoTrue session. syncSupabaseAsDesk never runs,
-        // so without this branch schoolsReady stays false and AppNavigator spins forever.
         let uid = nestUser?.id || nestUser?.user_id || null;
-        if (!uid) {
-          try {
-            const { restoreSession } = await import('../lib/auth');
-            const nestAuth = await restoreSession();
-            uid = nestAuth?.user?.id || null;
-            if (!nestUser && nestAuth?.user) {
-              nestUser = {
-                id: nestAuth.user.id,
-                email: nestAuth.user.email ?? undefined,
-                school_id: null,
-                user_roles: [],
-              };
-              setDeskUser(nestUser);
-            }
-          } catch {
-            /* ignore */
+        if (!uid && nestAuth?.user?.id) {
+          uid = nestAuth.user.id;
+          if (!nestUser) {
+            nestUser = {
+              id: nestAuth.user.id,
+              email: nestAuth.user.email ?? undefined,
+              school_id: null,
+              user_roles: [],
+            };
+            setDeskUser(nestUser);
           }
         }
         if (uid) {
@@ -1042,7 +1017,7 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
       if (!schoolsMarked) setSchoolsReady(true);
       setDeskReady(true);
     }
-  }, [applySchoolsForUser, syncSupabaseAsDesk]);
+  }, [applySchoolsForUser, syncAuthSessionAsDesk]);
 
   useEffect(() => {
     void hydrate();
@@ -1072,59 +1047,6 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
   }, [applySchoolsForUser]);
 
   useEffect(() => {
-    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
-      if (!session?.access_token) {
-        if (event !== 'SIGNED_OUT') {
-          return;
-        }
-        setAuthUserId(null);
-        setSchools([]);
-        setSelectedSchoolIdState(null);
-        setSelectedStudentIdState(null);
-        setSelectedRoleState(null);
-        setStudentSnapshot(null);
-        setSchoolRoleOptions([]);
-        setNeedsSchoolPick(false);
-        setSchoolsReady(true);
-        return;
-      }
-      const run = async () => {
-        // Soft reconnect Nest before soft-adopt so Select student gets real names.
-        if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') {
-          const nestOk = await ensureNestDeskSession();
-          if (nestOk) {
-            preferNestDeskTokenRef.current = true;
-            const token = await getDeskToken();
-            const nestUser = await getCachedDeskUser();
-            setDeskToken(token);
-            if (nestUser) setDeskUser(nestUser);
-          }
-          // Fresh password/social login must show Select school again for multi-school / multi-role.
-          // Do not restore SecureStore school here — that was skipping the picker after login.
-          const forceSchoolPick = event === 'SIGNED_IN';
-          await syncSupabaseAsDesk(session, {
-            quiet: event !== 'SIGNED_IN',
-            forceSchoolPick,
-          });
-          // If SIGNED_IN but forcePick was a no-op (single school), resolveContext already continues.
-          // When multi-school, forcePick clears stored; if Nest token race applied schools first
-          // without force, re-apply once with force after login.
-          if (forceSchoolPick && session.user?.id) {
-            const list = await fetchUserSchools(session.user.id);
-            if (shouldForcePickAfterLogin(list)) {
-              await applySchoolsForUser(session.user.id, { quiet: false, forcePick: true });
-            }
-          }
-          return;
-        }
-        await syncSupabaseAsDesk(session);
-      };
-      void run();
-    });
-    return () => sub.subscription.unsubscribe();
-  }, [syncSupabaseAsDesk, applySchoolsForUser]);
-
-  useEffect(() => {
     return onDeskSessionCleared(() => {
       setDeskToken(null);
       setDeskUser(null);
@@ -1143,7 +1065,6 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
           email: result.user.email,
           schoolId: result.user.school_id,
         });
-        // Nest-only / PEA may not emit GoTrue SIGNED_IN — still force Select school when multi.
         const uid = String(result.user.id || result.user.user_id || '').trim();
         if (uid) {
           setAuthUserId(uid);
@@ -1157,25 +1078,16 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
         return result;
       } catch (e) {
         preferNestDeskTokenRef.current = false;
-        // Keep password so ensureNestDeskSession can soft-reconnect when Desk/proxy is back.
         try {
           await saveDeskCredentials(email, password);
         } catch {
           // ignore
         }
-        log.warn('DeskAuth', 'Nest password login failed; using supabase token', String(e));
-        const { data } = await supabase.auth.getSession();
-        if (data.session?.access_token) {
-          await syncSupabaseAsDesk(data.session, { forceSchoolPick: true });
-          return {
-            token: data.session.access_token,
-            user: deskUserFromSession(data.session, orgRoles, orgSchoolId),
-          };
-        }
+        log.warn('DeskAuth', 'Nest password login failed', String(e));
         throw e;
       }
     },
-    [applySchoolsForUser, orgRoles, orgSchoolId, syncSupabaseAsDesk],
+    [applySchoolsForUser],
   );
 
   const refreshDeskUser = useCallback(async () => {

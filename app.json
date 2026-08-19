@@ -7,7 +7,6 @@
     "icon": "./assets/images/icons/app-icon-1024.png",
     "scheme": "tukua",
     "userInterfaceStyle": "light",
-    "newArchEnabled": false,
     "splash": {
       "backgroundColor": "#FFFFFF",
       "image": "./assets/images/logo/splash-bird.png",
@@ -99,7 +98,7 @@
     "androidStatusBar": {
       "hidden": true,
       "translucent": true,
-      "backgroundColor": "#00000000"
+      "backgroundColor": "#FFFFFF"
     },
     "web": {
       "favicon": "./assets/images/icons/favicon-48.png"

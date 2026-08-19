@@ -1,12 +1,13 @@
 import React from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
-import { createNavigationContainerRef, NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { LoginScreen } from '../screens/LoginScreen';
 import { RegisterScreen } from '../screens/RegisterScreen';
 import { ResetPasswordScreen } from '../screens/ResetPasswordScreen';
 import { MainTabs } from './MainTabs';
 import { RootStackParamList } from './types';
+import { rootNavigationRef } from './rootNavigation';
 import { useAuth } from '../context/AuthContext';
 import { useDeskAuth } from '../context/DeskAuthContext';
 import { useAppTheme } from '../context/AppThemeContext';
@@ -14,8 +15,6 @@ import { MobileErrorBoundary } from '../components/MobileErrorBoundary';
 import { DashboardBackground } from '../components/dashboard/DashboardBackground';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
-
-export const rootNavigationRef = createNavigationContainerRef<RootStackParamList>();
 
 const linking = {
   prefixes: ['tukua://', 'https://tukua.ai', 'https://www.tukua.ai'],
@@ -38,27 +37,6 @@ const linking = {
     },
   },
 };
-
-/** Nested navigate into Dashboard stack from headers / push handlers. */
-export function navigateDashboard(
-  screen: string,
-  params?: Record<string, unknown>,
-) {
-  if (!rootNavigationRef.isReady()) return;
-  rootNavigationRef.navigate('Main', {
-    screen: 'Dashboard',
-    params: { screen, params },
-  } as never);
-}
-
-/** Nested navigate into the native Profile stack from the floating app header. */
-export function navigateProfile(screen: string) {
-  if (!rootNavigationRef.isReady()) return;
-  rootNavigationRef.navigate('Main', {
-    screen: 'Profile',
-    params: { screen },
-  } as never);
-}
 
 function RootNavigator() {
   const { isAuthenticated, loading } = useAuth();

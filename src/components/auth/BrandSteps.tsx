@@ -9,31 +9,55 @@ const STEPS = [
   { icon: 'briefcase-outline' as const, label: 'Get hired', hint: 'Jobs & funding' },
 ];
 
-export function BrandSteps({ compact, onGreen }: { compact?: boolean; onGreen?: boolean }) {
+export function BrandSteps({
+  compact,
+  onGreen,
+  scale = 1,
+}: {
+  compact?: boolean;
+  onGreen?: boolean;
+  scale?: number;
+}) {
   const iconColor = onGreen ? 'rgba(255,255,255,0.95)' : Colors.brandGreenDark;
+  const sz = (n: number) => Math.round(n * scale);
   return (
-    <View style={[styles.row, compact && styles.rowCompact]}>
+    <View style={[styles.row, compact && styles.rowCompact, { marginTop: compact ? sz(4) : sz(6) }]}>
       {STEPS.map((step, i) => (
         <React.Fragment key={step.label}>
-          <View style={styles.step}>
-            <Ionicons name={step.icon} size={compact ? 13 : 14} color={iconColor} />
+          <View style={[styles.step, { width: sz(72) }]}>
+            <Ionicons name={step.icon} size={compact ? sz(13) : sz(14)} color={iconColor} />
             <Text
               style={[
                 styles.label,
                 compact && styles.labelCompact,
                 onGreen && styles.labelOnGreen,
+                { fontSize: compact ? 9 * scale : 10 * scale, marginTop: compact ? sz(2) : sz(3) },
               ]}>
               {step.label}
             </Text>
             {!compact && (
-              <Text style={[styles.hint, onGreen && styles.hintOnGreen]}>{step.hint}</Text>
+              <Text style={[styles.hint, onGreen && styles.hintOnGreen, { fontSize: 8 * scale }]}>
+                {step.hint}
+              </Text>
             )}
           </View>
           {i < STEPS.length - 1 && (
-            <View style={styles.connector}>
-              <View style={[styles.dot, onGreen && styles.dotOnGreen]} />
+            <View style={[styles.connector, { marginTop: sz(6), width: sz(20) }]}>
+              <View
+                style={[
+                  styles.dot,
+                  onGreen && styles.dotOnGreen,
+                  { width: sz(3), height: sz(3), borderRadius: sz(1.5) },
+                ]}
+              />
               <View style={[styles.line, onGreen && styles.lineOnGreen]} />
-              <View style={[styles.dot, onGreen && styles.dotOnGreen]} />
+              <View
+                style={[
+                  styles.dot,
+                  onGreen && styles.dotOnGreen,
+                  { width: sz(3), height: sz(3), borderRadius: sz(1.5) },
+                ]}
+              />
             </View>
           )}
         </React.Fragment>

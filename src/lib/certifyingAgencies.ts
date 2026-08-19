@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { getNestApiBaseUrl } from './localHost';
 import { resolveAgencyLogoUrl } from './resolveAgencyLogo';
 
 export type CertifyingAgency = {
@@ -28,15 +28,20 @@ const FALLBACK: CertifyingAgency[] = [
 
 export async function fetchCertifyingAgencies(): Promise<CertifyingAgency[]> {
   try {
-    const { data, error } = await supabase
-      .from('certifying_agencies')
-      .select('id, name, slug, short_name, logo_url')
-      .eq('is_active', true)
-      .order('sort_order', { ascending: true })
-      .order('name', { ascending: true });
-
-    if (error || !data?.length) return FALLBACK;
-    return (data as CertifyingAgency[]).map(withResolvedLogo);
+    const base = getNestApiBaseUrl().replace(/\/$/, '');
+    const res = await fetch(`${base}/platform/certifying-agencies`, {
+      headers: { Accept: 'application/json' },
+    });
+    if (!res.ok) return FALLBACK;
+    const json = await res.json().catch(() => null);
+    const data = json?.data || json;
+    const items = Array.isArray(data?.items)
+      ? data.items
+      : Array.isArray(data)
+        ? data
+        : [];
+    if (!items.length) return FALLBACK;
+    return (items as CertifyingAgency[]).map(withResolvedLogo);
   } catch {
     return FALLBACK;
   }

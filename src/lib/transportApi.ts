@@ -3,8 +3,8 @@
  */
 import { deskFetch } from './deskApi';
 
-/** Boarding / gate face match default — lockstep with Nest FACE_MATCH_THRESHOLD (≥70%). */
-export const FACE_MATCH_THRESHOLD = 0.7;
+/** Boarding / gate Rekognition default — lockstep with Nest AWS threshold (≥89%). */
+export const FACE_MATCH_THRESHOLD = 0.89;
 
 export type FaceMatchCandidate = {
   student_id?: string;
@@ -228,10 +228,15 @@ export async function getTransportFaceStatus(opts: {
     image_url?: string | null;
     updated_at?: string | null;
     model_version?: string | null;
+    name?: string | null;
+    student_number?: string | null;
+    aws_face_id?: string | null;
+    aws_collection_id?: string | null;
+    face_metadata?: Record<string, unknown> | null;
   }>(`/transport/face/status?${params.toString()}`);
 }
 
-/** Fast enroll — Nest saves image immediately; embedding runs in background. */
+/** Enroll through AWS Rekognition; response includes person and face details. */
 export async function enrollTransportFaceImage(body: {
   student_id?: string;
   person_id?: string;
@@ -247,6 +252,11 @@ export async function enrollTransportFaceImage(body: {
     image_url?: string;
     embedding_status?: string;
     face_detected?: boolean;
+    face_confidence?: number;
+    faces_detected?: number;
+    aws_face_id?: string;
+    aws_collection_id?: string;
+    face_metadata?: Record<string, unknown>;
   }>('/transport/face/enroll-image', { method: 'POST', body });
 }
 
