@@ -164,11 +164,28 @@ function prefersSchoolPicker(schools: UserSchool[]): boolean {
   );
 }
 
-/** After password login: force the picker when multi-school or multi-role (ignore saved school). */
+/** Distinct mobile hats across all schools (individual+student already collapsed). */
+function distinctHatsAcrossSchools(schools: UserSchool[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const s of schools) {
+    for (const hat of uniqueSchoolRoles(s.roles)) {
+      if (seen.has(hat)) continue;
+      seen.add(hat);
+      out.push(hat);
+    }
+  }
+  return out;
+}
+
+/**
+ * Force the picker only when the user has more than one role hat.
+ * Single role (incl. individual+student as one) → restore stored school / auto-pick.
+ * Multi-school with one role still uses stored school; user can switch from the header.
+ */
 function shouldForcePickAfterLogin(schools: UserSchool[]): boolean {
-  if (schools.length > 1) return true;
-  if (schools.length === 1 && uniqueSchoolRoles(schools[0].roles).length > 1) return true;
-  return prefersSchoolPicker(schools);
+  if (!schools.length) return false;
+  return distinctHatsAcrossSchools(schools).length > 1;
 }
 
 function deskUserFromSession(
@@ -223,17 +240,11 @@ function resolveContext(
   };
 
   if (!schools.length) {
-    if (stored?.skipped) {
-      return {
-        ...empty,
-        activeRole: 'student',
-        needsPick: false,
-        pickerMode: 'school',
-      };
-    }
+    // No school link → individual/student dashboard (same hat). Do not block on Select school.
     return {
       ...empty,
-      needsPick: true,
+      activeRole: 'student',
+      needsPick: false,
       pickerMode: 'school',
     };
   }
@@ -249,24 +260,25 @@ function resolveContext(
 
   // ── Step 1: resolve school ──
   let schoolId: string | null = null;
+  const multiRole = distinctHatsAcrossSchools(schools).length > 1;
 
-  if (prefersSchoolPicker(schools)) {
-    if (opts?.forcePick) {
-      return { ...empty, needsPick: true, pickerMode: 'school' };
-    }
-    if (stored?.schoolId && schools.some((s) => s.id === stored.schoolId)) {
-      schoolId = stored.schoolId;
-    } else {
-      return { ...empty, needsPick: true, pickerMode: 'school' };
-    }
-  } else if (schools.length === 1) {
+  if (schools.length === 1) {
     schoolId = schools[0].id;
-  } else if (opts?.forcePick) {
+  } else if (opts?.forcePick && multiRole) {
     return { ...empty, needsPick: true, pickerMode: 'school' };
   } else if (stored?.schoolId && schools.some((s) => s.id === stored.schoolId)) {
     schoolId = stored.schoolId;
-  } else {
+  } else if (!multiRole) {
+    // One role (individual+student collapsed) across schools — auto-pick first; switcher later.
+    schoolId = schools[0].id;
+  } else if (prefersSchoolPicker(schools) || schools.length > 1) {
     return { ...empty, needsPick: true, pickerMode: 'school' };
+  } else {
+    schoolId = schools[0]?.id ?? null;
+  }
+
+  if (!schoolId) {
+    return { ...empty, activeRole: 'student', needsPick: false, pickerMode: 'school' };
   }
 
   const school = schools.find((s) => s.id === schoolId)!;
@@ -548,6 +560,16 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
         if (!same) {
           await setSelectedContext(userId, next);
         }
+      } else if (!needsPick && !schoolId && activeRole === 'student') {
+        const next: StoredContext = {
+          schoolId: null,
+          studentId: null,
+          activeRole: 'student',
+          skipped: true,
+        };
+        if (!stored?.skipped || stored?.activeRole !== 'student') {
+          await setSelectedContext(userId, next);
+        }
       }
 
       setSchools(list);
@@ -562,7 +584,9 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
         setStudentSnapshot(null);
       }
       setNeedsSchoolPick(needsPick);
-      setContextSkipped(Boolean(stored?.skipped) && !schoolId && !needsPick);
+      setContextSkipped(
+        Boolean((!schoolId && activeRole === 'student') || (stored?.skipped && !schoolId && !needsPick)),
+      );
       setPickerMode(mode);
       setSchoolsReady(true);
       setDeskActiveContext({

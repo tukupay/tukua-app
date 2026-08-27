@@ -2,9 +2,11 @@
  * Native PEA registration — Student / Parent / Teacher / school staff.
  * Schools and organisations register on Tukua web. Nest REST only.
  */
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  findNodeHandle,
+  Image,
   Keyboard,
   KeyboardAvoidingView,
   Linking,
@@ -13,11 +15,13 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
+  UIManager,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useFocusEffect } from '@react-navigation/native';
 import { AuthButton } from '../components/auth/AuthButton';
 import { AuthTextField } from '../components/auth/AuthTextField';
 import { CountyPicker } from '../components/auth/CountyPicker';
@@ -34,6 +38,7 @@ import {
   RegistrationForm,
 } from '../lib/peaRegistrationFlow';
 import {
+  checkTukuaAccount,
   joinSchoolAfterRegister,
   searchRegistrationSchools,
   type RegistrationSchoolHit,
@@ -48,6 +53,8 @@ import { useDialog } from '../context/DialogContext';
 import { captureUserLocation } from '../lib/location';
 import { saveDeskCredentials } from '../lib/deskApi';
 import { humanizeError } from '../lib/humanizeError';
+import { kenyaMobileError } from '../lib/phoneUtils';
+import { hideSystemStatusBar } from '../components/ImmersiveSystemBars';
 import { log } from '../lib/logger';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Register'>;
@@ -68,8 +75,8 @@ const ACCOUNT_TYPES: Array<{
     label: 'Student',
     shortDesc: 'Learner — courses, school link & opportunities',
     fullDesc:
-      'Join as a student. Optionally link your school (auto-approved). Pay the student registration fee set by Tukua.',
-    features: ['School link (students auto-approved)', 'Courses & AI guidance', 'Opportunities & events'],
+      'Join as a student. Optionally link your school now. No extra steps after login. You can skip and fill later.',
+    features: ['School link optional', 'Courses & AI guidance', 'Opportunities & events'],
     icon: 'school-outline',
   },
   {
@@ -77,8 +84,8 @@ const ACCOUNT_TYPES: Array<{
     label: 'Parent',
     shortDesc: 'Follow fees, grades & attendance',
     fullDesc:
-      'Register as a parent. You can request to join a school; the school approves the link. Parent PEA applies.',
-    features: ['Join a school as parent (pending approval)', 'Fees, grades & attendance', 'Messages from school'],
+      'Register as a parent. Optionally pick a school now — after login you select your student. You can skip and fill later.',
+    features: ['Link student after login', 'Fees, grades & attendance', 'Messages from school'],
     icon: 'people-outline',
   },
   {
@@ -86,8 +93,8 @@ const ACCOUNT_TYPES: Array<{
     label: 'Teacher',
     shortDesc: 'Teach, mark & manage your classes',
     fullDesc:
-      'Register as a teacher. Request to join your school; admin approval is required. Teacher PEA applies.',
-    features: ['Join a school as teacher (pending approval)', 'Classes, marks & attendance', 'Desk after school approval'],
+      'Register as a teacher. Optionally pick a school now — after login you add workload (at least one subject). You can skip and fill later.',
+    features: ['Add workload after login', 'Classes, marks & attendance', 'Desk after school link'],
     icon: 'easel-outline',
   },
   {
@@ -137,27 +144,41 @@ export function RegisterScreen({ navigation }: Props) {
   const [schoolHits, setSchoolHits] = useState<RegistrationSchoolHit[]>([]);
   const [schoolSearching, setSchoolSearching] = useState(false);
   const [selectedSchool, setSelectedSchool] = useState<RegistrationSchoolHit | null>(null);
-  const [admissionNumber, setAdmissionNumber] = useState('');
+  const [studentSchools, setStudentSchools] = useState<RegistrationSchoolHit[]>([]);
+  const [studentAdmissions, setStudentAdmissions] = useState<Record<string, string>>({});
   const pendingSchoolJoinRef = useRef<{
-    organization_id: string;
-    admission_number?: string;
+    joins: Array<{ organization_id: string; admission_number?: string }>;
   } | null>(null);
   const scrollRef = useRef<ScrollView>(null);
+  const deferredOkRef = useRef(false);
+  const accessTokenRef = useRef<string | null>(null);
+  const keyboardTopRef = useRef(0);
+  const scrollYRef = useRef(0);
+  const focusedTargetRef = useRef<unknown>(null);
   const [keyboardPad, setKeyboardPad] = useState(0);
 
   useEffect(() => {
     const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
     const showSub = Keyboard.addListener(showEvt, (e) => {
-      setKeyboardPad(e.endCoordinates?.height || 280);
-      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
+      keyboardTopRef.current = e.endCoordinates?.screenY || 0;
+      setKeyboardPad(e.endCoordinates?.height || 0);
     });
-    const hideSub = Keyboard.addListener(hideEvt, () => setKeyboardPad(0));
+    const hideSub = Keyboard.addListener(hideEvt, () => {
+      keyboardTopRef.current = 0;
+      setKeyboardPad(0);
+    });
     return () => {
       showSub.remove();
       hideSub.remove();
     };
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      hideSystemStatusBar();
+    }, []),
+  );
 
   const selectedType = ACCOUNT_TYPES.find((t) => t.id === accountType);
   const peaAmount = peaConfig.amount;
@@ -173,9 +194,21 @@ export function RegisterScreen({ navigation }: Props) {
     });
   }, [peaRole]);
 
+  const schoolsToJoin: RegistrationSchoolHit[] =
+    accountType === 'student'
+      ? studentSchools
+      : wantSchool && selectedSchool
+        ? [selectedSchool]
+        : [];
+
   useEffect(() => {
-    if (step !== 'schoolJoin' || !wantSchool || schoolQuery.trim().length < 2) {
-      if (schoolQuery.trim().length < 2) setSchoolHits([]);
+    const parentPicked = accountType !== 'student' && !!selectedSchool;
+    if (step !== 'schoolJoin' || !wantSchool || parentPicked) {
+      if (schoolQuery.trim().length < 2 && !selectedSchool) setSchoolHits([]);
+      return;
+    }
+    if (schoolQuery.trim().length < 2) {
+      setSchoolHits([]);
       return;
     }
     let cancelled = false;
@@ -192,18 +225,7 @@ export function RegisterScreen({ navigation }: Props) {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [step, wantSchool, schoolQuery]);
-
-  const canRegister = useMemo(() => {
-    return (
-      fullName.trim().length >= 2 &&
-      /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) &&
-      phone.trim().length >= 9 &&
-      password.length >= 6 &&
-      password === confirmPassword &&
-      agreedToTerms
-    );
-  }, [fullName, email, phone, password, confirmPassword, agreedToTerms]);
+  }, [step, wantSchool, schoolQuery, selectedSchool, accountType]);
 
   const buildForm = (): RegistrationForm => ({
     fullName,
@@ -224,29 +246,97 @@ export function RegisterScreen({ navigation }: Props) {
     if (!fullName.trim() || !email.trim() || !password || !phone.trim()) {
       return 'Please fill in all required fields';
     }
-    if (phone.replace(/\D/g, '').length < 9) return 'Please enter a valid phone number';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      return 'Enter a valid email address';
+    }
+    const phoneErr = kenyaMobileError(phone);
+    if (phoneErr) return phoneErr;
     if (password.length < 6) return 'Password must be at least 6 characters';
     if (password !== confirmPassword) return 'Passwords do not match';
-    if (!agreedToTerms) return 'You must agree to the Terms & Conditions';
+    if (!agreedToTerms) return 'Tick the box to agree to the Terms and Privacy Policy.';
     return null;
+  };
+
+  const scrollFieldIntoView = (target: unknown) => {
+    const run = () => {
+      const inputNode = findNodeHandle(target as number);
+      if (!inputNode) return;
+      UIManager.measureInWindow(inputNode, (_x, y, _w, h) => {
+        const kbTop = keyboardTopRef.current;
+        if (kbTop <= 0) return;
+        const overflow = y + h + 28 - kbTop;
+        if (overflow > 4) {
+          scrollRef.current?.scrollTo({
+            y: Math.max(0, scrollYRef.current + overflow),
+            animated: true,
+          });
+        }
+      });
+    };
+    setTimeout(run, Platform.OS === 'ios' ? 120 : 50);
+    setTimeout(run, Platform.OS === 'ios' ? 380 : 280);
+  };
+
+  const onFieldFocus = (e: { target?: unknown }) => {
+    focusedTargetRef.current = e?.target;
+    scrollFieldIntoView(e?.target);
+  };
+
+  useEffect(() => {
+    if (keyboardPad <= 0 || !focusedTargetRef.current) return;
+    scrollFieldIntoView(focusedTargetRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [keyboardPad]);
+
+  /** Tukua-wide email/phone — not school membership. Skip-school still checks this. */
+  const assertTukuaAvailable = async (): Promise<boolean> => {
+    setLoading(true);
+    try {
+      const r = await checkTukuaAccount(email.trim(), phone);
+      // 404 = older Nest without register-check — continue; register itself enforces uniqueness.
+      if (r.status === 404 || r.status === 0) return true;
+      if (r.ok && r.data?.exists && !r.data?.unpaid) {
+        setError('This email or phone is already registered on Tukua. Sign in.');
+        return false;
+      }
+      return true;
+    } catch {
+      return true;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const pendingJoinFromUi = () => {
+    if (!schoolsToJoin.length) return null;
+    return {
+      joins: schoolsToJoin.map((h) => ({
+        organization_id: h.id,
+        admission_number:
+          accountType === 'student' ? studentAdmissions[h.id]?.trim() || undefined : undefined,
+      })),
+    };
   };
 
   const applySchoolJoinIfNeeded = async (accessToken?: string) => {
     const pending = pendingSchoolJoinRef.current;
-    if (!pending || !accessToken) return;
-    try {
-      const r = await joinSchoolAfterRegister(accessToken, {
-        organization_id: pending.organization_id,
-        role: accountType === 'parent' || accountType === 'teacher' ? accountType : 'student',
-        admission_number: pending.admission_number || null,
-      });
-      if (r.ok) {
-        log.info('Register', 'school join ok', pending.organization_id);
-      } else {
-        log.warn('Register', 'school join failed', r.message);
+    if (!pending?.joins.length || !accessToken) return;
+    const role = accountType === 'parent' || accountType === 'teacher' ? accountType : 'student';
+    for (const join of pending.joins) {
+      try {
+        const r = await joinSchoolAfterRegister(accessToken, {
+          organization_id: join.organization_id,
+          role,
+          admission_number: join.admission_number || null,
+        });
+        if (r.ok) {
+          log.info('Register', 'school join ok', join.organization_id);
+        } else {
+          log.warn('Register', 'school join failed', r.message);
+        }
+      } catch (e) {
+        log.warn('Register', 'school join error', String(e));
       }
-    } catch (e) {
-      log.warn('Register', 'school join error', String(e));
     }
   };
 
@@ -281,9 +371,11 @@ export function RegisterScreen({ navigation }: Props) {
         showDialog({
           title: 'Welcome to Tukua',
           message:
-            joinRole === 'student'
-              ? 'Account ready — you are linked to your school as a student. Desk can remove the link if needed.'
-              : `Account ready — your ${joinRole} school request was sent. The school must approve it.`,
+            joinRole === 'parent'
+              ? 'Account ready — your parent school request was sent. The school must approve it.'
+              : pendingSchoolJoinRef.current && pendingSchoolJoinRef.current.joins.length > 1
+                ? 'Account ready — you are linked to your schools.'
+                : 'Account ready — you are linked to your school.',
           variant: 'success',
           icon: 'checkmark-circle-outline',
         });
@@ -307,7 +399,7 @@ export function RegisterScreen({ navigation }: Props) {
     if (!peaCheckoutId || peaStatus !== 'pending') return;
     let cancelled = false;
     void (async () => {
-      const poll = await pollPeaPayment(peaCheckoutId);
+      const poll = await pollPeaPayment(peaCheckoutId, 40, 3000, accessTokenRef.current);
       if (cancelled) return;
       if (poll.status === 'completed') {
         await logRegistrationAttempt(buildForm(), { status: 'paid' }, attemptIdRef.current);
@@ -333,21 +425,23 @@ export function RegisterScreen({ navigation }: Props) {
   const beginRegistrationPayment = async () => {
     const validationError = validateForm();
     if (validationError) {
-      setError(humanizeError(validationError));
+      setError(validationError);
+      if (!agreedToTerms) setStep('details');
       return;
     }
-    if (canJoinSchool && wantSchool && !selectedSchool) {
-      setError('Select a school, or go back and choose Skip.');
-      setStep('schoolJoin');
-      return;
+    if (canJoinSchool) {
+      if (accountType === 'student' && wantSchool && studentSchools.length === 0) {
+        setError('Add a school from search, or skip.');
+        setStep('schoolJoin');
+        return;
+      }
+      if (accountType !== 'student' && wantSchool && !selectedSchool) {
+        setError('Select a school, or go back and choose Skip.');
+        setStep('schoolJoin');
+        return;
+      }
     }
-    pendingSchoolJoinRef.current =
-      canJoinSchool && wantSchool && selectedSchool
-        ? {
-            organization_id: selectedSchool.id,
-            admission_number: accountType === 'student' ? admissionNumber.trim() || undefined : undefined,
-          }
-        : null;
+    pendingSchoolJoinRef.current = pendingJoinFromUi();
 
     const form = buildForm();
     formRef.current = form;
@@ -368,9 +462,31 @@ export function RegisterScreen({ navigation }: Props) {
     attemptIdRef.current = await logRegistrationAttempt(form, { status: 'initiated' });
 
     try {
+      if (!deferredOkRef.current) {
+        const { registerDeferredAccount } = await import('../lib/peaRegistrationFlow');
+        const reg = await registerDeferredAccount(form);
+        if (!reg.ok) {
+          setLoading(false);
+          setPeaStatus('idle');
+          setError(humanizeError(reg.error || 'Could not save account'));
+          return;
+        }
+        if (reg.accessToken) {
+          accessTokenRef.current = reg.accessToken;
+          await applySchoolJoinIfNeeded(reg.accessToken);
+        }
+        deferredOkRef.current = true;
+      }
+      if (!accessTokenRef.current) {
+        setLoading(false);
+        setPeaStatus('idle');
+        setError('Could not start payment. Go back one step and tap Continue, then Complete again.');
+        return;
+      }
+
       setPeaStatus('sending');
       setPeaMessage('Sending payment prompt to your phone…');
-      const stk = await initiatePeaPayment(form, peaAmount);
+      const stk = await initiatePeaPayment(form, peaAmount, accessTokenRef.current);
       if (!stk.ok) {
         if (stk.code === 'account_exists' || stk.code === 'phone_already_activated') {
           setPeaStatus('idle');
@@ -405,52 +521,20 @@ export function RegisterScreen({ navigation }: Props) {
     }
   };
 
-  const handleRemindMe = async () => {
+  const goNextFromDetails = async () => {
     const validationError = validateForm();
     if (validationError) {
-      setError(humanizeError(validationError));
-      return;
-    }
-    setLoading(true);
-    setError('');
-    const form = buildForm();
-    try {
-      const { registerDeferredAccount } = await import('../lib/peaRegistrationFlow');
-      const reg = await registerDeferredAccount(form);
-      if (!reg.ok) throw new Error(reg.error || 'Account could not be created');
-      if (reg.accessToken && canJoinSchool && wantSchool && selectedSchool) {
-        await joinSchoolAfterRegister(reg.accessToken, {
-          organization_id: selectedSchool.id,
-          role: accountType === 'parent' || accountType === 'teacher' ? accountType : 'student',
-          admission_number: accountType === 'student' ? admissionNumber.trim() || null : null,
-        });
-      }
-      showDialog({
-        title: 'Account saved',
-        message:
-          'We created your account. Sign in anytime to complete the one-time registration fee and activate.',
-        variant: 'info',
-        icon: 'mail-outline',
-        buttons: [{ text: 'Sign in', onPress: () => navigation.navigate('Login') }],
-      });
-    } catch (err: any) {
-      setError(humanizeError(err.message ?? 'Could not save account'));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const goNextFromDetails = () => {
-    const validationError = validateForm();
-    if (validationError) {
-      setError(humanizeError(validationError));
+      setError(validationError);
       return;
     }
     setError('');
+    if (!(await assertTukuaAvailable())) return;
     if (canJoinSchool) {
       setStep('schoolJoin');
       return;
     }
+    formRef.current = buildForm();
+    pendingSchoolJoinRef.current = null;
     setStep('payment');
   };
 
@@ -461,27 +545,31 @@ export function RegisterScreen({ navigation }: Props) {
   return (
     <View style={styles.root}>
       <ThemedPageSvg />
-      <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
-        <KeyboardAvoidingView
-          style={styles.flex}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}>
+      <SafeAreaView style={styles.safe} edges={['top', 'left', 'right', 'bottom']}>
+        <KeyboardAvoidingView style={styles.flex} behavior={undefined}>
           <ScrollView
             ref={scrollRef}
             style={styles.scrollView}
             contentContainerStyle={{
+              flexGrow: 1,
               paddingHorizontal: padH,
               paddingTop: s(20),
-              paddingBottom: Math.max(layout.bottomPad, 28) + 24 + keyboardPad,
+              paddingBottom: Math.max(layout.bottomPad, 24) + keyboardPad + (keyboardPad > 0 ? 24 : 0),
             }}
             keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="interactive"
-            showsVerticalScrollIndicator={false}
+            keyboardDismissMode="on-drag"
+            keyboardOpeningTime={0}
+            automaticallyAdjustKeyboardInsets={false}
+            showsVerticalScrollIndicator
             bounces
             overScrollMode="always"
             nestedScrollEnabled
             removeClippedSubviews={false}
-            scrollEventThrottle={16}>
+            scrollEventThrottle={16}
+            onScroll={(e) => {
+              scrollYRef.current = e.nativeEvent.contentOffset.y;
+            }}
+            scrollEnabled>
             <View style={[styles.formCol, { width: layout.formWidth, alignSelf: 'center' }]}>
               <Text style={[styles.screenTitle, { fontSize: font(22) }]}>Register</Text>
               <Text style={[styles.screenSub, { fontSize: font(12) }]}>
@@ -489,7 +577,7 @@ export function RegisterScreen({ navigation }: Props) {
                   ? 'Choose how you will use Tukua'
                   : step === 'schoolJoin'
                     ? accountType === 'student'
-                      ? 'Students are linked automatically. Skip if you are not joining a school yet.'
+                      ? 'Add school(s) now, or skip and join later. Students are linked automatically.'
                       : `Request to join as ${selectedType?.label ?? accountType} — the school must approve.`
                     : step === 'payment'
                       ? 'Pay to complete registration'
@@ -576,6 +664,7 @@ export function RegisterScreen({ navigation }: Props) {
                     autoCapitalize="words"
                     value={fullName}
                     onChangeText={setFullName}
+                    onFocus={onFieldFocus}
                   />
                   <View style={{ height: layout.formGap }} />
                   <AuthTextField
@@ -584,13 +673,18 @@ export function RegisterScreen({ navigation }: Props) {
                     suffixIcon="call-outline"
                     value={phone}
                     onChangeText={setPhone}
+                    onFocus={onFieldFocus}
                   />
                   <View style={{ height: layout.formGap }} />
                   <AuthTextField
                     hint="National ID (optional)"
                     suffixIcon="card-outline"
+                    keyboardType="number-pad"
+                    inputMode="numeric"
+                    maxLength={8}
                     value={idNumber}
-                    onChangeText={setIdNumber}
+                    onChangeText={(t) => setIdNumber(t.replace(/\D/g, ''))}
+                    onFocus={onFieldFocus}
                   />
                   <View style={{ height: layout.formGap }} />
                   <CountyPicker value={county} onChange={setCounty} />
@@ -604,6 +698,7 @@ export function RegisterScreen({ navigation }: Props) {
                     suffixIcon="mail-outline"
                     value={email}
                     onChangeText={setEmail}
+                    onFocus={onFieldFocus}
                   />
                   <View style={{ height: layout.formGap }} />
                   <AuthTextField
@@ -613,6 +708,7 @@ export function RegisterScreen({ navigation }: Props) {
                     onToggleObscure={() => setObscure((v) => !v)}
                     value={password}
                     onChangeText={setPassword}
+                    onFocus={onFieldFocus}
                   />
                   <View style={{ height: layout.formGap }} />
                   <AuthTextField
@@ -622,16 +718,26 @@ export function RegisterScreen({ navigation }: Props) {
                     onToggleObscure={() => setObscure((v) => !v)}
                     value={confirmPassword}
                     onChangeText={setConfirmPassword}
+                    onFocus={onFieldFocus}
                   />
                   <View style={{ height: layout.formGap }} />
 
                   <TouchableOpacity
-                    style={styles.termsRow}
-                    onPress={() => setAgreedToTerms((v) => !v)}>
+                    style={[styles.termsRow, /terms|privacy|agree/i.test(error) && styles.termsRowErr]}
+                    onPress={() => {
+                      setAgreedToTerms((v) => !v);
+                      if (/terms|privacy|agree/i.test(error)) setError('');
+                    }}>
                     <Ionicons
                       name={agreedToTerms ? 'checkbox' : 'square-outline'}
                       size={s(22)}
-                      color={agreedToTerms ? Colors.brandGreenDark : Colors.mutedForeground}
+                      color={
+                        agreedToTerms
+                          ? Colors.brandGreenDark
+                          : /terms|privacy|agree/i.test(error)
+                            ? Colors.destructive
+                            : Colors.mutedForeground
+                      }
                     />
                     <Text style={[styles.termsText, { fontSize: font(11), lineHeight: font(16) }]}>
                       I agree to the{' '}
@@ -666,91 +772,300 @@ export function RegisterScreen({ navigation }: Props) {
 
                   <Text style={[styles.prompt, { fontSize: font(13), lineHeight: font(19) }]}>
                     {accountType === 'student'
-                      ? 'Join your school now? Students are linked automatically — the school can remove you later on Desk.'
-                      : `Join your school as ${selectedType?.label ?? 'staff'}? The school must approve before school features unlock.`}
+                      ? 'Add one or more schools now — JKUSA, JKUATES, JKUAT IP, and your class school. Skip if you will join later.'
+                      : accountType === 'parent'
+                        ? 'Pick a school now if you want. After login you will select your student. You can skip and fill later.'
+                        : `Pick a school now if you want. After login teachers add workload. You can skip and fill later.`}
                   </Text>
-                  <View style={[styles.choiceRow, { gap: s(10) }]}>
-                    <TouchableOpacity
-                      style={[
-                        styles.choiceCard,
-                        wantSchool === true && styles.choiceCardOn,
-                        { padding: s(14), borderRadius: s(14) },
-                      ]}
-                      onPress={() => setWantSchool(true)}>
-                      <Ionicons
-                        name="search"
-                        size={s(20)}
-                        color={wantSchool ? Colors.brandGreenDark : Colors.mutedForeground}
-                      />
-                      <Text style={[styles.choiceTitle, { fontSize: font(14) }]}>Find my school</Text>
-                      <Text style={[styles.choiceHint, { fontSize: font(11) }]}>
-                        Search & join as {selectedType?.label ?? 'member'}
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[
-                        styles.choiceCard,
-                        wantSchool === false && styles.choiceCardOn,
-                        { padding: s(14), borderRadius: s(14) },
-                      ]}
-                      onPress={() => {
-                        setWantSchool(false);
-                        setSelectedSchool(null);
-                      }}>
-                      <Ionicons
-                        name="person-outline"
-                        size={s(20)}
-                        color={wantSchool === false ? Colors.brandGreenDark : Colors.mutedForeground}
-                      />
-                      <Text style={[styles.choiceTitle, { fontSize: font(14) }]}>Skip for now</Text>
-                      <Text style={[styles.choiceHint, { fontSize: font(11) }]}>Continue without a school</Text>
-                    </TouchableOpacity>
-                  </View>
 
-                  {wantSchool ? (
+                  {accountType === 'student' ? (
                     <>
-                      <AuthTextField
-                        hint="Search school name…"
-                        suffixIcon="search-outline"
-                        value={schoolQuery}
-                        onChangeText={setSchoolQuery}
-                        autoCorrect={false}
-                      />
-                      {schoolSearching ? (
-                        <ActivityIndicator color={Colors.brandGreen} style={{ marginVertical: 12 }} />
-                      ) : null}
-                      {schoolHits.map((hit) => {
-                        const on = selectedSchool?.id === hit.id;
-                        return (
-                          <TouchableOpacity
-                            key={hit.id}
-                            style={[styles.schoolRow, on && styles.schoolRowOn, { padding: s(12), borderRadius: s(12) }]}
-                            onPress={() => setSelectedSchool(hit)}>
+                      {studentSchools.map((school) => (
+                        <View
+                          key={school.id}
+                          style={[
+                            styles.schoolPickBlock,
+                            styles.schoolCardSelected,
+                            { padding: s(12), borderRadius: s(14) },
+                          ]}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: s(12) }}>
+                            {school.logo_url ? (
+                              <Image
+                                source={{ uri: school.logo_url }}
+                                style={[styles.schoolLogo, { width: s(44), height: s(44), borderRadius: s(10) }]}
+                              />
+                            ) : (
+                              <View style={[styles.schoolLogoFallback, { width: s(44), height: s(44), borderRadius: s(10) }]}>
+                                <Ionicons name="business-outline" size={s(22)} color={Colors.brandGreenDark} />
+                              </View>
+                            )}
                             <View style={{ flex: 1 }}>
-                              <Text style={[styles.schoolName, { fontSize: font(14) }]}>{hit.name}</Text>
+                              <Text style={[styles.schoolName, { fontSize: font(14) }]}>{school.name}</Text>
                               <Text style={[styles.schoolMeta, { fontSize: font(11) }]}>
-                                {[hit.code, hit.county].filter(Boolean).join(' · ') || 'School'}
+                                {[school.code, school.county].filter(Boolean).join(' · ') || 'School / organisation'}
                               </Text>
                             </View>
-                            {on ? (
-                              <Ionicons name="checkmark-circle" size={s(22)} color={Colors.brandGreen} />
-                            ) : null}
-                          </TouchableOpacity>
-                        );
-                      })}
-                      {selectedSchool && accountType === 'student' ? (
-                        <>
-                          <View style={{ height: layout.formGap }} />
+                            <TouchableOpacity
+                              onPress={() => {
+                                setStudentSchools((prev) => prev.filter((p) => p.id !== school.id));
+                                setStudentAdmissions((prev) => {
+                                  const next = { ...prev };
+                                  delete next[school.id];
+                                  return next;
+                                });
+                              }}
+                              hitSlop={12}
+                              accessibilityLabel={`Remove ${school.name}`}>
+                              <Ionicons name="close-circle" size={s(26)} color={Colors.mutedForeground} />
+                            </TouchableOpacity>
+                          </View>
                           <AuthTextField
                             hint="Admission number (optional)"
                             suffixIcon="card-outline"
-                            value={admissionNumber}
-                            onChangeText={setAdmissionNumber}
+                            value={studentAdmissions[school.id] ?? ''}
+                            onChangeText={(t) =>
+                              setStudentAdmissions((prev) => ({ ...prev, [school.id]: t }))
+                            }
+                            onFocus={onFieldFocus}
                           />
+                        </View>
+                      ))}
+
+                      {wantSchool ? (
+                        <>
+                          <AuthTextField
+                            hint="Search and tap to add — pick several"
+                            suffixIcon="search-outline"
+                            value={schoolQuery}
+                            onChangeText={setSchoolQuery}
+                            autoCorrect={false}
+                            onFocus={onFieldFocus}
+                          />
+                          {schoolSearching ? (
+                            <ActivityIndicator color={Colors.brandGreen} style={{ marginVertical: 12 }} />
+                          ) : null}
+                          {schoolHits
+                            .filter((hit) => !studentSchools.some((s) => s.id === hit.id))
+                            .map((hit) => (
+                              <TouchableOpacity
+                                key={hit.id}
+                                style={[
+                                  styles.schoolCard,
+                                  styles.schoolHitCard,
+                                  { padding: s(12), borderRadius: s(14) },
+                                ]}
+                                onPress={() => {
+                                  setStudentSchools((prev) =>
+                                    prev.some((p) => p.id === hit.id) ? prev : [...prev, hit],
+                                  );
+                                  setError('');
+                                }}>
+                                {hit.logo_url ? (
+                                  <Image
+                                    source={{ uri: hit.logo_url }}
+                                    style={[styles.schoolLogo, { width: s(44), height: s(44), borderRadius: s(10) }]}
+                                  />
+                                ) : (
+                                  <View
+                                    style={[
+                                      styles.schoolLogoFallback,
+                                      { width: s(44), height: s(44), borderRadius: s(10) },
+                                    ]}>
+                                    <Ionicons name="business-outline" size={s(22)} color={Colors.mutedForeground} />
+                                  </View>
+                                )}
+                                <View style={{ flex: 1 }}>
+                                  <Text style={[styles.schoolName, { fontSize: font(14) }]}>{hit.name}</Text>
+                                  <Text style={[styles.schoolMeta, { fontSize: font(11) }]}>
+                                    {[hit.code, hit.county].filter(Boolean).join(' · ') || 'School / organisation'}
+                                  </Text>
+                                </View>
+                                <Ionicons name="add-circle" size={s(24)} color={Colors.brandGreenDark} />
+                              </TouchableOpacity>
+                            ))}
+                        </>
+                      ) : (
+                        <TouchableOpacity
+                          style={[
+                            styles.addSchoolBtn,
+                            { padding: s(14), borderRadius: s(14), marginBottom: s(8) },
+                          ]}
+                          onPress={() => {
+                            setWantSchool(true);
+                            setError('');
+                          }}>
+                          <Ionicons name="add-circle-outline" size={s(22)} color={Colors.brandGreenDark} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.choiceTitle, { fontSize: font(14) }]}>
+                              {studentSchools.length ? 'Add another school' : 'Add school'}
+                            </Text>
+                            <Text style={[styles.choiceHint, { fontSize: font(11) }]}>
+                              Search once and tap several from the list
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+                      )}
+
+                      {studentSchools.length === 0 ? (
+                        <TouchableOpacity
+                          onPress={() => {
+                            setWantSchool(false);
+                            setStudentSchools([]);
+                            setStudentAdmissions({});
+                            setSchoolQuery('');
+                            setSchoolHits([]);
+                            setError('');
+                          }}
+                          style={styles.skipRow}>
+                          <Text style={[styles.skipText, { fontSize: font(13) }]}>Skip for now</Text>
+                        </TouchableOpacity>
+                      ) : null}
+                    </>
+                  ) : (
+                    <>
+                      <View style={[styles.choiceRow, { gap: s(10) }]}>
+                        <TouchableOpacity
+                          style={[
+                            styles.choiceCard,
+                            wantSchool === true && styles.choiceCardOn,
+                            { padding: s(14), borderRadius: s(14) },
+                          ]}
+                          onPress={() => setWantSchool(true)}>
+                          <Ionicons
+                            name="search"
+                            size={s(20)}
+                            color={wantSchool ? Colors.brandGreenDark : Colors.mutedForeground}
+                          />
+                          <Text style={[styles.choiceTitle, { fontSize: font(14) }]}>Find my school/organisation</Text>
+                          <Text style={[styles.choiceHint, { fontSize: font(11) }]}>
+                            Search & join as {selectedType?.label ?? 'member'}
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[
+                            styles.choiceCard,
+                            wantSchool === false && styles.choiceCardOn,
+                            { padding: s(14), borderRadius: s(14) },
+                          ]}
+                          onPress={() => {
+                            setWantSchool(false);
+                            setSelectedSchool(null);
+                          }}>
+                          <Ionicons
+                            name="person-outline"
+                            size={s(20)}
+                            color={wantSchool === false ? Colors.brandGreenDark : Colors.mutedForeground}
+                          />
+                          <Text style={[styles.choiceTitle, { fontSize: font(14) }]}>Skip for now</Text>
+                          <Text style={[styles.choiceHint, { fontSize: font(11) }]}>Continue without a school</Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      {wantSchool ? (
+                        <>
+                          {selectedSchool ? (
+                            <View
+                              style={[
+                                styles.schoolCard,
+                                styles.schoolCardSelected,
+                                { padding: s(12), borderRadius: s(14), marginBottom: s(20) },
+                              ]}>
+                              {selectedSchool.logo_url ? (
+                                <Image
+                                  source={{ uri: selectedSchool.logo_url }}
+                                  style={[styles.schoolLogo, { width: s(44), height: s(44), borderRadius: s(10) }]}
+                                />
+                              ) : (
+                                <View
+                                  style={[
+                                    styles.schoolLogoFallback,
+                                    { width: s(44), height: s(44), borderRadius: s(10) },
+                                  ]}>
+                                  <Ionicons name="business-outline" size={s(22)} color={Colors.brandGreenDark} />
+                                </View>
+                              )}
+                              <View style={{ flex: 1 }}>
+                                <Text style={[styles.schoolName, { fontSize: font(14) }]}>{selectedSchool.name}</Text>
+                                <Text style={[styles.schoolMeta, { fontSize: font(11) }]}>
+                                  {[selectedSchool.code, selectedSchool.county].filter(Boolean).join(' · ') ||
+                                    'School / organisation'}
+                                </Text>
+                                <TouchableOpacity
+                                  onPress={() => {
+                                    setSelectedSchool(null);
+                                    setSchoolHits([]);
+                                    setSchoolQuery('');
+                                  }}
+                                  hitSlop={8}>
+                                  <Text style={[styles.schoolChange, { fontSize: font(12) }]}>Change</Text>
+                                </TouchableOpacity>
+                              </View>
+                              <TouchableOpacity
+                                onPress={() => {
+                                  setSelectedSchool(null);
+                                  setSchoolHits([]);
+                                  setSchoolQuery('');
+                                }}
+                                hitSlop={12}
+                                accessibilityLabel="Clear selected school">
+                                <Ionicons name="close-circle" size={s(26)} color={Colors.mutedForeground} />
+                              </TouchableOpacity>
+                            </View>
+                          ) : (
+                            <>
+                              <AuthTextField
+                                hint="Search name, code, or short form…"
+                                suffixIcon="search-outline"
+                                value={schoolQuery}
+                                onChangeText={setSchoolQuery}
+                                autoCorrect={false}
+                                onFocus={onFieldFocus}
+                              />
+                              {schoolSearching ? (
+                                <ActivityIndicator color={Colors.brandGreen} style={{ marginVertical: 12 }} />
+                              ) : null}
+                              {schoolHits.map((hit) => (
+                                <TouchableOpacity
+                                  key={hit.id}
+                                  style={[
+                                  styles.schoolCard,
+                                  styles.schoolHitCard,
+                                  { padding: s(12), borderRadius: s(14) },
+                                ]}
+                                  onPress={() => {
+                                    setSelectedSchool(hit);
+                                    setSchoolHits([]);
+                                    setSchoolQuery('');
+                                    setError('');
+                                  }}>
+                                  {hit.logo_url ? (
+                                    <Image
+                                      source={{ uri: hit.logo_url }}
+                                      style={[styles.schoolLogo, { width: s(44), height: s(44), borderRadius: s(10) }]}
+                                    />
+                                  ) : (
+                                    <View
+                                      style={[
+                                        styles.schoolLogoFallback,
+                                        { width: s(44), height: s(44), borderRadius: s(10) },
+                                      ]}>
+                                      <Ionicons name="business-outline" size={s(22)} color={Colors.mutedForeground} />
+                                    </View>
+                                  )}
+                                  <View style={{ flex: 1 }}>
+                                    <Text style={[styles.schoolName, { fontSize: font(14) }]}>{hit.name}</Text>
+                                    <Text style={[styles.schoolMeta, { fontSize: font(11) }]}>
+                                      {[hit.code, hit.county].filter(Boolean).join(' · ') || 'School / organisation'}
+                                    </Text>
+                                  </View>
+                                </TouchableOpacity>
+                              ))}
+                            </>
+                          )}
                         </>
                       ) : null}
                     </>
-                  ) : null}
+                  )}
 
                   {error ? (
                     <View style={styles.errorBox}>
@@ -760,20 +1075,44 @@ export function RegisterScreen({ navigation }: Props) {
 
                   <View style={styles.btnRow}>
                     <AuthButton
-                      text="Continue to payment"
-                      onPress={() => {
-                        if (wantSchool === null) {
-                          setError('Choose Find my school or Skip for now');
-                          return;
+                      text="Continue"
+                      onPress={async () => {
+                        if (accountType === 'student') {
+                          if (studentSchools.length === 0 && wantSchool !== false) {
+                            setError('Add a school, or skip for now');
+                            return;
+                          }
+                        } else {
+                          if (wantSchool === null) {
+                            setError('Choose Find my school/organisation or Skip for now');
+                            return;
+                          }
+                          if (wantSchool && !selectedSchool) {
+                            setError('Select a school from the search results, or skip');
+                            return;
+                          }
                         }
-                        if (wantSchool && !selectedSchool) {
-                          setError('Select a school from the search results, or skip');
+                        const validationError = validateForm();
+                        if (validationError) {
+                          setError(validationError);
+                          if (!agreedToTerms) setStep('details');
                           return;
                         }
                         setError('');
+                        if (!(await assertTukuaAvailable())) {
+                          setStep('details');
+                          return;
+                        }
+                        pendingSchoolJoinRef.current = pendingJoinFromUi();
+                        formRef.current = buildForm();
                         setStep('payment');
                       }}
-                      enabled={wantSchool !== null}
+                      enabled={
+                        !loading &&
+                        (accountType === 'student'
+                          ? studentSchools.length > 0 || wantSchool === false
+                          : wantSchool !== null)
+                      }
                     />
                   </View>
                 </>
@@ -787,12 +1126,17 @@ export function RegisterScreen({ navigation }: Props) {
                     <Text style={[styles.backText, { fontSize: font(13) }]}>← Back</Text>
                   </TouchableOpacity>
 
-                  {canJoinSchool && selectedSchool && wantSchool ? (
+                  {canJoinSchool && schoolsToJoin.length > 0 ? (
                     <Text style={[styles.linkedSchool, { fontSize: font(13) }]}>
-                      Joining: {selectedSchool.name}
-                      {admissionNumber ? ` · Adm ${admissionNumber}` : ''}
+                      Joining:{' '}
+                      {schoolsToJoin
+                        .map((s) => {
+                          const adm = studentAdmissions[s.id]?.trim();
+                          return adm ? `${s.name} (${adm})` : s.name;
+                        })
+                        .join(', ')}
                     </Text>
-                  ) : canJoinSchool && wantSchool === false ? (
+                  ) : canJoinSchool && wantSchool === false && schoolsToJoin.length === 0 ? (
                     <Text style={[styles.linkedSchool, { fontSize: font(13) }]}>
                       {selectedType?.label} account — no school linked yet
                     </Text>
@@ -832,7 +1176,6 @@ export function RegisterScreen({ navigation }: Props) {
                           }
                           onPress={() => void beginRegistrationPayment()}
                           enabled={
-                            canRegister &&
                             peaConfigLoaded &&
                             peaStatus !== 'pending' &&
                             peaStatus !== 'sending' &&
@@ -840,14 +1183,9 @@ export function RegisterScreen({ navigation }: Props) {
                           }
                         />
                       </View>
-                      <TouchableOpacity
-                        style={[styles.remindBtn, { height: s(44), borderRadius: s(12) }]}
-                        onPress={() => void handleRemindMe()}
-                        disabled={loading || peaStatus === 'pending' || peaStatus === 'sending'}>
-                        <Text style={[styles.remindBtnText, { fontSize: font(12) }]}>
-                          Remind me later — save without paying now
-                        </Text>
-                      </TouchableOpacity>
+                      <Text style={[styles.linkedSchool, { fontSize: font(11), marginTop: 8 }]}>
+                        Pay with M-Pesa to finish. If you leave now, you can sign up again later.
+                      </Text>
                     </>
                   )}
                 </>
@@ -964,8 +1302,20 @@ const styles = StyleSheet.create({
     fontFamily: 'Poppins_600SemiBold',
   },
   termsRow: { flexDirection: 'row', gap: 10, marginBottom: 12, alignItems: 'flex-start' },
+  termsRowErr: {
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(239,68,68,0.35)',
+    backgroundColor: 'rgba(239,68,68,0.08)',
+  },
   termsText: { flex: 1, fontSize: 11, color: Colors.foreground, lineHeight: 16 },
   termsLink: { color: Colors.brandGreenDark, fontWeight: '700' },
+  peaWhy: {
+    color: Colors.mutedForeground,
+    fontFamily: 'Poppins_400Regular',
+    marginBottom: 8,
+  },
   orgWarn: { color: Colors.destructive, fontWeight: '600' },
   errorBox: {
     backgroundColor: 'rgba(239,68,68,0.1)',
@@ -1042,19 +1392,61 @@ const styles = StyleSheet.create({
     color: Colors.brandGreenDark,
   },
   choiceHint: { fontSize: 11, color: Colors.mutedForeground },
-  schoolRow: {
+  addSchoolBtn: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 12,
+    borderWidth: 1.5,
+    borderColor: Colors.brandGreen,
+    backgroundColor: 'rgba(10,61,46,0.06)',
+    marginTop: 8,
+  },
+  skipRow: { alignItems: 'center', paddingVertical: 10, marginBottom: 4 },
+  skipText: {
+    fontWeight: '600',
+    fontFamily: 'Poppins_600SemiBold',
+    color: Colors.mutedForeground,
+    textDecorationLine: 'underline',
+  },
+  schoolCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
     padding: 12,
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: Colors.border,
     backgroundColor: Colors.white,
     marginTop: 8,
   },
-  schoolRowOn: {
+  schoolHitCard: {
+    marginTop: 12,
+    marginBottom: 6,
+  },
+  schoolPickBlock: {
+    gap: 10,
+    marginTop: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.white,
+  },
+  schoolCardSelected: {
     borderColor: Colors.brandGreen,
     backgroundColor: 'rgba(10,61,46,0.06)',
+  },
+  schoolLogo: {
+    backgroundColor: Colors.muted,
+  },
+  schoolLogoFallback: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(10,61,46,0.08)',
+  },
+  schoolChange: {
+    marginTop: 4,
+    color: Colors.brandGreenDark,
+    fontFamily: 'Poppins_600SemiBold',
   },
   schoolName: {
     fontSize: 14,

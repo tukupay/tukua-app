@@ -90,6 +90,25 @@ export function mapRoleToMobileHat(role: string): string {
   return r;
 }
 
+/**
+ * Collapse learner hats: individual + student count as one role for the picker.
+ * Prefer `student` when either appears (school learner / Tukua individual).
+ */
+export function collapseLearnerHats(hats: string[]): string[] {
+  const out: string[] = [];
+  let sawLearner = false;
+  for (const hat of hats) {
+    if (hat === 'individual' || hat === 'student') {
+      if (sawLearner) continue;
+      sawLearner = true;
+      out.push('student');
+      continue;
+    }
+    out.push(hat);
+  }
+  return out;
+}
+
 /** Role chips for the school picker / SA “use as” flow (no school_admin / SA hub). */
 export function mobilePickerRolesFrom(rolesInput: unknown): string[] {
   const seen = new Set<string>();
@@ -102,7 +121,7 @@ export function mobilePickerRolesFrom(rolesInput: unknown): string[] {
     seen.add(hat);
     out.push(hat);
   }
-  return sortDeskRolesForPicker(out);
+  return sortDeskRolesForPicker(collapseLearnerHats(out));
 }
 
 /** SA can switch into any native mobile persona at any school. */

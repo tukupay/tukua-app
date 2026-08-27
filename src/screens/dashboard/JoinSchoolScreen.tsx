@@ -1,6 +1,6 @@
 /**
  * Join School — parent / student / teacher / staff onboarding wizard.
- * Pending until school admin approves (Admin → Approve on Desk).
+ * Students auto-approve (dashboard unlocks immediately). Parents/teachers wait for school admin.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -157,6 +157,7 @@ export function JoinSchoolScreen() {
   const [memberships, setMemberships] = useState<MembershipHit[]>([]);
   const [loadingMemberships, setLoadingMemberships] = useState(true);
   const [pendingRequests, setPendingRequests] = useState<MyJoinRequestHit[]>([]);
+  const [joinAutoApproved, setJoinAutoApproved] = useState(false);
   const [loadingPending, setLoadingPending] = useState(true);
   const [leavingId, setLeavingId] = useState<string | null>(null);
 
@@ -459,16 +460,28 @@ export function JoinSchoolScreen() {
               }
             : {}),
         });
+        const auto = Boolean((res as { auto_approved?: boolean }).auto_approved);
+        setJoinAutoApproved(auto);
         await markJoinPromptSeen();
+        if (auto) {
+          await refreshSchools({ quiet: true, forcePick: false });
+          if (school?.id) {
+            try {
+              await selectSchool(school.id);
+            } catch {
+              /* membership list may lag one tick */
+            }
+          }
+        }
         setStep('done');
         showDialog({
           title: res.already_pending
             ? 'Already pending'
-            : (res as { auto_approved?: boolean }).auto_approved
+            : auto
               ? 'You are in'
               : 'Request submitted',
-          message: (res as { auto_approved?: boolean }).auto_approved
-            ? 'Open the dashboard for this school.'
+          message: auto
+            ? 'Your school dashboard is ready.'
             : 'Waiting for school admin approval.',
           variant: 'success',
           icon: 'checkmark-circle',
@@ -631,7 +644,7 @@ export function JoinSchoolScreen() {
               : preferRole === 'parent'
                 ? 'Select your student at the school. You can skip and finish later — we will remind you on login.'
                 : 'Join a school now, or skip and fill this later after login.'
-            : 'Request to join a school. An admin must approve before you’re linked.'}
+            : 'Students are linked right away. Parents and teachers wait for school approval.'}
         </Text>
 
         {(firstLogin || preferRole) && step === 'role' ? (
@@ -1143,16 +1156,22 @@ export function JoinSchoolScreen() {
         {step === 'done' ? (
           <View style={styles.doneBox}>
             <Ionicons name="checkmark-circle" size={48} color={palette.tertiary} />
-            <Text style={styles.doneTitle}>Request pending</Text>
+            <Text style={styles.doneTitle}>
+              {joinAutoApproved ? 'You are linked' : 'Request pending'}
+            </Text>
             <Text style={styles.subtitle}>
-              {school?.name
-                ? `Your ${role} request for ${school.name} is waiting for approval.`
-                : 'Waiting for school approval.'}
+              {joinAutoApproved
+                ? school?.name
+                  ? `You're in at ${school.name}. Open the dashboard anytime.`
+                  : 'School linked. Open the dashboard anytime.'
+                : school?.name
+                  ? `Your ${role} request for ${school.name} is waiting for approval.`
+                  : 'Waiting for school approval.'}
             </Text>
             <Pressable
               style={[styles.submit, { backgroundColor: hero }]}
               onPress={() => navigation.goBack()}>
-              <Text style={styles.submitText}>Done</Text>
+              <Text style={styles.submitText}>{joinAutoApproved ? 'Open dashboard' : 'Done'}</Text>
             </Pressable>
           </View>
         ) : null}

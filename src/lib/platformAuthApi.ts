@@ -10,37 +10,71 @@ function nestBase(): string {
   return getNestApiBaseUrl().replace(/\/$/, '');
 }
 
-function pickMessage(json: any, status: number): string | undefined {
-  if (!json || typeof json !== 'object') {
-    if (status === 401 || status === 403) return humanizeError('Authentication required');
-    if (status >= 500) return humanizeError('service unavailable');
-    return undefined;
+function nestRawMessage(json: any): string {
+  if (!json || typeof json !== 'object') return '';
+  const m = json.message;
+  if (Array.isArray(m)) {
+    return m.filter((x: unknown) => typeof x === 'string' && x.trim()).join('. ');
   }
-  const raw =
-    (typeof json.message === 'string' && json.message) ||
-    (typeof json.error === 'string' && json.error) ||
-    (typeof json.error?.message === 'string' && json.error.message) ||
-    (typeof json.error?.code === 'string' && json.error.code) ||
-    '';
-  return raw ? humanizeError(raw) : undefined;
+  if (typeof m === 'string' && m.trim()) return m;
+  if (typeof json.error === 'string' && json.error.trim()) return json.error;
+  if (json.error && typeof json.error === 'object') {
+    if (typeof json.error.message === 'string' && json.error.message.trim()) return json.error.message;
+    if (Array.isArray(json.error.message)) {
+      return json.error.message.filter((x: unknown) => typeof x === 'string' && x.trim()).join('. ');
+    }
+    if (typeof json.error.code === 'string') return json.error.code;
+  }
+  if (typeof json.result_description === 'string' && json.result_description.trim()) {
+    return json.result_description;
+  }
+  return '';
 }
 
-async function nestPost<T>(path: string, body: unknown): Promise<{ ok: boolean; data?: T; message?: string; error?: string; status: number }> {
+function pickMessage(json: any, status: number): string | undefined {
+  const raw = nestRawMessage(json);
+  if (raw) return humanizeError(raw);
+  if (status === 401 || status === 403) return humanizeError('Authentication required');
+  if (status >= 500) return humanizeError('service unavailable');
+  return undefined;
+}
+
+async function nestPost<T>(
+  path: string,
+  body: unknown,
+  bearer?: string | null,
+): Promise<{ ok: boolean; data?: T; message?: string; error?: string; status: number }> {
   let res: Response;
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+    'Content-Type': 'application/json',
+  };
+  if (bearer) headers.Authorization = `Bearer ${bearer}`;
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timeoutMs = 45000;
+  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
   try {
     res = await fetch(`${nestBase()}${path}`, {
       method: 'POST',
-      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(body ?? {}),
+      signal: controller?.signal,
     });
   } catch (e) {
+    const aborted =
+      (e instanceof Error && e.name === 'AbortError') ||
+      /aborted|timeout/i.test(String(e));
     log.warn('NestAuth', `POST ${path} network`, String(e));
     return {
       ok: false,
-      message: humanizeError(e),
-      error: 'network_error',
+      message: aborted
+        ? 'The server took too long. Check your connection and try again.'
+        : humanizeError(e),
+      error: aborted ? 'timeout' : 'network_error',
       status: 0,
     };
+  } finally {
+    if (timer) clearTimeout(timer);
   }
   const json = await res.json().catch(() => null);
   const data =
@@ -99,6 +133,13 @@ export async function resetPassword(token: string, password: string) {
   return nestPost('/platform/auth/password/reset', { token, password });
 }
 
+export async function checkTukuaAccount(email: string, phone: string) {
+  return nestPost<{ exists?: boolean; unpaid?: boolean }>('/platform/auth/register-check', {
+    email,
+    phone,
+  });
+}
+
 export async function platformRegister(body: {
   email?: string;
   phone?: string;
@@ -107,6 +148,8 @@ export async function platformRegister(body: {
   username?: string;
   account_type?: string;
   role?: string;
+  activation_status?: string;
+  registration_payment_status?: string;
 }) {
   return nestPost<{ access_token?: string; refresh_token?: string; user?: unknown }>(
     '/platform/auth/register',
@@ -115,25 +158,34 @@ export async function platformRegister(body: {
 }
 
 export async function platformLogin(identifier: string, password: string) {
-  return nestPost<{ access_token?: string; refresh_token?: string; expires_in?: number }>(
-    '/platform/auth/login',
-    { identifier, password },
+  return nestPost<{
+    access_token?: string;
+    refresh_token?: string;
+    expires_in?: number;
+    user?: {
+      id?: string;
+      activation_status?: string | null;
+      registration_payment_status?: string | null;
+    };
+  }>('/platform/auth/login', { identifier, password });
+}
+
+export async function mpesaStk(body: Record<string, unknown>, bearer?: string | null) {
+  return nestPost<Record<string, unknown>>('/payments/mpesa/stk', body, bearer);
+}
+
+export async function mpesaGwInit(body: Record<string, unknown>, bearer?: string | null) {
+  const stk = await mpesaStk(body, bearer);
+  if (stk.ok || stk.status > 0) return stk;
+  return nestPost<Record<string, unknown>>('/payments/mpesa/gw-init', body, bearer);
+}
+
+export async function mpesaCheckStatus(checkout_request_id: string, bearer?: string | null) {
+  return nestPost<Record<string, unknown>>(
+    '/payments/mpesa/status',
+    { checkout_request_id },
+    bearer,
   );
-}
-
-export async function mpesaStk(body: Record<string, unknown>) {
-  return nestPost<Record<string, unknown>>('/payments/mpesa/stk', body);
-}
-
-export async function mpesaGwInit(body: Record<string, unknown>) {
-  // Prefer Nest STK (Daraja in Nest / OPS callbacks). Fall back to gw-init only if STK path fails shape.
-  const stk = await mpesaStk(body);
-  if (stk.ok) return stk;
-  return nestPost<Record<string, unknown>>('/payments/mpesa/gw-init', body);
-}
-
-export async function mpesaCheckStatus(checkout_request_id: string) {
-  return nestPost<Record<string, unknown>>('/payments/mpesa/status', { checkout_request_id });
 }
 
 export async function peaCompleteSignup(body: Record<string, unknown>) {
