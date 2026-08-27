@@ -27,6 +27,13 @@ export type DeskUser = {
   school_id?: string | null;
   user_roles?: string[] | string;
   school_level?: number | null;
+  /** School/role pick persisted with the Nest token session. */
+  selected_context?: {
+    schoolId: string | null;
+    studentId: string | null;
+    activeRole?: string | null;
+    skipped?: boolean;
+  } | null;
 };
 
 export type DeskLoginResult = {
@@ -113,6 +120,22 @@ async function persistDeskSession(token: string, user: DeskUser, source: DeskTok
   await SecureStore.setItemAsync(DESK_TOKEN_KEY, token);
   await SecureStore.setItemAsync(DESK_USER_KEY, JSON.stringify(user));
   await SecureStore.setItemAsync(DESK_TOKEN_SOURCE_KEY, source);
+}
+
+/** Keep school/role (or skipped individual) on the same SecureStore session as the Nest token. */
+export async function attachSelectedContextToDeskUser(
+  ctx: DeskUser['selected_context'],
+): Promise<void> {
+  try {
+    const token = memoryToken ?? (await SecureStore.getItemAsync(DESK_TOKEN_KEY));
+    if (!token) return;
+    const user = memoryUser ?? (await getCachedDeskUser());
+    if (!user) return;
+    const source = memoryTokenSource ?? (await getDeskTokenSource()) ?? 'nest';
+    await persistDeskSession(token, { ...user, selected_context: ctx ?? null }, source);
+  } catch {
+    /* ignore */
+  }
 }
 
 export async function getDeskTokenSource(): Promise<DeskTokenSource | null> {

@@ -46,6 +46,21 @@ type DisplayStudent = LinkedStudent & {
 };
 
 type CardDensity = 'comfy' | 'normal' | 'tight';
+type AddJoinRole = 'parent' | 'student' | 'teacher' | 'staff' | 'security';
+type AddStep = 0 | 1 | 2;
+
+const ADD_ROLE_OPTIONS: Array<{
+  id: AddJoinRole;
+  title: string;
+  hint: string;
+  icon: keyof typeof Ionicons.glyphMap;
+}> = [
+  { id: 'parent', title: 'Parent / guardian', hint: 'Link a child at a school', icon: 'people' },
+  { id: 'student', title: 'Student', hint: 'Join as a learner — can be another school', icon: 'school' },
+  { id: 'teacher', title: 'Teacher', hint: 'Teach at this or another school', icon: 'book' },
+  { id: 'security', title: 'Security', hint: 'Gate / campus security', icon: 'shield-checkmark' },
+  { id: 'staff', title: 'Staff', hint: 'Accountant, librarian, and other roles', icon: 'briefcase' },
+];
 
 const HERO_GREEN = '#15411D';
 const PICKER_LOAD_TIMEOUT_MS = 8000;
@@ -198,6 +213,7 @@ export function SchoolPickerScreen() {
     selectStudent,
     selectSchool,
     selectRole,
+    skipSchoolPick,
     backInPicker,
     refreshSchools,
     schoolsReady,
@@ -214,9 +230,12 @@ export function SchoolPickerScreen() {
   const [deskKidsFetched, setDeskKidsFetched] = useState(false);
   const { showDialog } = useDialog();
 
-  /** Inline “Add your student” — same page, 2 steps. */
+  /** Inline “Add role / school” — school first, then role at that school. */
   const [addOpen, setAddOpen] = useState(false);
-  const [addStep, setAddStep] = useState<1 | 2>(1);
+  const [addStep, setAddStep] = useState<AddStep>(0);
+  const [addRole, setAddRole] = useState<AddJoinRole | null>(null);
+  /** Only the row being submitted shows a spinner. */
+  const [pendingJoinKey, setPendingJoinKey] = useState<string | null>(null);
   const [schoolQuery, setSchoolQuery] = useState('');
   const [studentQuery, setStudentQuery] = useState('');
   /** Filter already-linked schools / students when switching context. */
@@ -224,6 +243,7 @@ export function SchoolPickerScreen() {
   const [schoolHits, setSchoolHits] = useState<JoinSchoolHit[]>([]);
   const [studentHits, setStudentHits] = useState<JoinStudentHit[]>([]);
   const [joinedSchool, setJoinedSchool] = useState<JoinSchoolHit | null>(null);
+  const [classOrCourse, setClassOrCourse] = useState('');
   const [searchingSchools, setSearchingSchools] = useState(false);
   const [searchingStudents, setSearchingStudents] = useState(false);
   const [submittingJoin, setSubmittingJoin] = useState(false);
@@ -249,20 +269,27 @@ export function SchoolPickerScreen() {
     (pickerMode === 'role' && schools.length > 1) ||
     (pickerMode === 'student' && (schools.length > 1 || schoolRoleOptions.length > 1));
 
-  // Android / system back — same as on-screen Back (add-student steps + picker).
+  // Android / system back — same as on-screen Back (add-role steps + picker).
   useEffect(() => {
     const onHardwareBack = () => {
       if (addOpen) {
         if (addStep === 2) {
           setAddStep(1);
-          setJoinedSchool(null);
+          setAddRole(null);
           setStudentQuery('');
           setStudentHits([]);
           return true;
         }
+        if (addStep === 1) {
+          setAddStep(0);
+          setAddRole(null);
+          return true;
+        }
         setAddOpen(false);
-        setAddStep(1);
+        setAddStep(0);
+        setAddRole(null);
         setJoinedSchool(null);
+        setPendingJoinKey(null);
         setSchoolQuery('');
         setSchoolHits([]);
         setStudentQuery('');
@@ -365,7 +392,7 @@ export function SchoolPickerScreen() {
   }, [schoolsReady, roleMode, schoolRoleOptions, selectRole]);
 
   // One student only → skip picker (go straight through to Chat / dashboard).
-  // Zero students → stay on this screen so parent can “Add your student”.
+  // Zero students → stay on this screen so parent can add a role / student.
   useEffect(() => {
     if (!schoolsReady) return;
     if (showStudentMode && !deskKidsFetched) return;
@@ -377,7 +404,7 @@ export function SchoolPickerScreen() {
   }, [schoolsReady, showStudentMode, deskKidsFetched, displayStudents, selectStudent, addOpen]);
 
   useEffect(() => {
-    if (!addOpen || addStep !== 1) return;
+    if (!addOpen || addStep !== 0) return;
     if (schoolSearchTimer.current) clearTimeout(schoolSearchTimer.current);
     const q = schoolQuery.trim();
     if (q.length < 2) {
@@ -434,34 +461,103 @@ export function SchoolPickerScreen() {
     };
   }, [addOpen, addStep, studentQuery, joinedSchool?.id]);
 
-  const openAddStudent = useCallback(() => {
+  const openAddRole = useCallback(() => {
     setAddOpen(true);
-    setAddStep(1);
+    setAddStep(0);
+    setAddRole(null);
     setSchoolQuery('');
     setStudentQuery('');
     setPickerFilter('');
     setSchoolHits([]);
     setStudentHits([]);
     setJoinedSchool(null);
+    setClassOrCourse('');
+    setPendingJoinKey(null);
   }, []);
 
-  const closeAddStudent = useCallback(() => {
+  const closeAddRole = useCallback(() => {
     setAddOpen(false);
-    setAddStep(1);
+    setAddStep(0);
+    setAddRole(null);
     setJoinedSchool(null);
-  }, []);
-
-  const onJoinSchool = useCallback((school: JoinSchoolHit) => {
-    setJoinedSchool(school);
-    setAddStep(2);
+    setSchoolQuery('');
+    setSchoolHits([]);
     setStudentQuery('');
     setStudentHits([]);
+    setClassOrCourse('');
+    setPendingJoinKey(null);
+  }, []);
+
+  const submitRoleAtSchool = useCallback(
+    async (school: JoinSchoolHit, role: AddJoinRole) => {
+      setSubmittingJoin(true);
+      setPendingJoinKey(`role:${role}`);
+      try {
+        await ensureNestDeskSession();
+        const body =
+          role === 'security'
+            ? {
+                school_id: school.id,
+                role_slug: 'staff' as const,
+                staff_role_slug: 'security',
+                staff_role_slugs: ['security'],
+              }
+            : role === 'staff'
+              ? {
+                  school_id: school.id,
+                  role_slug: 'staff' as const,
+                  staff_role_slug: 'staff',
+                  staff_role_slugs: ['staff'],
+                }
+              : role === 'student'
+                ? {
+                    school_id: school.id,
+                    role_slug: 'student' as const,
+                    ...(classOrCourse.trim() ? { class_or_course: classOrCourse.trim() } : {}),
+                  }
+                : { school_id: school.id, role_slug: role };
+        const res = await createJoinRequest(body);
+        closeAddRole();
+        void refreshSchools({ forcePick: true });
+        const adm =
+          role === 'student' ? String(res?.request?.admission_number || '').trim() : '';
+        const auto = Boolean((res as { auto_approved?: boolean })?.auto_approved);
+        showDialog({
+          title: res?.already_pending ? 'Already requested' : auto ? 'You are in' : 'Request sent',
+          message: res?.already_pending
+            ? `You already have a pending ${role} request at ${school.name}. Wait for the school to approve.`
+            : auto
+              ? `Joined ${school.name} as ${role}${adm ? ` · ${adm}` : ''}. Open the dashboard for this school.`
+              : role === 'student'
+                ? `Requested student at ${school.name}${adm ? ` · ${adm}` : ''}. Admission can be set later in Desk. Inactive until the school accepts.`
+                : `Requested ${role} at ${school.name}. Inactive until the school accepts.`,
+          variant: 'success',
+        });
+      } catch (e) {
+        showDialog({
+          title: 'Could not add role',
+          message: e instanceof Error ? e.message : String(e),
+          variant: 'danger',
+        });
+      } finally {
+        setSubmittingJoin(false);
+        setPendingJoinKey(null);
+      }
+    },
+    [closeAddRole, refreshSchools, showDialog, classOrCourse],
+  );
+
+  const onPickAddSchool = useCallback((school: JoinSchoolHit) => {
+    setJoinedSchool(school);
+    setAddRole(null);
+    setAddStep(1);
   }, []);
 
   const onAddStudentRequest = useCallback(
     async (student: JoinStudentHit) => {
       if (!joinedSchool?.id || !student?.id) return;
       setSubmittingJoin(true);
+      setPendingJoinKey(`student:${student.id}`);
       try {
         await ensureNestDeskSession();
         const res = await createJoinRequest({
@@ -470,7 +566,8 @@ export function SchoolPickerScreen() {
           role_slug: 'parent',
           relationship: 'guardian',
         });
-        closeAddStudent();
+        closeAddRole();
+        void refreshSchools({ forcePick: true });
         showDialog({
           title: res?.already_pending ? 'Already requested' : 'Request sent',
           message: res?.already_pending
@@ -486,9 +583,10 @@ export function SchoolPickerScreen() {
         });
       } finally {
         setSubmittingJoin(false);
+        setPendingJoinKey(null);
       }
     },
-    [joinedSchool, closeAddStudent, showDialog],
+    [joinedSchool, closeAddRole, refreshSchools, showDialog],
   );
 
   const onSelectRole = useCallback(
@@ -545,20 +643,30 @@ export function SchoolPickerScreen() {
     </Pressable>
   ) : null;
 
-  const addStudentBtn = (
+  const addRoleBtn = (
     <Pressable
       style={styles.addStudentBtn}
-      onPress={openAddStudent}
+      onPress={openAddRole}
       accessibilityRole="button"
-      accessibilityLabel="Add your student">
-      <Ionicons name="person-add-outline" size={14} color={HERO_GREEN} />
-      <Text style={styles.addStudentBtnText}>Add your student</Text>
+      accessibilityLabel="Add role or school">
+      <Ionicons name="add-circle-outline" size={14} color={HERO_GREEN} />
+      <Text style={styles.addStudentBtnText}>Add role / school</Text>
     </Pressable>
   );
 
-  const addStudentFooter = (
+  const addRoleFooter = (
     <View style={styles.addStudentFooter}>
-      {addStudentBtn}
+      {addRoleBtn}
+      <Pressable
+        style={styles.skipBtn}
+        onPress={() => void skipSchoolPick()}
+        accessibilityRole="button"
+        accessibilityLabel="Skip school and role selection">
+        <Text style={styles.skipBtnText}>Skip for now</Text>
+      </Pressable>
+      <Text style={styles.skipHint}>
+        Continue as individual. You can add parent, student, security, or another role at any school later.
+      </Text>
     </View>
   );
 
@@ -568,7 +676,15 @@ export function SchoolPickerScreen() {
         <LiquidGlassBackdrop />
         <View style={styles.page}>
           <FlatList
-            data={addStep === 1 ? schoolHits : studentHits}
+            data={
+              addStep === 0
+                ? schoolHits
+                : addStep === 1
+                  ? ADD_ROLE_OPTIONS
+                  : addRole === 'student'
+                    ? []
+                    : studentHits
+            }
             keyExtractor={(item) => item.id}
             style={styles.listFlex}
             contentContainerStyle={[styles.list, { paddingBottom: bottomPad + 8 }]}
@@ -582,11 +698,14 @@ export function SchoolPickerScreen() {
                   onPress={() => {
                     if (addStep === 2) {
                       setAddStep(1);
-                      setJoinedSchool(null);
+                      setAddRole(null);
                       setStudentQuery('');
                       setStudentHits([]);
+                    } else if (addStep === 1) {
+                      setAddStep(0);
+                      setAddRole(null);
                     } else {
-                      closeAddStudent();
+                      closeAddRole();
                     }
                   }}
                   accessibilityRole="button"
@@ -595,14 +714,24 @@ export function SchoolPickerScreen() {
                   <Text style={styles.backText}>Back</Text>
                 </Pressable>
                 <Text style={styles.title}>
-                  {addStep === 1 ? 'Find your school' : 'Find your student'}
+                  {addStep === 0
+                    ? 'Add a school'
+                    : addStep === 1
+                      ? `What's your role in ${joinedSchool?.name ?? 'this school'}?`
+                      : addRole === 'student'
+                        ? 'Class / course'
+                        : 'Find your student'}
                 </Text>
                 <Text style={styles.subtitle}>
-                  {addStep === 1
-                    ? 'Search by school name or code, then tap Join.'
-                    : `At ${joinedSchool?.name ?? 'school'} — search by name or admission. Second name is partially hidden until approved.`}
+                  {addStep === 0
+                    ? 'Search and tap one school. You can add another school later.'
+                    : addStep === 1
+                      ? 'Pick one role at this school. Parent, student, teacher, security, or staff.'
+                      : addRole === 'student'
+                        ? `Optional — e.g. Computer Science 2022. You can skip and set it later in Desk.`
+                        : `At ${joinedSchool?.name ?? 'school'} — search by name or admission. Second name is partially hidden until approved.`}
                 </Text>
-                {addStep === 1 ? (
+                {addStep === 0 ? (
                   <TextInput
                     style={styles.searchInput}
                     value={schoolQuery}
@@ -612,7 +741,29 @@ export function SchoolPickerScreen() {
                     autoCorrect={false}
                     autoCapitalize="none"
                   />
-                ) : (
+                ) : addStep === 1 && joinedSchool ? (
+                  <GlassPanel tone="frost" radius={14} shine={false} style={styles.joinedCard}>
+                    <View style={styles.cardInner}>
+                      <View style={[styles.logoWrap, { width: 40, height: 40 }]}>
+                        <SafeRemoteImage
+                          uri={joinedSchool.logo_url}
+                          style={{ width: 40, height: 40, borderRadius: 10 }}
+                          containerStyle={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}
+                          fallback={<Ionicons name="school" size={20} color={HERO_GREEN} />}
+                          accessibilityLabel={`${joinedSchool.name} logo`}
+                        />
+                      </View>
+                      <View style={styles.rowText}>
+                        <Text style={styles.cardTitle} numberOfLines={1}>
+                          {joinedSchool.name}
+                        </Text>
+                        <Text style={styles.cardMeta} numberOfLines={1}>
+                          {[joinedSchool.code, joinedSchool.county].filter(Boolean).join(' · ') || 'School'}
+                        </Text>
+                      </View>
+                    </View>
+                  </GlassPanel>
+                ) : addStep === 2 && addRole === 'student' ? (
                   <>
                     {joinedSchool ? (
                       <GlassPanel tone="frost" radius={14} shine={false} style={styles.joinedCard}>
@@ -631,7 +782,54 @@ export function SchoolPickerScreen() {
                               {joinedSchool.name}
                             </Text>
                             <Text style={styles.cardMeta} numberOfLines={1}>
-                              {joinedSchool.code || 'School'} · Joined
+                              Student
+                            </Text>
+                          </View>
+                        </View>
+                      </GlassPanel>
+                    ) : null}
+                    <TextInput
+                      style={styles.searchInput}
+                      value={classOrCourse}
+                      onChangeText={setClassOrCourse}
+                      placeholder="e.g. Computer Science 2022"
+                      placeholderTextColor="#94a3b8"
+                      autoCorrect={false}
+                      autoCapitalize="words"
+                    />
+                    <Pressable
+                      style={[styles.joinBtn, { marginTop: 14, alignSelf: 'stretch' }]}
+                      disabled={submittingJoin || !joinedSchool}
+                      onPress={() => joinedSchool && void submitRoleAtSchool(joinedSchool, 'student')}
+                      accessibilityRole="button"
+                      accessibilityLabel="Continue as student">
+                      {pendingJoinKey === 'role:student' ? (
+                        <ActivityIndicator color="#fff" size="small" />
+                      ) : (
+                        <Text style={styles.joinBtnText}>Continue</Text>
+                      )}
+                    </Pressable>
+                  </>
+                ) : addStep === 2 ? (
+                  <>
+                    {joinedSchool ? (
+                      <GlassPanel tone="frost" radius={14} shine={false} style={styles.joinedCard}>
+                        <View style={styles.cardInner}>
+                          <View style={[styles.logoWrap, { width: 40, height: 40 }]}>
+                            <SafeRemoteImage
+                              uri={joinedSchool.logo_url}
+                              style={{ width: 40, height: 40, borderRadius: 10 }}
+                              containerStyle={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}
+                              fallback={<Ionicons name="school" size={20} color={HERO_GREEN} />}
+                              accessibilityLabel={`${joinedSchool.name} logo`}
+                            />
+                          </View>
+                          <View style={styles.rowText}>
+                            <Text style={styles.cardTitle} numberOfLines={1}>
+                              {joinedSchool.name}
+                            </Text>
+                            <Text style={styles.cardMeta} numberOfLines={1}>
+                              {joinedSchool.code || 'School'} · parent
                             </Text>
                           </View>
                         </View>
@@ -647,60 +845,129 @@ export function SchoolPickerScreen() {
                       autoCapitalize="none"
                     />
                   </>
-                )}
-                {(addStep === 1 ? searchingSchools : searchingStudents) ? (
+                ) : null}
+                {(addStep === 0 ? searchingSchools : addStep === 2 ? searchingStudents : false) ? (
                   <ActivityIndicator color={HERO_GREEN} style={{ marginTop: 10 }} />
                 ) : null}
               </View>
             }
             ListEmptyComponent={
-              !(addStep === 1 ? searchingSchools : searchingStudents) &&
-              (addStep === 1 ? schoolQuery : studentQuery).trim().length >= 2 ? (
+              addStep === 1 || (addStep === 2 && addRole === 'student') ? null : !(addStep === 0 ? searchingSchools : searchingStudents) &&
+                (addStep === 0 ? schoolQuery : studentQuery).trim().length >= 2 ? (
                 <Text style={styles.emptyHint}>No matches — try another spelling.</Text>
+              ) : addStep === 0 && schoolQuery.trim().length < 2 ? (
+                <Text style={styles.emptyHint}>Type at least 2 letters to find a school.</Text>
               ) : null
             }
             renderItem={({ item }) => {
-              if (addStep === 1) {
+              if (addStep === 0) {
                 const school = item as JoinSchoolHit;
+                const selected = joinedSchool?.id === school.id;
+                const rowBusy = pendingJoinKey === `school:${school.id}`;
                 return (
-                  <GlassPanel tone="frost" radius={16} shine={false} style={styles.card}>
-                    <View style={styles.cardInner}>
-                      <View style={[styles.logoWrap, { width: avatarSize, height: avatarSize }]}>
-                        <SafeRemoteImage
-                          uri={school.logo_url}
-                          style={{ width: avatarSize, height: avatarSize, borderRadius: 10 }}
-                          containerStyle={{
-                            width: avatarSize,
-                            height: avatarSize,
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                          }}
-                          fallback={<Ionicons name="school" size={22} color={HERO_GREEN} />}
-                          accessibilityLabel={`${school.name} logo`}
-                        />
+                  <Pressable
+                    disabled={submittingJoin}
+                    onPress={() => onPickAddSchool(school)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Select ${school.name}`}
+                    accessibilityState={{ selected }}>
+                    <GlassPanel
+                      tone="frost"
+                      radius={16}
+                      shine={false}
+                      accentBorder={selected ? 'rgba(238,125,19,0.7)' : null}
+                      style={styles.card}>
+                      <View style={styles.cardInner}>
+                        <View style={[styles.logoWrap, { width: avatarSize, height: avatarSize }]}>
+                          <SafeRemoteImage
+                            uri={school.logo_url}
+                            style={{ width: avatarSize, height: avatarSize, borderRadius: 10 }}
+                            containerStyle={{
+                              width: avatarSize,
+                              height: avatarSize,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}
+                            fallback={<Ionicons name="school" size={22} color={HERO_GREEN} />}
+                            accessibilityLabel={`${school.name} logo`}
+                          />
+                        </View>
+                        <View style={styles.rowText}>
+                          <Text style={styles.cardTitle} numberOfLines={1}>
+                            {school.name}
+                          </Text>
+                          <Text style={styles.cardMeta} numberOfLines={1}>
+                            {[school.code, school.county].filter(Boolean).join(' · ') || 'School'}
+                          </Text>
+                        </View>
+                        {rowBusy ? (
+                          <ActivityIndicator color={HERO_GREEN} size="small" />
+                        ) : (
+                          <Ionicons
+                            name={selected ? 'checkmark-circle' : 'chevron-forward'}
+                            size={20}
+                            color={selected ? HERO_GREEN : Colors.mutedForeground}
+                          />
+                        )}
                       </View>
-                      <View style={styles.rowText}>
-                        <Text style={styles.cardTitle} numberOfLines={1}>
-                          {school.name}
-                        </Text>
-                        <Text style={styles.cardMeta} numberOfLines={1}>
-                          {[school.code, school.county].filter(Boolean).join(' · ') || 'School'}
-                        </Text>
+                    </GlassPanel>
+                  </Pressable>
+                );
+              }
+              if (addStep === 1) {
+                const opt = item as (typeof ADD_ROLE_OPTIONS)[number];
+                const rowBusy = pendingJoinKey === `role:${opt.id}`;
+                return (
+                  <Pressable
+                    disabled={submittingJoin}
+                    onPress={() => {
+                      if (!joinedSchool) return;
+                      if (opt.id === 'parent') {
+                        setAddRole('parent');
+                        setAddStep(2);
+                        setStudentQuery('');
+                        setStudentHits([]);
+                        return;
+                      }
+                      if (opt.id === 'student') {
+                        setAddRole('student');
+                        setClassOrCourse('');
+                        setAddStep(2);
+                        return;
+                      }
+                      void submitRoleAtSchool(joinedSchool, opt.id);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel={opt.title}>
+                    <GlassPanel tone="frost" radius={16} shine={false} style={styles.card}>
+                      <View style={styles.cardInner}>
+                        <View style={[styles.logoWrap, { width: avatarSize, height: avatarSize }]}>
+                          <Ionicons name={opt.icon} size={22} color={HERO_GREEN} />
+                        </View>
+                        <View style={styles.rowText}>
+                          <Text style={styles.cardTitle} numberOfLines={1}>
+                            {opt.title}
+                          </Text>
+                          <Text style={styles.cardMeta} numberOfLines={2}>
+                            {opt.hint}
+                          </Text>
+                        </View>
+                        {rowBusy ? (
+                          <ActivityIndicator color={HERO_GREEN} size="small" />
+                        ) : submittingJoin ? (
+                          <View style={{ width: 20 }} />
+                        ) : (
+                          <Ionicons name="chevron-forward" size={18} color={Colors.mutedForeground} />
+                        )}
                       </View>
-                      <Pressable
-                        style={styles.joinBtn}
-                        onPress={() => onJoinSchool(school)}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Join ${school.name}`}>
-                        <Text style={styles.joinBtnText}>Join</Text>
-                      </Pressable>
-                    </View>
-                  </GlassPanel>
+                    </GlassPanel>
+                  </Pressable>
                 );
               }
               const student = item as JoinStudentHit;
               const adm = student.admission_number || student.admission_masked || null;
               const meta = [student.class_name, adm ? `Adm ${adm}` : null].filter(Boolean).join(' · ');
+              const rowBusy = pendingJoinKey === `student:${student.id}`;
               return (
                 <GlassPanel tone="frost" radius={16} shine={false} style={styles.card}>
                   <View style={styles.cardInner}>
@@ -716,12 +983,12 @@ export function SchoolPickerScreen() {
                       ) : null}
                     </View>
                     <Pressable
-                      style={[styles.joinBtn, submittingJoin && { opacity: 0.6 }]}
+                      style={[styles.joinBtn, submittingJoin && !rowBusy && { opacity: 0.45 }]}
                       disabled={submittingJoin}
                       onPress={() => void onAddStudentRequest(student)}
                       accessibilityRole="button"
                       accessibilityLabel={`Add ${student.name}`}>
-                      {submittingJoin ? (
+                      {rowBusy ? (
                         <ActivityIndicator color="#fff" size="small" />
                       ) : (
                         <Text style={styles.joinBtnText}>Add</Text>
@@ -754,8 +1021,8 @@ export function SchoolPickerScreen() {
                 {headerBack}
                 <Text style={styles.title}>Select school and role</Text>
                 <Text style={styles.subtitle}>
-                  Choose your role at {selectedSchool?.name ?? 'this school'}. You can switch anytime
-                  from the dashboard.
+                  Choose your role at {selectedSchool?.name ?? 'this school'}. Add another role below
+                  if you are also a parent, student, or security — including at a different school.
                 </Text>
               </View>
             }
@@ -791,6 +1058,7 @@ export function SchoolPickerScreen() {
                 </Pressable>
               );
             }}
+            ListFooterComponent={addRoleFooter}
           />
         ) : showStudentMode ? (
           <FlatList
@@ -828,10 +1096,10 @@ export function SchoolPickerScreen() {
               <Text style={styles.emptyHint}>
                 {pickerFilter.trim()
                   ? 'No students match that search.'
-                  : 'No approved students yet. Use Add your student below — pending requests stay inactive until the school accepts.'}
+                  : 'No approved students yet. Use Add role / school below (as parent) — pending requests stay inactive until the school accepts.'}
               </Text>
             }
-            ListFooterComponent={addStudentFooter}
+            ListFooterComponent={addRoleFooter}
             renderItem={({ item }) => {
               const selected =
                 item.id === selectedStudentId && item.schoolId === selectedSchoolId;
@@ -921,12 +1189,22 @@ export function SchoolPickerScreen() {
               schools.length === 0 ? (
                 <View style={styles.addStudentFooter}>
                   <Text style={styles.waitHint}>
-                    No schools linked yet. Add your student to find a school and request access.
+                    No schools linked yet. Add role / school to request access.
                   </Text>
-                  {addStudentBtn}
+                  {addRoleBtn}
+                  <Pressable
+                    style={styles.skipBtn}
+                    onPress={() => void skipSchoolPick()}
+                    accessibilityRole="button"
+                    accessibilityLabel="Skip school and role selection">
+                    <Text style={styles.skipBtnText}>Skip for now</Text>
+                  </Pressable>
+                  <Text style={styles.skipHint}>
+                    Continue as individual. You can add parent, student, security, or another role at any school later.
+                  </Text>
                 </View>
               ) : (
-                <View style={styles.addStudentFooter}>{addStudentBtn}</View>
+                addRoleFooter
               )
             }
             renderItem={({ item }) => {
@@ -962,9 +1240,15 @@ export function SchoolPickerScreen() {
                         <Text style={styles.cardTitle} numberOfLines={1}>
                           {item.name}
                         </Text>
-                        <Text style={styles.cardMeta} numberOfLines={1}>
-                          {(item.roles ?? []).join(' · ') || 'School'}
-                        </Text>
+                        {(item.roles ?? []).length ? (
+                          <Text style={styles.cardMeta} numberOfLines={1}>
+                            {(item.roles ?? []).join(' · ')}
+                          </Text>
+                        ) : item.shortName ? (
+                          <Text style={styles.cardMeta} numberOfLines={1}>
+                            {item.shortName}
+                          </Text>
+                        ) : null}
                       </View>
                       <Ionicons name="chevron-forward" size={18} color={Colors.mutedForeground} />
                     </View>
@@ -1063,6 +1347,26 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     alignItems: 'center',
     gap: 8,
+  },
+  skipBtn: {
+    marginTop: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  skipBtnText: {
+    color: Colors.mutedForeground,
+    fontSize: 14,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
+  skipHint: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: Colors.mutedForeground,
+    textAlign: 'center',
+    lineHeight: 16,
+    paddingHorizontal: 16,
+    opacity: 0.9,
   },
   waitHint: {
     fontSize: 13,

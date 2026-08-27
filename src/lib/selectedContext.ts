@@ -4,11 +4,14 @@ import * as FileSystem from 'expo-file-system/legacy';
 const SELECTED_CONTEXT_PREFIX = 'tukua_selected_context_';
 
 export type StoredContext = {
-  schoolId: string;
+  /** Null when the user skipped school/role pick (individual → student). */
+  schoolId: string | null;
   /** Parent focus — null for teacher/admin school-only context. */
   studentId: string | null;
   /** Active hat when user has multiple roles at one school (parent, teacher, security, …). */
   activeRole?: string | null;
+  /** Skipped school/role — no school dashboards until they pick. */
+  skipped?: boolean;
 };
 
 function key(userId: string) {
@@ -25,14 +28,16 @@ function parseRaw(raw: string | null | undefined): StoredContext | null {
   try {
     // Legacy: school id only
     if (!raw.includes('{')) {
-      return { schoolId: raw, studentId: null, activeRole: null };
+      return { schoolId: raw, studentId: null, activeRole: null, skipped: false };
     }
     const parsed = JSON.parse(raw) as StoredContext;
-    if (!parsed?.schoolId) return null;
+    const skipped = Boolean(parsed?.skipped);
+    if (!parsed?.schoolId && !skipped) return null;
     return {
-      schoolId: String(parsed.schoolId),
+      schoolId: parsed.schoolId ? String(parsed.schoolId) : null,
       studentId: parsed.studentId ? String(parsed.studentId) : null,
       activeRole: parsed.activeRole ? String(parsed.activeRole).toLowerCase().trim() : null,
+      skipped,
     };
   } catch {
     return null;
@@ -64,19 +69,32 @@ export async function getSelectedContext(userId: string): Promise<StoredContext 
   try {
     const raw = await SecureStore.getItemAsync(key(userId));
     const fromSecure = parseRaw(raw);
-    if (fromSecure?.schoolId) return fromSecure;
+    if (fromSecure?.schoolId || fromSecure?.skipped) return fromSecure;
   } catch {
     /* fall through to file backup */
   }
-  return readFileBackup(userId);
+  const fromFile = await readFileBackup(userId);
+  if (fromFile?.schoolId || fromFile?.skipped) return fromFile;
+  // Fallback: context saved alongside Nest token / desk user
+  try {
+    const { getCachedDeskUser } = await import('./deskApi');
+    const user = await getCachedDeskUser();
+    const embedded = user?.selected_context ? parseRaw(JSON.stringify(user.selected_context)) : null;
+    if (embedded?.schoolId || embedded?.skipped) return embedded;
+  } catch {
+    /* ignore */
+  }
+  return null;
 }
 
 export async function setSelectedContext(userId: string, ctx: StoredContext): Promise<void> {
-  if (!userId || !ctx.schoolId) return;
+  if (!userId) return;
+  if (!ctx.skipped && !ctx.schoolId) return;
   const normalized: StoredContext = {
-    schoolId: String(ctx.schoolId),
+    schoolId: ctx.schoolId ? String(ctx.schoolId) : null,
     studentId: ctx.studentId ? String(ctx.studentId) : null,
     activeRole: ctx.activeRole ? String(ctx.activeRole).toLowerCase().trim() : null,
+    skipped: Boolean(ctx.skipped),
   };
   const payload = JSON.stringify(normalized);
   try {
@@ -85,6 +103,13 @@ export async function setSelectedContext(userId: string, ctx: StoredContext): Pr
     /* still write file backup */
   }
   await writeFileBackup(userId, normalized);
+  // Keep a copy on the desk session so context survives with the token
+  try {
+    const { attachSelectedContextToDeskUser } = await import('./deskApi');
+    await attachSelectedContextToDeskUser(normalized);
+  } catch {
+    /* ignore */
+  }
 }
 
 export async function clearSelectedContext(userId: string): Promise<void> {
@@ -100,6 +125,12 @@ export async function clearSelectedContext(userId: string): Promise<void> {
     if (info.exists) await FileSystem.deleteAsync(uri, { idempotent: true });
   } catch {
     // ignore
+  }
+  try {
+    const { attachSelectedContextToDeskUser } = await import('./deskApi');
+    await attachSelectedContextToDeskUser(null);
+  } catch {
+    /* ignore */
   }
 }
 

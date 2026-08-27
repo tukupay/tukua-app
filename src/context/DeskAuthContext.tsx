@@ -69,6 +69,8 @@ type DeskAuthContextType = {
   selectedRole: string | null;
   /** True when user must pick school, role, or student. */
   needsSchoolPick: boolean;
+  /** User skipped school/role — individual treated as student; dashboards locked until pick. */
+  contextSkipped: boolean;
   /**
    * Picker UI mode. Flow: school → role → student (parent, multi-child).
    */
@@ -78,6 +80,8 @@ type DeskAuthContextType = {
   selectStudent: (student: LinkedStudent) => Promise<void>;
   selectSchool: (schoolId: string) => Promise<void>;
   selectRole: (role: string) => Promise<void>;
+  /** Continue as individual (student hat) without a school — dashboards stay locked. */
+  skipSchoolPick: () => Promise<void>;
   /**
    * Super-admin: adopt any school + mobile hat (teacher/security/parent/student/individual)
    * without requiring org membership at that school.
@@ -115,11 +119,13 @@ const DeskAuthContext = createContext<DeskAuthContextType>({
   selectedStudent: null,
   selectedRole: null,
   needsSchoolPick: false,
+  contextSkipped: false,
   pickerMode: 'student',
   schoolRoleOptions: [],
   selectStudent: async () => {},
   selectSchool: async () => {},
   selectRole: async () => {},
+  skipSchoolPick: async () => {},
   adoptSchoolRole: async () => {},
   backInPicker: async () => {},
   requestSchoolChange: async () => {},
@@ -217,9 +223,26 @@ function resolveContext(
   };
 
   if (!schools.length) {
+    if (stored?.skipped) {
+      return {
+        ...empty,
+        activeRole: 'student',
+        needsPick: false,
+        pickerMode: 'school',
+      };
+    }
     return {
       ...empty,
       needsPick: true,
+      pickerMode: 'school',
+    };
+  }
+
+  if (stored?.skipped && !opts?.forcePick) {
+    return {
+      ...empty,
+      activeRole: 'student',
+      needsPick: false,
       pickerMode: 'school',
     };
   }
@@ -352,6 +375,7 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
   /** Full row from picker (Nest-enriched name/class/photo) — linkedStudents alone often lacks photo. */
   const [studentSnapshot, setStudentSnapshot] = useState<LinkedStudent | null>(null);
   const [needsSchoolPick, setNeedsSchoolPick] = useState(false);
+  const [contextSkipped, setContextSkipped] = useState(false);
   const [pickerMode, setPickerMode] = useState<'student' | 'school' | 'role'>('student');
   const [deskReady, setDeskReady] = useState(false);
   const [schoolsReady, setSchoolsReady] = useState(false);
@@ -515,11 +539,12 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
         resolveContext(list, linked, stored, { forcePick: opts?.forcePick });
 
       if (!needsPick && schoolId) {
-        const next: StoredContext = { schoolId, studentId, activeRole };
+        const next: StoredContext = { schoolId, studentId, activeRole, skipped: false };
         const same =
           stored?.schoolId === next.schoolId &&
           stored?.studentId === next.studentId &&
-          stored?.activeRole === next.activeRole;
+          stored?.activeRole === next.activeRole &&
+          !stored?.skipped;
         if (!same) {
           await setSelectedContext(userId, next);
         }
@@ -537,16 +562,21 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
         setStudentSnapshot(null);
       }
       setNeedsSchoolPick(needsPick);
+      setContextSkipped(Boolean(stored?.skipped) && !schoolId && !needsPick);
       setPickerMode(mode);
       setSchoolsReady(true);
-      setDeskActiveContext({ schoolId, studentId });
+      setDeskActiveContext({
+        schoolId,
+        studentId,
+        roles: activeRole ? [activeRole] : undefined,
+      });
       // Keep Nest/desk user_roles locked to the restored hat so resume doesn't fall to "individual".
       if (activeRole) {
         setDeskUser((prev) =>
           prev
             ? {
                 ...prev,
-                school_id: schoolId ?? prev.school_id,
+                school_id: schoolId ?? prev.school_id ?? null,
                 user_roles: [activeRole],
               }
             : prev,
@@ -565,12 +595,14 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
         schoolId: student.schoolId,
         studentId: student.id,
         activeRole: role,
+        skipped: false,
       });
       setSelectedSchoolIdState(student.schoolId);
       setSelectedStudentIdState(student.id);
       setSelectedRoleState(role);
       setStudentSnapshot(student);
       setNeedsSchoolPick(false);
+      setContextSkipped(false);
       setPickerMode('student');
       setDeskActiveContext({ schoolId: student.schoolId, studentId: student.id });
 
@@ -608,8 +640,10 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
         schoolId: selectedSchoolId,
         studentId: null,
         activeRole: activeHat,
+        skipped: false,
       });
       setSelectedRoleState(activeHat);
+      setContextSkipped(false);
       setDeskUser((prev) =>
         prev ? { ...prev, school_id: selectedSchoolId, user_roles: [activeHat] } : prev,
       );
@@ -676,9 +710,11 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
         schoolId,
         studentId: null,
         activeRole: hat,
+        skipped: false,
       });
       setSelectedSchoolIdState(schoolId);
       setSelectedRoleState(hat);
+      setContextSkipped(false);
       setDeskUser((prev) =>
         prev
           ? {
@@ -781,10 +817,11 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      await setSelectedContext(authUserId, { schoolId, studentId: null, activeRole: role });
+      await setSelectedContext(authUserId, { schoolId, studentId: null, activeRole: role, skipped: false });
       setSelectedStudentIdState(null);
       setStudentSnapshot(null);
       setNeedsSchoolPick(false);
+      setContextSkipped(false);
       setPickerMode('school');
       setDeskActiveContext({ schoolId, studentId: null });
       setDeskUser((prev) =>
@@ -800,6 +837,36 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
     },
     [authUserId, schools, selectStudent],
   );
+
+  const skipSchoolPick = useCallback(async () => {
+    if (!authUserId) return;
+    const next: StoredContext = {
+      schoolId: null,
+      studentId: null,
+      activeRole: 'student',
+      skipped: true,
+    };
+    await setSelectedContext(authUserId, next);
+    setSelectedSchoolIdState(null);
+    setSelectedStudentIdState(null);
+    setSelectedRoleState('student');
+    setStudentSnapshot(null);
+    setSchoolRoleOptions([]);
+    setNeedsSchoolPick(false);
+    setContextSkipped(true);
+    setPickerMode('school');
+    setDeskActiveContext({ schoolId: null, studentId: null, roles: ['student'] });
+    setDeskUser((prev) =>
+      prev
+        ? {
+            ...prev,
+            school_id: null,
+            user_roles: ['student'],
+          }
+        : prev,
+    );
+    log.info('DeskAuth', 'school pick skipped → individual as student');
+  }, [authUserId]);
 
   const backInPicker = useCallback(async () => {
     if (!authUserId) return;
@@ -839,21 +906,34 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
   const requestSchoolChange = useCallback(async () => {
     if (!authUserId) return;
     const canSwitch =
+      contextSkipped ||
       schools.length >= 1 ||
       linkedStudents.length > 1 ||
       schoolRoleOptions.length > 1 ||
       uniqueSchoolRoles(selectedSchool?.roles).length > 1;
-    if (!canSwitch) return;
+    if (!canSwitch && schools.length === 0) {
+      // Still allow reopening picker so they can search/join or skip again
+    } else if (!canSwitch) {
+      return;
+    }
     await clearSelectedContext(authUserId);
     setSelectedSchoolIdState(null);
     setSelectedStudentIdState(null);
     setSelectedRoleState(null);
     setStudentSnapshot(null);
+    setContextSkipped(false);
     setDeskActiveContext({ schoolId: null, studentId: null });
     setNeedsSchoolPick(true);
-    setPickerMode(schools.length > 1 || prefersSchoolPicker(schools) ? 'school' : 'student');
+    setPickerMode(schools.length > 1 || prefersSchoolPicker(schools) ? 'school' : 'school');
     log.info('DeskAuth', 'context change requested');
-  }, [authUserId, linkedStudents.length, schools, schoolRoleOptions.length, selectedSchool?.roles]);
+  }, [
+    authUserId,
+    contextSkipped,
+    linkedStudents.length,
+    schools,
+    schoolRoleOptions.length,
+    selectedSchool?.roles,
+  ]);
 
   const refreshSchools = useCallback(
     async (opts?: { quiet?: boolean; forcePick?: boolean }) => {
@@ -1110,6 +1190,7 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
     setStudentSnapshot(null);
     setSchoolRoleOptions([]);
     setNeedsSchoolPick(false);
+    setContextSkipped(false);
   }, [authUserId]);
 
   const value = useMemo(
@@ -1130,11 +1211,13 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
       selectedStudent,
       selectedRole,
       needsSchoolPick,
+      contextSkipped,
       pickerMode,
       schoolRoleOptions,
       selectStudent,
       selectSchool,
       selectRole,
+      skipSchoolPick,
       adoptSchoolRole,
       backInPicker,
       requestSchoolChange,
@@ -1157,11 +1240,13 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
       selectedStudent,
       selectedRole,
       needsSchoolPick,
+      contextSkipped,
       pickerMode,
       schoolRoleOptions,
       selectStudent,
       selectSchool,
       selectRole,
+      skipSchoolPick,
       adoptSchoolRole,
       backInPicker,
       requestSchoolChange,

@@ -96,8 +96,6 @@ async function pickDocumentOrImage(): Promise<PickedAsset | null> {
 }
 
 async function pickFromGallery(): Promise<PickedAsset | null> {
-  const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-  if (!perm.granted) return null;
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ImagePicker.MediaTypeOptions.Images,
     quality: 0.85,

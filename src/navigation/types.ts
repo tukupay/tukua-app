@@ -52,7 +52,7 @@ export type DashboardStackParamList = {
   FaceSelfEnroll: undefined;
   GateQr: undefined;
   GateCheckIn: undefined;
-  JoinSchool: { firstLogin?: boolean } | undefined;
+  JoinSchool: { firstLogin?: boolean; preferRole?: 'parent' | 'teacher' | 'student' | 'staff' } | undefined;
   FeaturePlaceholder: {
     title: string;
     description: string;

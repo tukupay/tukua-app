@@ -40,6 +40,8 @@ export type MembershipHit = {
   code?: string | null;
   county?: string | null;
   logo_url?: string | null;
+  workload_count?: number;
+  linked_student_count?: number;
 };
 
 type PlatformDbFilter = {
@@ -192,7 +194,12 @@ export async function searchJoinSchools(
         ? (json as { data: { schools?: JoinSchoolHit[]; count?: number; has_more?: boolean } }).data
         : (json as { schools?: JoinSchoolHit[]; count?: number; has_more?: boolean });
     const raw = Array.isArray(data?.schools) ? data.schools : [];
-    const schools = await keepSchoolsOnly(raw);
+    const schools = await keepSchoolsOnly(
+      raw.map((s: JoinSchoolHit & { school_name?: string }) => ({
+        ...s,
+        name: String(s.name || s.school_name || '').trim() || 'School',
+      })),
+    );
     return {
       schools,
       count: schools.length,
@@ -241,8 +248,10 @@ export async function createJoinRequest(body: {
   role_slug?: 'parent' | 'teacher' | 'student' | 'staff';
   target_student_id?: string;
   target_class_id?: string;
+  class_or_course?: string;
   staff_role_slug?: string;
   staff_role_slugs?: string[];
+  admission_number?: string | null;
   teacher_roles?: string[];
   is_class_teacher?: boolean;
   workloads?: Array<{
@@ -255,7 +264,7 @@ export async function createJoinRequest(body: {
   note?: string;
 }) {
   return nestJoinFetch<{
-    request?: { id: string; status: string };
+    request?: { id: string; status: string; admission_number?: string | null };
     already_pending?: boolean;
   }>('/parents/join/requests', {
     method: 'POST',

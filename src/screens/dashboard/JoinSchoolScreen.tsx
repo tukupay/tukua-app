@@ -121,14 +121,15 @@ export function JoinSchoolScreen() {
   const navigation = useNavigation();
   const route = useRoute<RouteProp<DashboardStackParamList, 'JoinSchool'>>();
   const firstLogin = Boolean(route.params?.firstLogin);
+  const preferRole = route.params?.preferRole;
   const { showDialog } = useDialog();
   const { palette } = useAppTheme();
   const { selectSchool, refreshSchools } = useDeskAuth();
   const bottomPad = TAB_BAR_BODY_HEIGHT + insets.bottom + 24;
   const hero = palette.primary;
 
-  const [step, setStep] = useState<Step>('role');
-  const [role, setRole] = useState<JoinRole | null>(null);
+  const [step, setStep] = useState<Step>(preferRole ? 'school' : 'role');
+  const [role, setRole] = useState<JoinRole | null>(preferRole ?? null);
   const [schoolQuery, setSchoolQuery] = useState('');
   const [schoolHits, setSchoolHits] = useState<JoinSchoolHit[]>([]);
   const [searchingSchools, setSearchingSchools] = useState(false);
@@ -144,6 +145,7 @@ export function JoinSchoolScreen() {
   const [subjects, setSubjects] = useState<JoinSubjectHit[]>([]);
   const [loadingMeta, setLoadingMeta] = useState(false);
   const [classId, setClassId] = useState('');
+  const [classOrCourse, setClassOrCourse] = useState('');
   const [showClassPicker, setShowClassPicker] = useState(false);
   const [staffRoles, setStaffRoles] = useState<string[]>([]);
   const [showStaffPicker, setShowStaffPicker] = useState(false);
@@ -169,9 +171,8 @@ export function JoinSchoolScreen() {
     }
   }, []);
 
-  useEffect(() => {
-    if (firstLogin) void markJoinPromptSeen();
-  }, [firstLogin, markJoinPromptSeen]);
+  // Do not mark "seen" on open — login must re-check incomplete teacher/parent onboarding.
+  // Seen is set only when they skip or successfully submit (below).
 
   const reloadMemberships = useCallback(async () => {
     setLoadingMemberships(true);
@@ -367,11 +368,10 @@ export function JoinSchoolScreen() {
   const canSubmit = (() => {
     if (!school || !role) return false;
     if (role === 'parent') return students.length > 0;
-    if (role === 'student') return Boolean(classId);
+    if (role === 'student') return true;
     if (role === 'staff') return staffRoles.length > 0;
     if (role === 'teacher') {
       if (asClassTeacher && !classId) return false;
-      if (!workloads.some((w) => w.subject_id)) return false;
       return asTeacher || asClassTeacher;
     }
     return false;
@@ -423,6 +423,7 @@ export function JoinSchoolScreen() {
           if (res.already_pending) already += 1;
           else created += 1;
         }
+        await markJoinPromptSeen();
         setStep('done');
         showDialog({
           title: already && !created ? 'Already pending' : 'Requests submitted',
@@ -438,9 +439,14 @@ export function JoinSchoolScreen() {
           school_id: school.id,
           role_slug: role,
           note: note.trim() || undefined,
-          ...(role === 'student' || (role === 'teacher' && asClassTeacher)
-            ? { target_class_id: classId }
+          ...(role === 'student' && classOrCourse.trim()
+            ? { class_or_course: classOrCourse.trim() }
             : {}),
+          ...(role === 'student' && classId
+            ? { target_class_id: classId }
+            : role === 'teacher' && asClassTeacher && classId
+              ? { target_class_id: classId }
+              : {}),
           ...(role === 'staff'
             ? { staff_role_slugs: staffRoles, staff_role_slug: staffRoles[0] }
             : {}),
@@ -453,10 +459,17 @@ export function JoinSchoolScreen() {
               }
             : {}),
         });
+        await markJoinPromptSeen();
         setStep('done');
         showDialog({
-          title: res.already_pending ? 'Already pending' : 'Request submitted',
-          message: 'Waiting for school admin approval.',
+          title: res.already_pending
+            ? 'Already pending'
+            : (res as { auto_approved?: boolean }).auto_approved
+              ? 'You are in'
+              : 'Request submitted',
+          message: (res as { auto_approved?: boolean }).auto_approved
+            ? 'Open the dashboard for this school.'
+            : 'Waiting for school admin approval.',
           variant: 'success',
           icon: 'checkmark-circle',
         });
@@ -613,18 +626,30 @@ export function JoinSchoolScreen() {
         <Text style={styles.title}>Join school</Text>
         <Text style={styles.moduleDesc}>
           {firstLogin
-            ? 'Do you want to join a school now? You can skip and do this later.'
+            ? preferRole === 'teacher'
+              ? 'Add at least one subject / class workload for your school. You can skip and finish later — we will remind you on login.'
+              : preferRole === 'parent'
+                ? 'Select your student at the school. You can skip and finish later — we will remind you on login.'
+                : 'Join a school now, or skip and fill this later after login.'
             : 'Request to join a school. An admin must approve before you’re linked.'}
         </Text>
 
-        {firstLogin && step === 'role' ? (
+        {(firstLogin || preferRole) && step === 'role' ? (
           <View style={[styles.promptBox, { borderColor: `${hero}33`, backgroundColor: `${hero}0A` }]}>
-            <Text style={styles.promptTitle}>Do you want to join a school?</Text>
-            <Text style={styles.hint}>Link as parent, student, teacher, or staff — or skip for now.</Text>
+            <Text style={styles.promptTitle}>School details</Text>
+            <Text style={styles.hint}>
+              Teachers add workload · Parents link a student · Students need nothing extra. You can skip for now.
+            </Text>
             <Pressable style={[styles.skipBtn, { borderColor: `${hero}55` }]} onPress={() => void skipFirstLogin()}>
               <Text style={[styles.skipText, { color: hero }]}>Skip for now</Text>
             </Pressable>
           </View>
+        ) : null}
+
+        {preferRole && step !== 'role' ? (
+          <Pressable style={[styles.skipBtn, { borderColor: `${hero}55`, marginBottom: 12 }]} onPress={() => void skipFirstLogin()}>
+            <Text style={[styles.skipText, { color: hero }]}>Skip for now — fill later</Text>
+          </Pressable>
         ) : null}
 
         {step === 'role' ? (
@@ -775,48 +800,18 @@ export function JoinSchoolScreen() {
 
             {role === 'student' ? (
               <>
-                <Text style={styles.label}>Class</Text>
-                {classId ? (
-                  <View style={styles.tagRow}>
-                    <Pressable
-                      style={[styles.tagRemovable, { backgroundColor: `${hero}1A` }]}
-                      onPress={() => {
-                        setClassId('');
-                        setShowClassPicker(true);
-                      }}>
-                      <Text style={[styles.tagText, { color: hero }]}>{selectedClassLabel}</Text>
-                      <Ionicons name="close" size={14} color={hero} />
-                    </Pressable>
-                  </View>
-                ) : null}
-                <Pressable style={styles.card} onPress={() => setShowClassPicker((v) => !v)}>
-                  <Text style={styles.cardTitle}>
-                    {showClassPicker ? 'Hide classes' : classId ? 'Change class…' : 'Select a class…'}
-                  </Text>
-                  <Ionicons
-                    name={showClassPicker ? 'chevron-up' : 'chevron-down'}
-                    size={18}
-                    color={Colors.mutedForeground}
-                  />
-                </Pressable>
-                {showClassPicker
-                  ? classes.map((c) => (
-                      <Pressable
-                        key={c.id}
-                        style={styles.card}
-                        onPress={() => {
-                          setClassId(c.id);
-                          setShowClassPicker(false);
-                        }}>
-                        <Text style={styles.cardTitle}>
-                          {[c.name, c.stream].filter(Boolean).join(' · ')}
-                        </Text>
-                      </Pressable>
-                    ))
-                  : null}
-                {!classes.length && !loadingMeta ? (
-                  <Text style={styles.hint}>No classes found for this school.</Text>
-                ) : null}
+                <Text style={styles.label}>Class / course (optional)</Text>
+                <Text style={styles.hint}>
+                  e.g. Computer Science 2022 — skip and set later in Desk.
+                </Text>
+                <TextInput
+                  style={styles.input}
+                  value={classOrCourse}
+                  onChangeText={setClassOrCourse}
+                  placeholder="Computer Science 2022"
+                  placeholderTextColor={Colors.mutedForeground}
+                  autoCorrect={false}
+                />
               </>
             ) : null}
 

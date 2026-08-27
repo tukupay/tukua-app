@@ -123,9 +123,9 @@ export function ScanMarksheetScreen({ navigation }: Props) {
     }
     const perm = fromCamera
       ? await ImagePicker.requestCameraPermissionsAsync()
-      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+      : { granted: true };
     if (!perm.granted) {
-      setError('Camera or photo library permission is required.');
+      setError('Camera permission is required.');
       return;
     }
     const result = fromCamera

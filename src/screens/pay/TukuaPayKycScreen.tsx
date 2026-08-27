@@ -62,11 +62,17 @@ export function TukuaPayKycScreen({ navigation }: Props) {
     setError(null);
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) {
-      const lib = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!lib.granted) {
-        setError('Camera or photo permission is required.');
-        return;
-      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        quality: 0.7,
+        base64: true,
+        allowsEditing: true,
+      });
+      if (result.canceled || !result.assets?.[0]?.base64) return;
+      const shot = { uri: result.assets[0].uri, base64: result.assets[0].base64 };
+      if (slot === 'front') setFront(shot);
+      else if (slot === 'back') setBack(shot);
+      else setKra(shot);
+      return;
     }
     const result = await ImagePicker.launchCameraAsync({
       quality: 0.7,
