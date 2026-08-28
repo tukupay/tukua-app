@@ -188,6 +188,14 @@ export async function mpesaCheckStatus(checkout_request_id: string, bearer?: str
   );
 }
 
+export async function sendRegistrationWelcome(body: {
+  user_id: string;
+  mode?: string;
+  organization_ids?: string[];
+}) {
+  return nestPost('/platform/edge/send-registration-welcome', body);
+}
+
 export async function peaCompleteSignup(body: Record<string, unknown>) {
   return nestPost<{
     ok?: boolean;

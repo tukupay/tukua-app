@@ -41,6 +41,7 @@ import {
   checkTukuaAccount,
   joinSchoolAfterRegister,
   searchRegistrationSchools,
+  sendRegistrationWelcome,
   type RegistrationSchoolHit,
 } from '../lib/platformAuthApi';
 import { Colors, TukuaWeb } from '../theme/yana';
@@ -358,6 +359,12 @@ export function RegisterScreen({ navigation }: Props) {
       if (nest.session) {
         await adoptSession(nest.session as any);
         await applySchoolJoinIfNeeded(nest.session.access_token);
+        const orgIds = pendingSchoolJoinRef.current?.joins.map((j) => j.organization_id) ?? [];
+        sendRegistrationWelcome({
+          user_id: result.userId,
+          mode: 'paid',
+          organization_ids: orgIds.length ? orgIds : undefined,
+        }).catch(() => {});
       }
       try {
         await connectDesk(form.email.trim(), form.password);
