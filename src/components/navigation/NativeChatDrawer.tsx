@@ -45,6 +45,10 @@ export function NativeChatDrawer({ visible, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  // Mirrors of the web chat's own state — the WebView owns the truth and the storage;
+  // these only drive the row's label so the tap feels immediate.
+  const [askQuestions, setAskQuestions] = useState(false);
+  const [darkTheme, setDarkTheme] = useState(false);
 
   const displayName = profile?.fullName?.trim() || profile?.email?.split('@')[0] || 'Account';
   const avatarUri =
@@ -244,6 +248,60 @@ export function NativeChatDrawer({ visible, onClose }: Props) {
             </ScrollView>
           )}
 
+          {/* The chat itself is the web ChatPage in a WebView, and its sidebar is hidden
+              on mobile — so these two toggles had nowhere to live. They relay into the
+              same state and storage the web sidebar uses. Agent Mode is not here on
+              purpose: its runtime is Desk-only. */}
+          <View style={styles.togglesCard}>
+            <TouchableOpacity
+              style={styles.toggleRow}
+              activeOpacity={0.9}
+              onPress={() => {
+                setAskQuestions((v) => !v);
+                sendChatCommand('toggle_questions');
+              }}>
+              <Ionicons
+                name={askQuestions ? 'help-circle' : 'help-circle-outline'}
+                size={18}
+                color={askQuestions ? Colors.primary : Colors.mutedForeground}
+              />
+              <View style={styles.toggleText}>
+                <Text style={styles.toggleTitle}>Clarifying questions</Text>
+                <Text style={styles.toggleHint}>
+                  {askQuestions ? 'Tukua will ask before assuming' : 'Tukua picks sensible defaults'}
+                </Text>
+              </View>
+              <View style={[styles.pill, askQuestions && styles.pillOn]}>
+                <Text style={[styles.pillText, askQuestions && styles.pillTextOn]}>
+                  {askQuestions ? 'On' : 'Off'}
+                </Text>
+              </View>
+            </TouchableOpacity>
+            <View style={styles.cardDivider} />
+            <TouchableOpacity
+              style={styles.toggleRow}
+              activeOpacity={0.9}
+              onPress={() => {
+                setDarkTheme((v) => !v);
+                sendChatCommand('toggle_theme');
+              }}>
+              <Ionicons
+                name={darkTheme ? 'sunny-outline' : 'moon-outline'}
+                size={18}
+                color={Colors.mutedForeground}
+              />
+              <View style={styles.toggleText}>
+                <Text style={styles.toggleTitle}>{darkTheme ? 'Light theme' : 'Dark theme'}</Text>
+                <Text style={styles.toggleHint}>Applies to the chat</Text>
+              </View>
+              <View style={[styles.pill, darkTheme && styles.pillOn]}>
+                <Text style={[styles.pillText, darkTheme && styles.pillTextOn]}>
+                  {darkTheme ? 'Dark' : 'Light'}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+
           <View style={styles.footer}>
             <View style={styles.accountCard}>
               <TouchableOpacity
@@ -435,6 +493,48 @@ const styles = StyleSheet.create({
   error: { color: Colors.destructive, textAlign: 'center', fontSize: 13, paddingHorizontal: 16 },
   retry: { color: Colors.primary, fontWeight: '700' },
   empty: { color: Colors.mutedForeground, padding: 16, textAlign: 'center' },
+  togglesCard: {
+    marginHorizontal: 12,
+    marginTop: 8,
+    borderRadius: 14,
+    backgroundColor: '#fff',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(10,61,46,0.1)',
+    overflow: 'hidden',
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+  },
+  toggleText: { flex: 1 },
+  toggleTitle: {
+    fontSize: 14,
+    color: Colors.foreground,
+    fontFamily: 'Inter_500Medium',
+  },
+  toggleHint: {
+    fontSize: 11,
+    color: Colors.mutedForeground,
+    marginTop: 1,
+    fontFamily: 'Inter_400Regular',
+  },
+  pill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(10,61,46,0.07)',
+  },
+  pillOn: { backgroundColor: 'rgba(21,128,61,0.15)' },
+  pillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Colors.mutedForeground,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  pillTextOn: { color: Colors.primary },
   footer: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: 'rgba(10,61,46,0.1)',
