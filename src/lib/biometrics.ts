@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import * as LocalAuthentication from 'expo-local-authentication';
 import {
   clearBiometricCredentials,
@@ -16,6 +17,7 @@ export type BiometricEnableResult =
   | { ok: false; reason: 'unsupported' | 'cancelled' | 'no_password' };
 
 export async function checkBiometricSupport() {
+  if (Platform.OS === 'web') return false;
   const compatible = await LocalAuthentication.hasHardwareAsync();
   const enrolled = await LocalAuthentication.isEnrolledAsync();
   return compatible && enrolled;

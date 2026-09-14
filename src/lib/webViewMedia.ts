@@ -54,6 +54,7 @@ export const webViewMediaProps = getWebViewMediaProps();
 
 /** Route WebView audio to the device speaker (not earpiece) and play in silent mode on iOS. */
 export async function configureWebViewAudioSession(): Promise<void> {
+  if (Platform.OS === 'web') return;
   try {
     await Audio.setAudioModeAsync({
       allowsRecordingIOS: false,

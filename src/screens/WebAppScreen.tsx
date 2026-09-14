@@ -149,10 +149,10 @@ export function WebAppScreen({ path, label }: Props) {
   const loadingLabel = (label ?? path.replace('/', '')) || 'page';
   const tabBarInsetPx = TAB_BAR_BODY_HEIGHT + insets.bottom;
   /** Native top pad clears floating header; keep it light so the fade stays transparent. */
-  const webTopClearance = floatingHeaderInset(insets.top);
+  const webTopClearance = Platform.OS === 'web' ? 0 : floatingHeaderInset(insets.top);
 
   const injectChatComposerInsets = useCallback(() => {
-    if (!webRef.current) return;
+    if (Platform.OS === 'web' || !webRef.current) return;
     // top=0: WebView is already padded below the floating nav
     webRef.current.injectJavaScript(
       `${buildMobileChatTabBarStylesScript(tabBarInsetPx, 0)}\ntrue;`,
@@ -677,6 +677,7 @@ export function WebAppScreen({ path, label }: Props) {
         log.error('WebApp', 'bootstrap err', { error: msg.error });
         setPageLoading(false);
       } else if (msg.type === 'request_contacts') {
+        if (Platform.OS === 'web') return;
         void (async () => {
           try {
             const { loadDeviceContactPhones } = await import('../lib/deviceContacts');

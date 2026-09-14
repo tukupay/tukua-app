@@ -1,5 +1,5 @@
 import React from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { LoginScreen } from '../screens/LoginScreen';
@@ -17,7 +17,14 @@ import { DashboardBackground } from '../components/dashboard/DashboardBackground
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 const linking = {
-  prefixes: ['tukua://', 'https://tukua.ai', 'https://www.tukua.ai'],
+  prefixes: [
+    'tukua://',
+    'https://tukua.ai',
+    'https://www.tukua.ai',
+    ...(typeof window !== 'undefined' && window.location?.origin
+      ? [window.location.origin]
+      : ['http://localhost:8081', 'http://127.0.0.1:8081']),
+  ],
   config: {
     screens: {
       ResetPassword: {
@@ -54,7 +61,13 @@ function RootNavigator() {
   }
 
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator
+      screenOptions={{
+        headerShown: false,
+        statusBarHidden: Platform.OS !== 'web',
+        statusBarTranslucent: Platform.OS !== 'web',
+        statusBarAnimation: 'fade',
+      }}>
       {isAuthenticated ? (
         <Stack.Screen name="Main" component={MainTabs} />
       ) : (

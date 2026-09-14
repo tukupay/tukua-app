@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import type { Session } from './auth';
 import { TukuaWeb } from '../theme/yana';
 import { getNestApiBaseUrl, isAppWebHost } from './localHost';
@@ -105,6 +106,18 @@ function isSpaClientRoute(pathname: string) {
 }
 
 function notifyAppSourceEvent() {
+  // Expo web is a browser — keep SPA website chrome, not the native-app overlay.
+  if (Platform.OS === 'web') {
+    return `
+    try {
+      localStorage.setItem('${TUKUA_APP_SOURCE_KEY}', '${TUKUA_APP_SOURCE_WEB}');
+      window.__TUKUA_APP_SOURCE__ = '${TUKUA_APP_SOURCE_WEB}';
+      document.documentElement.dataset.tukuaSource = '${TUKUA_APP_SOURCE_WEB}';
+      document.documentElement.classList.remove('tukua-mobile-app');
+      window.dispatchEvent(new CustomEvent('TUKUA_APP_SOURCE'));
+    } catch (e) {}
+  `;
+  }
   return `
     try {
       localStorage.setItem('${TUKUA_APP_SOURCE_KEY}', '${TUKUA_APP_SOURCE_MOBILE}');

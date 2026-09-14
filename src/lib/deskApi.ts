@@ -3,7 +3,7 @@
  * Base URL from EXPO_PUBLIC_DESK_API_URL (unified via localHost).
  */
 
-import * as SecureStore from 'expo-secure-store';
+import * as SecureStore from './secureStore';
 import { getDeskApiBaseUrl, getLocalUrlDebugInfo } from './localHost';
 import { log } from './logger';
 

@@ -8,6 +8,7 @@ import { StatusBar } from 'expo-status-bar';
  * Do **not** hide the Android soft navigation bar (back / home / recent) — that is the bottom chrome.
  */
 export function hideSystemStatusBar() {
+  if (Platform.OS === 'web') return;
   try {
     RNStatusBar.setHidden(true, 'fade');
   } catch {
@@ -36,6 +37,12 @@ export function hideSystemStatusBar() {
  * Do NOT hide the bottom navigation / gesture bar.
  */
 export function ImmersiveSystemBars() {
+  if (Platform.OS === 'web') return null;
+
+  return <ImmersiveSystemBarsNative />;
+}
+
+function ImmersiveSystemBarsNative() {
   const hide = useCallback(() => {
     hideSystemStatusBar();
   }, []);

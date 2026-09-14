@@ -2,7 +2,7 @@
  * Nest platform identity JWT for WebView SPA (chat/courses).
  * Prefer POST /platform/auth/login on the Nest api-host — not GoTrue.
  */
-import * as SecureStore from 'expo-secure-store';
+import * as SecureStore from './secureStore';
 import { getDeskCredentials, getDeskToken, hasNestDeskToken } from './deskApi';
 import { getNestApiBaseUrl } from './localHost';
 import { log } from './logger';

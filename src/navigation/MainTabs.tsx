@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Platform, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
@@ -30,6 +30,7 @@ import { PushNotificationBootstrap } from '../components/notifications/PushNotif
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { navigateDashboard } from './rootNavigation';
 import { JOIN_PROMPT_SEEN_KEY } from '../screens/dashboard/JoinSchoolScreen';
+import { listMyMemberships } from '../lib/joinRequestApi';
 import { TokenGateProvider, useTokenGate } from '../context/TokenGateContext';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -39,9 +40,10 @@ function BiometricGate({ children }: { children: React.ReactNode }) {
   const { showDialog } = useDialog();
   const [showBioModal, setShowBioModal] = useState(false);
   const email = session?.user?.email;
+  const skipNativeAuth = Platform.OS === 'web';
 
   useEffect(() => {
-    if (!email) return;
+    if (skipNativeAuth || !email) return;
     (async () => {
       const already = await setupBiometricsAfterLogin(email);
       if (!already) {
@@ -49,7 +51,7 @@ function BiometricGate({ children }: { children: React.ReactNode }) {
         if (!creds.enabled) setShowBioModal(true);
       }
     })();
-  }, [email]);
+  }, [email, skipNativeAuth]);
 
   const handleEnableBiometrics = async () => {
     if (!email) return;
@@ -93,16 +95,39 @@ function MainTabNavigator({
   const insets = useSafeAreaInsets();
   const { setActiveTabPath, notifyTabFocused } = useWebViewControl();
   const { guardTab } = useTokenGate();
+  const { contextSkipped, requestSchoolChange } = useDeskAuth();
+  const { showDialog } = useDialog();
   const { palette } = useAppTheme();
   const tabBarHeight = TAB_BAR_BODY_HEIGHT + insets.bottom;
 
   const tabPressGuard = useCallback(
     (tab: keyof MainTabParamList) => ({
       tabPress: (e: { preventDefault: () => void }) => {
+        if (tab === 'Dashboard' && contextSkipped) {
+          e.preventDefault();
+          showDialog({
+            title: 'Select school and role',
+            message:
+              'School dashboards unlock after you choose a school and role. You can keep using Chat and Profile as an individual student.',
+            variant: 'info',
+            icon: 'school-outline',
+            buttons: [
+              { text: 'Not now', style: 'cancel' },
+              {
+                text: 'Choose school',
+                style: 'default',
+                onPress: () => {
+                  void requestSchoolChange();
+                },
+              },
+            ],
+          });
+          return;
+        }
         if (!guardTab(tab)) e.preventDefault();
       },
     }),
-    [guardTab],
+    [contextSkipped, guardTab, requestSchoolChange, showDialog],
   );
 
   useEffect(() => {
@@ -190,22 +215,90 @@ function MainTabNavigator({
 
 export function MainTabs() {
   const { session } = useAuth();
-  const { needsSchoolPick, schoolsReady, deskReady, schools } = useDeskAuth();
+  const {
+    needsSchoolPick,
+    schoolsReady,
+    deskReady,
+    schools,
+    contextSkipped,
+    selectedRole,
+    linkedStudents,
+    persona,
+  } = useDeskAuth();
   const { palette } = useAppTheme();
   const gating = Boolean(session) && (!deskReady || !schoolsReady);
-  // Tracks the real focused bottom-tab route (Dashboard/Courses/Profile have no
-  // web path, so WebViewControl's activeTabPath alone can't gate chat-only chrome).
   const [focusedTab, setFocusedTab] = useState<keyof MainTabParamList>('Chat');
+  const onboardingPrompted = useRef(false);
+
+  useEffect(() => {
+    onboardingPrompted.current = false;
+  }, [session?.user?.id]);
 
   useEffect(() => {
     if (!session || gating || needsSchoolPick || !schoolsReady) return;
-    if (schools.length > 0) return;
+    if (contextSkipped) return;
+    if (onboardingPrompted.current) return;
+
     let cancelled = false;
     void (async () => {
       try {
-        const seen = await AsyncStorage.getItem(JOIN_PROMPT_SEEN_KEY);
-        if (cancelled || seen) return;
-        navigateDashboard('JoinSchool', { firstLogin: true });
+        const role = String(selectedRole || persona || '').toLowerCase();
+        const schoolRoles = schools.flatMap((s) => (s.roles || []).map((r) => String(r).toLowerCase()));
+        const isTeacher =
+          role === 'teacher' ||
+          role === 'class_teacher' ||
+          schoolRoles.some((r) => r === 'teacher' || r === 'class_teacher');
+        const isParent =
+          role === 'parent' || schoolRoles.some((r) => r === 'parent' || r === 'guardian');
+
+        // Students: no extra onboarding after school/role pick.
+        if (!isTeacher && !isParent) {
+          if (schools.length > 0) return;
+          const seen = await AsyncStorage.getItem(JOIN_PROMPT_SEEN_KEY);
+          if (cancelled || seen) return;
+          onboardingPrompted.current = true;
+          navigateDashboard('JoinSchool', { firstLogin: true });
+          return;
+        }
+
+        const mem = await listMyMemberships().catch(() => ({ memberships: [] as any[] }));
+        if (cancelled) return;
+        const list = Array.isArray(mem.memberships) ? mem.memberships : [];
+
+        if (isTeacher) {
+          const teacherMems = list.filter((m) =>
+            (m.roles || []).some((r: string) => {
+              const x = String(r).toLowerCase();
+              return x === 'teacher' || x === 'class_teacher';
+            }),
+          );
+          const hasWorkload =
+            teacherMems.some((m) => Number(m.workload_count ?? 0) > 0) ||
+            teacherMems.some((m) => String(m.detail || '').toLowerCase().startsWith('teaching:'));
+          if (!hasWorkload) {
+            onboardingPrompted.current = true;
+            navigateDashboard('JoinSchool', { firstLogin: true, preferRole: 'teacher' });
+            return;
+          }
+        }
+
+        if (isParent) {
+          const hasStudent =
+            (linkedStudents?.length ?? 0) > 0 ||
+            list.some(
+              (m) =>
+                (m.roles || []).some((r: string) => String(r).toLowerCase() === 'parent') &&
+                Number(m.linked_student_count ?? 0) > 0,
+            );
+          if (!hasStudent) {
+            // SchoolPicker already blocks parent dashboards when kids=0; if no school yet, open join.
+            if (schools.length === 0) {
+              onboardingPrompted.current = true;
+              navigateDashboard('JoinSchool', { firstLogin: true, preferRole: 'parent' });
+            }
+            return;
+          }
+        }
       } catch {
         /* ignore */
       }
@@ -213,7 +306,17 @@ export function MainTabs() {
     return () => {
       cancelled = true;
     };
-  }, [session, gating, needsSchoolPick, schoolsReady, schools.length]);
+  }, [
+    session,
+    gating,
+    needsSchoolPick,
+    schoolsReady,
+    schools,
+    contextSkipped,
+    selectedRole,
+    linkedStudents,
+    persona,
+  ]);
 
   return (
     <SafeAreaProvider>
@@ -222,9 +325,9 @@ export function MainTabs() {
           <TokenGateProvider>
             <View style={[styles.shell, { backgroundColor: palette.muted }]}>
               <MainTabNavigator onTabChange={setFocusedTab} />
-              <NativeAppHeader />
-              {focusedTab === 'Chat' ? <ChatTabChrome /> : null}
-              <PushNotificationBootstrap />
+              {Platform.OS !== 'web' ? <NativeAppHeader /> : null}
+              {Platform.OS !== 'web' && focusedTab === 'Chat' ? <ChatTabChrome /> : null}
+              {Platform.OS !== 'web' ? <PushNotificationBootstrap /> : null}
               {gating ? (
                 <ContextPickLoader />
               ) : needsSchoolPick ? (

@@ -42,7 +42,7 @@
       },
       "package": "com.app.tukua",
       "googleServicesFile": "./google-services.json",
-      "versionCode": 9,
+      "versionCode": 10,
       "softwareKeyboardLayoutMode": "resize",
       "intentFilters": [
         {
@@ -99,9 +99,10 @@
       "translucent": true,
       "backgroundColor": "#FFFFFF"
     },
-    "web": {
-      "favicon": "./assets/images/icons/favicon-48.png"
-    },
+  "web": {
+    "favicon": "./assets/images/icons/favicon-48.png",
+    "bundler": "metro"
+  },
     "plugins": [
       [
         "expo-splash-screen",

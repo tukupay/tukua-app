@@ -1,4 +1,4 @@
-import * as SecureStore from 'expo-secure-store';
+import * as SecureStore from './secureStore';
 
 export const BIOMETRIC_KEYS = {
   email: 'biometric_email',

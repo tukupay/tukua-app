@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import * as Location from 'expo-location';
 import { getNestApiBaseUrl } from './localHost';
 
@@ -27,6 +28,7 @@ async function reverseGeocode(lat: number, lng: number) {
 }
 
 export async function captureUserLocation(): Promise<UserLocation | null> {
+  if (Platform.OS === 'web') return null;
   const { status } = await Location.requestForegroundPermissionsAsync();
   if (status !== 'granted') return null;
 

@@ -69,7 +69,9 @@ async function main() {
     console.log('[start-dev] Desk proxy skipped (DESK_PROXY=0)');
   }
 
-  console.log('[start-dev] Starting Expo…');
+  console.log('[start-dev] Starting Expo (Metro native + Expo web on :8081)…');
+  console.log('[start-dev]   phone  → Expo Go / Android / iOS (same Metro)');
+  console.log('[start-dev]   browser → http://localhost:8081  (Expo web; Vite SPA stays on :8080)');
   // Expo CLI can crash on Windows with "Body is unusable: Body has already been read"
   // while fetching native-module versions for doctor checks — that kills Metro and
   // (via killOthersOn:failure) the whole npm run dev:all stack. Skip that network check.

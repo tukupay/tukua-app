@@ -38,6 +38,7 @@ function getEasProjectId(): string | undefined {
 }
 
 export async function registerForPushNotifications(): Promise<string | null> {
+  if (Platform.OS === 'web') return null;
   if (isExpoGo) {
     log.info('Notifications', 'skipped in Expo Go — use a development build for push');
     return null;
