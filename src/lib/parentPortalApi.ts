@@ -192,12 +192,16 @@ export type SchoolCollectionPurpose =
 export async function quoteSchoolCollection(body: {
   purpose: SchoolCollectionPurpose;
   amount: number;
+  /** School fees: the reply lists what the money clears (same rule as the school's receipting). */
+  student_id?: string;
 }) {
   return deskFetch<{
     amount_kes?: number;
     bank_app_charge_pct?: number;
     bank_app_charge_kes?: number;
     total_kes?: number;
+    balance_kes?: number;
+    breakdown?: Array<{ label: string; vote_head?: string; invoice_number?: string | null; amount: number }>;
   }>('/accounts/collections/quote', { method: 'POST', body });
 }
 

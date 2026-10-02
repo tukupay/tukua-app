@@ -34,6 +34,8 @@ type Quote = {
   bank_app_charge_pct?: number;
   bank_app_charge_kes?: number;
   total_kes?: number;
+  balance_kes?: number;
+  breakdown?: Array<{ label: string; vote_head?: string; invoice_number?: string | null; amount: number }>;
 };
 
 type Props = {
@@ -109,7 +111,11 @@ export function PaymentProcessCard({
       return;
     }
     const t = setTimeout(() => {
-      void quoteSchoolCollection({ purpose: mode as SchoolCollectionPurpose, amount: n })
+      void quoteSchoolCollection({
+        purpose: mode as SchoolCollectionPurpose,
+        amount: n,
+        student_id: mode === 'school_fees' && studentId ? String(studentId) : undefined,
+      })
         .then((q) => {
           if (!cancelled.current) setQuote(q);
         })
@@ -118,7 +124,7 @@ export function PaymentProcessCard({
         });
     }, 280);
     return () => clearTimeout(t);
-  }, [amount, mode, phase]);
+  }, [amount, mode, phase, studentId]);
 
   const steps = useMemo(
     () =>
@@ -309,6 +315,20 @@ export function PaymentProcessCard({
               editable={!busy}
             />
 
+            {quote?.breakdown?.length ? (
+              <View style={styles.chargeBox}>
+                <Text style={styles.chargeLabel}>This payment clears</Text>
+                {quote.breakdown.map((b, i) => (
+                  <View key={i} style={styles.chargeRow}>
+                    <Text style={styles.chargeLabel} numberOfLines={1}>
+                      {b.label}
+                      {b.invoice_number ? ` · ${b.invoice_number}` : ''}
+                    </Text>
+                    <Text style={styles.chargeVal}>{kes(Number(b.amount))}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
             {quote?.total_kes != null ? (
               <View style={styles.chargeBox}>
                 <View style={styles.chargeRow}>
