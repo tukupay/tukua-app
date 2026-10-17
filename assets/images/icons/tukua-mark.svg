@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Tukua app icon: a graduation cap over an open book on the dark green tile.
+       Same family as the e-Post icon (tile and rim, cream mark, lime accent). -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1B3324"/>
+      <stop offset="1" stop-color="#132419"/>
+    </linearGradient>
+  </defs>
+  <rect x="40" y="40" width="944" height="944" rx="210" fill="url(#tile)" stroke="#26402D" stroke-width="28"/>
+
+  <g id="mark">
+    <!-- book: lime cover showing under the cream pages -->
+    <path d="M512 640 C 440 600 330 590 214 600 L 214 812 C 330 804 440 816 512 856 C 584 816 694 804 810 812 L 810 600 C 694 590 584 600 512 640 Z" fill="#8FBF2B"/>
+    <path d="M500 612 C 432 572 340 562 240 570 L 240 784 C 340 778 432 790 500 828 Z" fill="#F8F6F1"/>
+    <path d="M524 612 C 592 572 684 562 784 570 L 784 784 C 684 778 592 790 524 828 Z" fill="#F8F6F1"/>
+    <!-- lines of text on the pages -->
+    <g stroke="#C9D3C6" stroke-width="16" stroke-linecap="round" fill="none">
+      <path d="M296 628 C 360 624 414 632 456 650"/>
+      <path d="M296 680 C 360 676 414 684 456 702"/>
+      <path d="M296 732 C 360 728 414 736 456 754"/>
+      <path d="M728 628 C 664 624 610 632 568 650"/>
+      <path d="M728 680 C 664 676 610 684 568 702"/>
+      <path d="M728 732 C 664 728 610 736 568 754"/>
+    </g>
+    <!-- graduation cap: crown under the board, then the board, then the lime tassel -->
+    <path d="M356 380 L 356 468 C 420 524 604 524 668 468 L 668 380 Z" fill="#D9D5C8"/>
+    <path d="M512 196 L 830 330 L 512 464 L 194 330 Z" fill="#F8F6F1"/>
+    <path d="M512 330 L 760 380 L 760 470" stroke="#8FBF2B" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <circle cx="512" cy="330" r="20" fill="#8FBF2B"/>
+    <path d="M740 462 L 780 462 L 792 540 L 728 540 Z" fill="#8FBF2B"/>
+  </g>
+</svg>

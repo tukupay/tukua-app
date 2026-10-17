@@ -337,7 +337,7 @@ export function PaymentProcessCard({
                 </View>
                 <View style={styles.chargeRow}>
                   <Text style={styles.chargeLabel}>
-                    Bank & App Charges ({quote.bank_app_charge_pct}%)
+                    Bank & app charge
                   </Text>
                   <Text style={styles.chargeVal}>
                     {kes(Number(quote.bank_app_charge_kes ?? 0))}

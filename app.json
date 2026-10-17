@@ -4,12 +4,12 @@
     "slug": "tukua",
     "version": "1.0.9",
     "orientation": "portrait",
-    "icon": "./assets/images/icons/app-icon-1024.png",
+    "icon": "./assets/images/icons/tukua-app-icon-1024.png",
     "scheme": "tukua",
     "userInterfaceStyle": "light",
     "splash": {
       "backgroundColor": "#FFFFFF",
-      "image": "./assets/images/logo/splash-bird.png",
+      "image": "./assets/images/logo/splash-tukua.png",
       "resizeMode": "contain"
     },
     "assetBundlePatterns": [
@@ -37,8 +37,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/icons/adaptive-foreground-1024.png",
-        "backgroundColor": "#FFFFFF"
+        "foregroundImage": "./assets/images/icons/tukua-adaptive-foreground-1024.png",
+        "backgroundColor": "#172C1F"
       },
       "package": "com.app.tukua",
       "googleServicesFile": "./google-services.json",
@@ -100,7 +100,7 @@
       "backgroundColor": "#FFFFFF"
     },
   "web": {
-    "favicon": "./assets/images/icons/favicon-48.png",
+    "favicon": "./assets/images/icons/tukua-favicon-48.png",
     "bundler": "metro"
   },
     "plugins": [
@@ -108,7 +108,7 @@
         "expo-splash-screen",
         {
           "backgroundColor": "#FFFFFF",
-          "image": "./assets/images/logo/splash-bird.png",
+          "image": "./assets/images/logo/splash-tukua.png",
           "imageWidth": 200,
           "resizeMode": "contain"
         }
@@ -146,7 +146,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/images/icons/notification-96.png",
+          "icon": "./assets/images/icons/tukua-notification-96.png",
           "color": "#1F8B4C"
         }
       ],

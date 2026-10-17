@@ -2,8 +2,8 @@ import React, { useEffect, useRef } from 'react';
 import { Animated, Image, StyleSheet, View } from 'react-native';
 import { Images } from '../../constants/images';
 
-/** Trimmed bird master aspect (512×841). */
-const BIRD_ASPECT = 512 / 841;
+/** The Tukua icon is square. */
+const BIRD_ASPECT = 1;
 
 type Props = {
   /** Square edge length (legacy). Prefer height/width for wordmark use. */

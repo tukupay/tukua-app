@@ -4,7 +4,7 @@ import { Images } from '../../constants/images';
 
 const NAVBAR_LOGO_SIZE = 34;
 
-/** Square Tukua bird in the native header. */
+/** Square Tukua icon in the native header. */
 export function TukuaBrandMark() {
   return (
     <View style={{ width: NAVBAR_LOGO_SIZE, height: NAVBAR_LOGO_SIZE }}>
