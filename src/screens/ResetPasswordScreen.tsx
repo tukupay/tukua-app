@@ -193,7 +193,7 @@ export function ResetPasswordScreen({ navigation, route }: Props) {
       const result = await forgotPassword({
         email: looksPhone ? undefined : raw,
         phone: looksPhone ? raw : undefined,
-        redirect_to: 'https://tukua.ai/reset-password',
+        redirect_to: 'tukua://reset-password',
       });
       if (!result.ok) {
         setError(result.message || 'Could not send a new reset link.');

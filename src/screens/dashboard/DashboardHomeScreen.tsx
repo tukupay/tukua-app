@@ -73,6 +73,13 @@ type ActionSection = {
   actions: DashboardAction[];
 };
 
+/** Part of GET /students/me/overview (the figures Desk shows too). */
+type StudentOverview = {
+  fees?: { balance?: number };
+  attendance?: { rate?: number | null };
+  grades?: { latest?: { mean?: number | null; grade?: string | null } | null };
+};
+
 const TILE_SIZE = 52;
 const ICON_SIZE = 30;
 
@@ -549,14 +556,18 @@ export function DashboardHomeScreen() {
     const sid = resolveStudentRecordId(deskUser) || String(selectedStudentId ?? '').trim();
     void (async () => {
       try {
-        const [profile, exams, att, pocket, assignments, fees] = await Promise.allSettled([
+        const [profile, exams, att, pocket, assignments, fees, overviewRes] = await Promise.allSettled([
           sid ? fetchStudentProfile(sid) : Promise.resolve(null),
           fetchStudentExams(5),
           sid ? fetchStudentRecentAttendance(sid, 14) : Promise.resolve([]),
           sid ? tryFetchStudentPocketBalance(sid) : Promise.resolve(null),
           sid ? fetchStudentAssignments(sid) : Promise.resolve({ assignments: [] }),
           fetchStudentFees(),
+          // Same figures as Desk (fees for this financial year, attendance with late counted as present,
+          // latest results); the older calls above stay as the fallback for an API without it.
+          deskFetch<StudentOverview>('/students/me/overview'),
         ]);
+        const overview = overviewRes.status === 'fulfilled' ? overviewRes.value : null;
         const prof = profile.status === 'fulfilled' ? profile.value : null;
         const examList = exams.status === 'fulfilled' ? exams.value : [];
         const attRows = att.status === 'fulfilled' ? att.value : [];
@@ -578,9 +589,22 @@ export function DashboardHomeScreen() {
             /* keep fallback */
           }
         }
+        const latest = overview?.grades?.latest;
+        if (latest?.mean != null) gradeLabel = `${latest.mean}%${latest.grade ? ` · ${latest.grade}` : ''}`;
+        // Homework still to hand in (handed-in or marked work is not "pending").
+        const pendingCount = assignmentRows.filter((a) => {
+          const st = String(a.status ?? a.submission_status ?? '').toLowerCase();
+          return !/(complete|submit|grade|done)/.test(st);
+        }).length;
+        const overviewFees = overview?.fees?.balance;
         setStudentHero({
           grade: gradeLabel,
-          attendancePct: attRows.length ? Math.round((presentDays / 14) * 100) : null,
+          attendancePct:
+            overview?.attendance?.rate != null
+              ? Math.round(overview.attendance.rate)
+              : attRows.length
+                ? Math.min(100, Math.round((presentDays / 14) * 100))
+                : null,
           admissionLabel:
             prof?.student_number || prof?.admission_number
               ? `#${prof.student_number || prof.admission_number}`
@@ -590,11 +614,12 @@ export function DashboardHomeScreen() {
           pocketLabel:
             pocketBal != null ? `KES ${pocketBal.toLocaleString()}` : 'Office / parent only',
           feesLabel:
-            feeBal != null && Number.isFinite(Number(feeBal))
-              ? `KES ${Number(feeBal).toLocaleString()}`
-              : 'See School Fees',
-          assignmentsLabel:
-            assignmentRows.length > 0 ? String(assignmentRows.length) : '0',
+            overviewFees != null && Number.isFinite(Number(overviewFees))
+              ? `KES ${Number(overviewFees).toLocaleString()}`
+              : feeBal != null && Number.isFinite(Number(feeBal))
+                ? `KES ${Number(feeBal).toLocaleString()}`
+                : 'See School Fees',
+          assignmentsLabel: String(pendingCount),
         });
       } catch {
         setStudentHero(null);

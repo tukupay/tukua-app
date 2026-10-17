@@ -397,7 +397,7 @@ export async function sendPasswordReset(email?: string, phone?: string) {
   const result = await forgotPassword({
     email: email?.trim() || undefined,
     phone: phone?.trim() || undefined,
-    redirect_to: 'https://tukua.ai/reset-password',
+    redirect_to: 'tukua://reset-password',
   });
   if (!result.ok) {
     throw new Error(result.message || 'Failed to send reset link');
