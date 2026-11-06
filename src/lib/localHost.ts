@@ -60,7 +60,7 @@ export function resolveLocalUrl(url: string): string {
  */
 export type TukuaEnv = 'local' | 'staging' | 'production';
 
-const STAGING_API = 'https://tukua-api-staging-production.up.railway.app/api';
+const STAGING_API = 'https://api.tukua.ai/api';
 const PRODUCTION_API = 'https://tukua.up.railway.app/api';
 
 type EnvProfile = { web: string; deskWeb: string | null; nestApi: string; deskApi: string };
