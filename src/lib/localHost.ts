@@ -66,13 +66,14 @@ const PRODUCTION_API = 'https://tukua.up.railway.app/api';
 type EnvProfile = { web: string; deskWeb: string | null; nestApi: string; deskApi: string };
 
 const ENV_PROFILES: Record<TukuaEnv, EnvProfile> = {
-  // Local = local Vite chat shell only. Nest ERP + Brain = staging Railway (same DB).
+  // Local = this PC's current web code (Vite :8080) and API (:3253, staging DB). The local web picks
+  // :3253 by itself, so the phone must sign in there too or the injected token would not match.
   // Desk Electron sync is for Desk app; do not point phones at :3251/:3255.
   local: {
     web: 'http://localhost:8080',
     deskWeb: 'http://localhost:3250',
-    nestApi: STAGING_API,
-    deskApi: STAGING_API,
+    nestApi: 'http://localhost:3253/api',
+    deskApi: 'http://localhost:3253/api',
   },
   // Desk SPA is NOT tukua.ai — set EXPO_PUBLIC_DESK_WEB_URL when a hosted Desk build exists.
   // Web shell for inject = v2.tukua.ai (Nest SPA). Native ERP = staging Railway (not local).
@@ -198,6 +199,7 @@ export function getLocalUrlDebugInfo() {
 const DESK_ERP_PATH_PREFIXES = [
   '/teacher',
   '/student',
+  '/parent',
   '/admin',
   '/accounts',
   '/assessment',

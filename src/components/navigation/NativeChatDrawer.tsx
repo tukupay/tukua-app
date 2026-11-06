@@ -378,7 +378,7 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 0,
     backgroundColor: Colors.brandGreenDark,
   },
-  heroPattern: { ...StyleSheet.absoluteFillObject },
+  heroPattern: { ...StyleSheet.absoluteFill },
   heroRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',

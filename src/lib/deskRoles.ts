@@ -1,8 +1,9 @@
 /**
  * Desk (CBE/school) roles — mirrors yana/desktop packages/types + Login redirect hierarchy.
  *
- * Mobile dashboards (native): parent · student · teacher · security · individual.
- * School-admin / finance / BOM hats map into those (Desk remains the admin/finance surface).
+ * Mobile dashboards (native): parent · student · teacher · security · school_admin · individual.
+ * Principal / deputy / admin / bursar / accountant / registrar → school_admin (office dashboard; actions are
+ * still gated by the person's own roles). BOM hats stay individual.
  * Super-admin keeps a light switcher, then adopts one of the mobile hats.
  */
 
@@ -21,31 +22,49 @@ export const MOBILE_DASHBOARD_ROLES = [
   'student',
   'teacher',
   'security',
+  'school_admin',
   'individual',
 ] as const;
 
 export type MobileDashboardRole = (typeof MOBILE_DASHBOARD_ROLES)[number];
 
-/** Principal / school hub ops → teacher dashboard on mobile (Desk for heavy admin). */
-const TEACHER_LIKE = new Set([
-  'school_admin',
-  'staff',
-  'user',
-  'admin',
-  'principal',
-  'org_admin',
+/** Generic staff → teacher dashboard. */
+const TEACHER_LIKE = new Set(['staff', 'user']);
+
+/** Teaching specialists (Desk staff roles) → teacher dashboard; their own tiles stay role-gated. */
+const TEACHING_SPECIALIST = new Set([
+  'class_teacher',
+  'dean_of_studies',
+  'dean',
+  'hod',
+  'head_of_department',
+  'discipline_master',
+  'timetable_manager',
+  'librarian',
+  'games_master',
+  'exams_officer',
 ]);
 
-/** Finance / board → light individual-style dashboard (Desk for accounts). */
-const INDIVIDUAL_LIKE = new Set([
-  'bom',
-  'board_member',
-  'board',
-  'bom_member',
-  'accountant',
+/** Catch-all roles that never decide a dashboard when the person holds a specific one. */
+const GENERIC_ROLES = new Set(['staff', 'user', 'individual']);
+
+/** School office: leadership, finance and registry → school_admin dashboard. */
+const ADMIN_LIKE = new Set([
+  'school_admin',
+  'admin',
+  'principal',
+  'deputy',
+  'deputy_principal',
+  'org_admin',
   'bursar',
+  'accountant',
+  'accounts_clerk',
   'finance_officer',
+  'registrar',
 ]);
+
+/** Board → light individual-style dashboard. */
+const INDIVIDUAL_LIKE = new Set(['bom', 'board_member', 'board', 'bom_member']);
 
 function normalizeRole(raw: unknown): string {
   return String(raw ?? '')
@@ -81,12 +100,12 @@ export function mapRoleToMobileHat(role: string): string {
   const r = normalizeRole(role);
   if (r === 'super_admin' || r === 'superadmin') return 'super_admin';
   if (r === 'security') return 'security';
-  if (r === 'teacher' || TEACHER_LIKE.has(r)) return 'teacher';
+  if (ADMIN_LIKE.has(r) || r === 'owner') return 'school_admin';
+  if (r === 'teacher' || TEACHER_LIKE.has(r) || TEACHING_SPECIALIST.has(r)) return 'teacher';
   if (r === 'parent') return 'parent';
   if (r === 'student') return 'student';
   if (r === 'individual') return 'individual';
   if (INDIVIDUAL_LIKE.has(r)) return 'individual';
-  if (r === 'school_admin') return 'teacher';
   return r;
 }
 
@@ -109,13 +128,44 @@ export function collapseLearnerHats(hats: string[]): string[] {
   return out;
 }
 
+/**
+ * Drop catch-all roles (staff, user, individual) when a specific school role is held, so a bursar
+ * holding ["staff","bursar"] is offered the office dashboard only, not a teacher one as well.
+ */
+export function withoutGenericRoles(rolesInput: unknown): string[] {
+  const roles = normalizeDeskRoles(rolesInput);
+  const specific = roles.filter((r) => !GENERIC_ROLES.has(r));
+  return specific.length ? specific : roles;
+}
+
+/**
+ * The person's own roles that sit behind one dashboard hat, plus the catch-alls (staff, user) the
+ * server still checks on shared routes. Sent as X-Desk-Roles (the server keeps only roles the token
+ * holds) and used to gate tiles: a deputy principal on the teacher hat keeps "teacher", a discipline
+ * master keeps "discipline_master", and the hat name itself is never added as if it were a role.
+ */
+export function rolesForHat(rolesInput: unknown, hat: string | null | undefined): string[] {
+  const roles = normalizeDeskRoles(rolesInput);
+  if (!hat) return roles;
+  const want = mapRoleToMobileHat(hat);
+  // The office dashboard is the widest view: keep every role (a deputy principal still teaches,
+  // a bursar is still "staff"), so its reads match the Desk office app.
+  if (want === 'school_admin') {
+    return roles.some((r) => mapRoleToMobileHat(r) === 'school_admin') ? roles.filter((r) => r !== 'individual') : [];
+  }
+  const mine = roles.filter((r) => mapRoleToMobileHat(r) === want && !GENERIC_ROLES.has(r));
+  if (!mine.length) return [];
+  const generic = roles.filter((r) => r === 'staff' || r === 'user');
+  return [...new Set([...mine, ...generic])];
+}
+
 /** Role chips for the school picker / SA “use as” flow (no school_admin / SA hub). */
 export function mobilePickerRolesFrom(rolesInput: unknown): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const raw of normalizeDeskRoles(rolesInput)) {
+  for (const raw of withoutGenericRoles(rolesInput)) {
     const hat = mapRoleToMobileHat(raw);
-    if (hat === 'super_admin' || hat === 'school_admin') continue;
+    if (hat === 'super_admin') continue;
     if (!MOBILE_DASHBOARD_ROLES.includes(hat as MobileDashboardRole)) continue;
     if (seen.has(hat)) continue;
     seen.add(hat);
@@ -126,6 +176,7 @@ export function mobilePickerRolesFrom(rolesInput: unknown): string[] {
 
 /** SA can switch into any native mobile persona at any school. */
 export const SUPER_ADMIN_MOBILE_HATS: MobileDashboardRole[] = [
+  'school_admin',
   'teacher',
   'security',
   'parent',
@@ -153,6 +204,7 @@ export function resolveDeskPersona(
   }
 
   // Prefer an adopted / concrete mobile hat over platform SA when both appear.
+  if (hats.includes('school_admin')) return 'school_admin';
   if (hats.includes('security')) return 'security';
   if (hats.includes('teacher')) return 'teacher';
   if (hats.includes('parent')) return 'parent';
@@ -175,7 +227,7 @@ export function personaLabel(persona: DeskPersona): string {
     case 'security':
       return 'Security';
     case 'school_admin':
-      return 'Teacher';
+      return 'School admin';
     case 'super_admin':
       return 'Super admin';
     case 'individual':
@@ -193,12 +245,14 @@ export function deskRoleLabel(role: string): string {
   if (hat === 'security') return 'Security';
   if (hat === 'individual') return 'Individual';
   if (hat === 'super_admin') return 'Super admin';
+  // Office hats keep their own title on the picker (Principal, Bursar, Registrar…).
   return r.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 /** Stable display order for multi-role picker. */
 export function sortDeskRolesForPicker(roles: string[]): string[] {
   const order = [
+    'school_admin',
     'teacher',
     'security',
     'parent',
@@ -222,6 +276,26 @@ export function sortDeskRolesForPicker(roles: string[]): string[] {
     return i >= 0 ? i : 99;
   };
   return [...roles].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+}
+
+/** Roles the server adds to what a person holds (auth-claim.util.ts withImpliedRoles). */
+const IMPLIED_ROLES: Record<string, string> = {
+  principal: 'school_admin',
+  bursar: 'finance_officer',
+  accountant: 'finance_officer',
+};
+
+/**
+ * Tile gate: exact role names (plus the server's implied ones). Substring matching let
+ * "deputy_principal" pass a "principal" gate and showed tiles the server then refused.
+ */
+export function holdsAnyRole(held: string[], need: string[]): boolean {
+  const have = new Set<string>();
+  for (const r of held.map(normalizeRole)) {
+    have.add(r);
+    if (IMPLIED_ROLES[r]) have.add(IMPLIED_ROLES[r]);
+  }
+  return need.some((n) => have.has(normalizeRole(n)));
 }
 
 export function isParentDeskRole(role: string | null | undefined): boolean {

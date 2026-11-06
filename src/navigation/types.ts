@@ -35,6 +35,7 @@ export type DashboardStackParamList = {
   Assessments: undefined;
   Teachers: undefined;
   Library: undefined;
+  Clubs: undefined;
   Accounts: undefined;
   ReceiptView: {
     receipt: Record<string, unknown>;
@@ -46,7 +47,11 @@ export type DashboardStackParamList = {
   Transport: undefined;
   Attendance: undefined;
   Bursary: undefined;
+  /** Refer & earn: own link, target, course links, who joined. */
+  Referral: undefined;
   SecurityHome: undefined;
+  /** Every school vehicle on one map (school admins and security staff). */
+  FleetMap: undefined;
   SecurityFaceEnroll: undefined;
   SecurityDailyAttendance: undefined;
   FaceSelfEnroll: undefined;

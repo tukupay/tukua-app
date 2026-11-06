@@ -40,7 +40,8 @@ const PATH_TO_TAB: Record<string, keyof MainTabParamList> = {
 
 function resolveTabPath(webPath: string, preferTabPath?: string): string {
   if (preferTabPath) return preferTabPath;
-  if (webPath.startsWith('/courses')) return '/courses';
+  // Courses & Exams: the exam generator is a tab of the same web page.
+  if (webPath.startsWith('/courses') || webPath.startsWith('/exams')) return '/courses';
   if (webPath.startsWith('/profile')) return '/profile';
   // Connect parked — any /connect deep link falls through to AI chat
   return '/chat';

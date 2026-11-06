@@ -1,72 +1,60 @@
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { useAppTheme } from '../../context/AppThemeContext';
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Colors } from '../../theme/yana';
-import { useInsideCurve } from './CurvePaint';
 import { useAuthScale } from './useAuthScale';
 
 type Props = {
   text: string;
   enabled?: boolean;
+  loading?: boolean;
   onPress: () => void;
 };
 
-/** Solid brand-green primary action. Always bordered; thicker double stroke on the hero curve. */
-export function AuthButton({ text, enabled = true, onPress }: Props) {
-  const { palette } = useAppTheme();
-  const { ref, onLayout, inside } = useInsideCurve();
+/** Solid hero CTA — same green→teal as dashboard balance cards. One radius, no double stroke. */
+export function AuthButton({ text, enabled = true, loading = false, onPress }: Props) {
   const { s, font } = useAuthScale();
-  const outerBorder = Math.max(inside ? 2 : 1.5, s(inside ? 3.5 : 2));
-  const innerBorder = Math.max(1.5, s(2.5));
+  const active = enabled && !loading;
   return (
-    <View
-      ref={ref}
-      collapsable={false}
-      onLayout={onLayout}
-      style={[
-        styles.outer,
-        {
-          borderRadius: s(14),
-          borderWidth: outerBorder,
-          borderColor: inside ? '#ffffff' : palette.primary,
-        },
-      ]}>
-      <TouchableOpacity
+    <TouchableOpacity
+      style={styles.wrap}
+      onPress={onPress}
+      disabled={!active}
+      activeOpacity={0.88}>
+      <LinearGradient
+        colors={active ? ['#15411D', '#006D69'] : ['#9BB0A6', '#8AA39B']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
         style={[
           styles.button,
           {
-            height: s(48),
-            borderRadius: s(12),
-            borderColor: inside ? palette.primary : 'rgba(255,255,255,0.55)',
-            borderWidth: innerBorder,
+            height: s(52),
+            borderRadius: 16,
           },
-          !enabled && styles.disabled,
-        ]}
-        onPress={onPress}
-        disabled={!enabled}
-        activeOpacity={0.85}>
-        <Text style={[styles.label, { fontSize: font(16) }]}>{text}</Text>
-      </TouchableOpacity>
-    </View>
+        ]}>
+        {loading ? (
+          <ActivityIndicator color={Colors.white} />
+        ) : (
+          <Text style={[styles.label, { fontSize: font(16) }]}>{text}</Text>
+        )}
+      </LinearGradient>
+    </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
-  outer: {
+  wrap: {
     flex: 1,
-    borderWidth: 0,
-    borderColor: 'transparent',
+    shadowColor: '#0A3D2E',
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 5,
   },
   button: {
-    backgroundColor: Colors.brandGreenDark,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
-    borderWidth: 0,
-    borderColor: 'transparent',
-  },
-  disabled: {
-    opacity: 0.5,
   },
   label: {
     color: Colors.white,

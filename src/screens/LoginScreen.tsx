@@ -1,7 +1,6 @@
 import React, { useCallback, useState } from 'react';
 
 import {
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -19,15 +18,14 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 
 import { LogoPartners } from '../components/auth/LogoPartners';
-import { LoginHeroCurve } from '../components/auth/LoginHeroCurve';
-import { ThemedPageSvg } from '../components/auth/ThemedPageSvg';
-import { CurveHProvider, CurvePaint, CurveText } from '../components/auth/CurvePaint';
+import { LoginHeroCurve, loginHeroHeight } from '../components/auth/LoginHeroCurve';
+import { ChatPatternBackdrop } from '../components/auth/ChatPatternBackdrop';
+import { CurveHProvider, CurvePaint } from '../components/auth/CurvePaint';
 import { CertifyingAgenciesCarousel } from '../components/auth/CertifyingAgenciesCarousel';
 import { NewsHighlight } from '../components/auth/NewsHighlight';
-
 import { AuthTextField } from '../components/auth/AuthTextField';
-
 import { AuthButton } from '../components/auth/AuthButton';
+import { GlassPanel } from '../components/dashboard/Glass';
 
 import { RootStackParamList } from '../navigation/types';
 
@@ -59,7 +57,7 @@ export function LoginScreen({ navigation }: Props) {
 
   const { s, font } = layout;
   /** Curve sits just above the form (was ~72% and overlapped fields). */
-  const curveH = Math.round(layout.height * 0.42);
+  const curveH = loginHeroHeight(layout.width, layout.height);
 
   const { refreshProfile, adoptSession } = useAuth();
   const { connectDesk } = useDeskAuth();
@@ -101,7 +99,7 @@ export function LoginScreen({ navigation }: Props) {
 
   const canLogin =
 
-    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && password.trim().length >= 6;
+    email.trim().length >= 3 && password.trim().length >= 6;
 
   const finishLogin = async (loginEmail: string, loginPass: string) => {
     // Nest desk JWT first — required for /parents/me/* (names/class).
@@ -170,7 +168,7 @@ export function LoginScreen({ navigation }: Props) {
 
         title: 'Check your details',
 
-        message: 'Enter a valid email and password (min 6 characters).',
+        message: 'Enter your email, phone or username, and your password (6 characters at least).',
 
         variant: 'warning',
 
@@ -194,7 +192,7 @@ export function LoginScreen({ navigation }: Props) {
 
         title: 'Login failed',
 
-        message: err.message ?? 'Could not sign in. Check email and password.',
+        message: err.message ?? 'Could not sign in. Check your email, phone or username, and your password.',
 
         variant: 'danger',
 
@@ -274,11 +272,11 @@ export function LoginScreen({ navigation }: Props) {
 
   return (
     <View style={styles.root}>
-      <ThemedPageSvg />
+      <ChatPatternBackdrop />
       <LoginHeroCurve height={curveH} />
 
       <CurveHProvider height={curveH}>
-      <SafeAreaView style={styles.safe}>
+      <SafeAreaView style={styles.safe} edges={['left', 'right', 'bottom']}>
         <KeyboardAvoidingView
           style={styles.flex}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -293,167 +291,81 @@ export function LoginScreen({ navigation }: Props) {
             ]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}>
-            <View style={[styles.centerBlock, { paddingTop: Math.max(s(24), Math.round(curveH * 0.12)) }]}>
+            <View style={[styles.centerBlock, { paddingTop: Math.max(s(20), Math.round(curveH * 0.1)) }]}>
               <CurvePaint>
                 {(inside) => <LogoPartners compact={layout.compact} onGreen={inside} />}
               </CurvePaint>
 
-              <View style={{ height: layout.spacer }} />
+              <View style={{ height: Math.max(layout.spacer, s(10)) }} />
 
-              <CurveText style={[styles.loginTitle, { fontSize: font(16) }]}>
-                Login to your account
-              </CurveText>
-
-              <View style={{ height: Math.max(layout.formGap, s(18)) }} />
-
-              <View style={[styles.form, { width: layout.formWidth, marginTop: s(8) }]}>
-
+              <GlassPanel
+                tone="frost"
+                radius={16}
+                shine
+                style={[styles.formCard, { width: layout.formWidth, marginTop: s(8), padding: s(18) }]}>
+                <Text style={[styles.loginTitle, { fontSize: font(20) }]}>Welcome back</Text>
+                <Text style={[styles.loginSub, { fontSize: font(13), marginBottom: s(16) }]}>
+                  Sign in to Tukua
+                </Text>
+                <Text style={[styles.fieldLabel, { fontSize: font(11) }]}>Email, phone or username</Text>
                 <AuthTextField
-
-                  hint="you@example.com"
-
-                  keyboardType="email-address"
-
+                  hint="you@example.com / 07… / username"
+                  keyboardType="default"
                   autoCapitalize="none"
-
                   autoCorrect={false}
-
-                  suffixIcon="mail-outline"
-
+                  autoComplete="username"
+                  textContentType="username"
+                  suffixIcon="person-outline"
                   value={email}
-
                   onChangeText={setEmail}
-
                 />
 
-                <View style={{ height: layout.formGap }} />
-
+                <Text style={[styles.fieldLabel, { fontSize: font(11), marginTop: s(14) }]}>Password</Text>
                 <AuthTextField
-
                   hint="Password"
-
                   isPassword
-
                   obscure={obscure}
-
                   onToggleObscure={() => setObscure((v) => !v)}
-
+                  autoComplete="password"
+                  textContentType="password"
                   value={password}
-
                   onChangeText={setPassword}
-
                 />
 
-                <View style={{ height: layout.formGap }} />
-
-                <CurvePaint style={styles.rememberRow} fullyInside>
-                  {(inside) => (
-                    <>
-                  <TouchableOpacity
-
-                    style={styles.rememberLeft}
-
-                    onPress={() => setRememberMe((v) => !v)}>
-
+                <View style={[styles.rememberRow, { marginTop: s(14) }]}>
+                  <TouchableOpacity style={styles.rememberLeft} onPress={() => setRememberMe((v) => !v)}>
                     <Ionicons
-
                       name={rememberMe ? 'checkbox' : 'square-outline'}
-
                       size={s(20)}
-
-                      color={
-                        inside
-                          ? rememberMe
-                            ? Colors.white
-                            : 'rgba(255,255,255,0.75)'
-                          : rememberMe
-                            ? Colors.brandGreenDark
-                            : Colors.mutedForeground
-                      }
-
+                      color={rememberMe ? Colors.orange : Colors.mutedForeground}
                     />
-
-                    <Text style={[styles.rememberText, { fontSize: font(12) }, inside ? styles.onPhotoText : styles.offPhotoText]}>
-                      Remember Me
-                    </Text>
-
+                    <Text style={[styles.rememberText, { fontSize: font(12) }]}>Remember me</Text>
                   </TouchableOpacity>
-
-                  <TouchableOpacity onPress={handleForgot}>
-
-                    <Text style={[styles.forgotText, { fontSize: font(12) }, inside ? styles.onPhotoText : styles.offPhotoText]}>
-                      Forgotten Password?
-                    </Text>
-
+                  <TouchableOpacity onPress={handleForgot} hitSlop={8}>
+                    <Text style={[styles.forgotText, { fontSize: font(12) }]}>Forgot password?</Text>
                   </TouchableOpacity>
-                    </>
-                  )}
-                </CurvePaint>
-
-                <View style={{ height: layout.formGap }} />
-
-                <View style={styles.loginRow}>
-
-                  {loading ? (
-
-                    <CurvePaint style={{ flex: 1 }}>
-                      {(inside) => (
-                    <View style={[styles.doubleOuter, { borderWidth: Math.max(inside ? 2 : 1.5, s(inside ? 3.5 : 2)), borderRadius: s(14), borderColor: inside ? '#ffffff' : Colors.brandGreenDark }]}>
-                    <View style={[styles.loadingBtn, { height: s(48), borderRadius: s(12) }, styles.doubleInner, { borderWidth: Math.max(1.5, s(2.5)) }]}>
-
-                      <ActivityIndicator color={Colors.white} />
-
-                    </View>
-                    </View>
-                      )}
-                    </CurvePaint>
-
-                  ) : (
-
-                    <AuthButton text="Log in" enabled={canLogin} onPress={handleLogin} />
-
-                  )}
-
-                  {bioAvailable && !loading ? (
-
-                    <CurvePaint>
-                      {(inside) => (
-                    <View style={[styles.doubleOuter, { borderWidth: Math.max(inside ? 2 : 1.5, s(inside ? 3.5 : 2)), borderRadius: s(14), borderColor: inside ? '#ffffff' : Colors.brandGreenDark }]}>
-                    <TouchableOpacity
-                      style={[
-                        styles.fingerprint,
-                        { width: s(48), height: s(48), borderRadius: s(12) },
-                        styles.doubleInner,
-                        { borderWidth: Math.max(1.5, s(2.5)) },
-                      ]}
-                      onPress={handleBiometric}>
-
-                      <Ionicons
-
-                        name="finger-print"
-
-                        size={layout.compact ? s(26) : s(28)}
-
-                        color={Colors.white}
-
-                      />
-
-                    </TouchableOpacity>
-                    </View>
-                      )}
-                    </CurvePaint>
-
-                  ) : null}
-
                 </View>
 
-              </View>
-              <TouchableOpacity
-                style={[styles.registerLink, { marginTop: s(20) }]}
-                onPress={() => navigation.navigate('Register')}>
-              <CurveText style={[styles.registerLinkText, { fontSize: font(14) }]}>Don't have an account? Create Account</CurveText>
-              </TouchableOpacity>
+                <View style={[styles.loginRow, { marginTop: s(16) }]}>
+                  <AuthButton text="Log in" enabled={canLogin} loading={loading} onPress={handleLogin} />
+                  {bioAvailable && !loading ? (
+                    <TouchableOpacity
+                      style={[styles.fingerprint, { width: s(52), height: s(52), borderRadius: 16 }]}
+                      onPress={handleBiometric}
+                      accessibilityLabel="Sign in with biometrics">
+                      <Ionicons name="finger-print" size={layout.compact ? s(24) : s(26)} color={Colors.white} />
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              </GlassPanel>
 
+              <TouchableOpacity
+                style={[styles.registerLink, { marginTop: s(16) }]}
+                onPress={() => navigation.navigate('Register')}>
+                <Text style={[styles.registerLinkText, { fontSize: font(14) }]}>
+                  Don't have an account? <Text style={styles.registerLinkEm}>Create account</Text>
+                </Text>
+              </TouchableOpacity>
             </View>
 
             <View style={styles.institutionFooter}>
@@ -530,146 +442,76 @@ const styles = StyleSheet.create({
   },
 
   loginTitle: {
-
     fontWeight: '700',
-
     fontFamily: 'Poppins_700Bold',
-
     textAlign: 'center',
-
+    color: Colors.ink,
   },
-
-  form: {
-
-    alignItems: 'center',
-
+  loginSub: {
+    fontFamily: 'Inter_400Regular',
+    textAlign: 'center',
+    color: Colors.mutedForeground,
   },
-
+  formCard: {
+    alignSelf: 'center',
+  },
+  fieldLabel: {
+    fontFamily: 'Inter_600SemiBold',
+    fontWeight: '600',
+    color: Colors.labelGray,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+    marginBottom: 6,
+  },
   rememberRow: {
-
     flexDirection: 'row',
-
     justifyContent: 'space-between',
-
     alignItems: 'center',
-
     width: '100%',
-
   },
-
   rememberLeft: {
-
     flexDirection: 'row',
-
     alignItems: 'center',
-
     gap: 8,
-
   },
-
   rememberText: {
-
-    fontSize: 12,
-
     fontWeight: '600',
-
     fontFamily: 'Poppins_600SemiBold',
-
+    color: Colors.ink,
   },
-
   forgotText: {
-
-    fontSize: 12,
-
     fontWeight: '600',
-
     fontFamily: 'Poppins_600SemiBold',
-
+    color: Colors.orange,
   },
-
-  onPhotoText: {
-    color: Colors.white,
-    textShadowColor: 'rgba(0,0,0,0.35)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
-  },
-  offPhotoText: {
-    color: Colors.brandGreenDark,
-  },
-
   loginRow: {
-
     flexDirection: 'row',
-
     alignItems: 'center',
-
     width: '100%',
-
     gap: 10,
-
   },
-
-  loadingBtn: {
-
-    flex: 1,
-
-    height: 48,
-
-    borderRadius: 12,
-
-    backgroundColor: Colors.primary,
-
-    alignItems: 'center',
-
-    justifyContent: 'center',
-
-  },
-
   fingerprint: {
-
-    width: 48,
-
-    height: 48,
-
-    borderRadius: 12,
-
-    backgroundColor: Colors.orangeAccent,
-
+    backgroundColor: Colors.orange,
     alignItems: 'center',
-
     justifyContent: 'center',
-
+    shadowColor: '#0A3D2E',
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
   },
-
-  doubleOuter: {
-    borderWidth: 3.5,
-    borderColor: '#ffffff',
-    borderRadius: 14,
-  },
-  doubleInner: {
-    borderWidth: 2.5,
-    borderColor: Colors.brandGreenDark,
-  },
-
   registerLink: {
-
-    marginTop: 20,
-
     paddingVertical: 4,
-
   },
-
   registerLinkText: {
-
-    fontWeight: '700',
-
-    fontSize: 14,
-
-    fontFamily: 'Poppins_600SemiBold',
-
+    fontFamily: 'Poppins_400Regular',
     textAlign: 'center',
-
+    color: Colors.mutedForeground,
   },
-
+  registerLinkEm: {
+    fontWeight: '700',
+    fontFamily: 'Poppins_600SemiBold',
+    color: Colors.brandGreenMid,
+  },
 });
 

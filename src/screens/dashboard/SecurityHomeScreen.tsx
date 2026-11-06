@@ -234,8 +234,10 @@ export function SecurityHomeScreen({ navigation }: Props) {
         );
       }
 
-      // When stationary (dev / overnight tests), seed light random drift so the parent map gets a path.
+      // Development builds only: when the phone sits on a desk, light random drift gives the map a path
+      // to draw. A real bus never sends a position it was not at.
       const seedSynthetic = () => {
+        if (!__DEV__) return;
         const last = gpsBufferRef.current[gpsBufferRef.current.length - 1];
         const baseLat = last?.latitude ?? -1.2921;
         const baseLng = last?.longitude ?? 36.8219;
@@ -276,7 +278,7 @@ export function SecurityHomeScreen({ navigation }: Props) {
       });
       setActiveTrip(trip);
       if (trip?.id) await startGps(trip.id);
-      showDialog({ title: 'Trip started', message: 'GPS saves every 30s for the parent map.', variant: 'success' });
+      showDialog({ title: 'Trip started', message: 'This phone now sends the bus position about every 30 seconds. Keep the app open during the trip.', variant: 'success' });
     } catch (e) {
       showDialog({
         title: 'Start failed',
@@ -294,9 +296,16 @@ export function SecurityHomeScreen({ navigation }: Props) {
     try {
       await flushGps(activeTrip.id);
       stopGps();
-      await endSecurityTrip(activeTrip.id);
+      const ended = await endSecurityTrip(activeTrip.id);
       setActiveTrip(null);
-      showDialog({ title: 'Trip ended', message: 'Run closed.', variant: 'success' });
+      const left = Number(ended?.dropped_at_end ?? 0);
+      showDialog({
+        title: 'Trip ended',
+        message: left
+          ? `${left} learner${left === 1 ? ' was' : 's were'} still on board and ${left === 1 ? 'has' : 'have'} been marked as dropped off. Their guardians are being sent a text.`
+          : 'Everyone had already been dropped off.',
+        variant: 'success',
+      });
     } catch (e) {
       showDialog({
         title: 'End failed',

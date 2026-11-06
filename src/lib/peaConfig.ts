@@ -10,7 +10,7 @@ const DEFAULT_MESSAGE =
   'Thank you for joining Tukua. To complete registration, we ask for a one-time registration fee of KES {amount} for the school. This helps us verify your phone number and keeps our learning community focused on committed learners.';
 
 export const DEFAULT_PEA_CONFIG: PeaConfig = {
-  amount: 950,
+  amount: 2950,
   free_tokens: 5000,
   message: DEFAULT_MESSAGE,
 };

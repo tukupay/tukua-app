@@ -309,7 +309,9 @@ export function JoinSchoolScreen() {
   const openMembership = async (m: MembershipHit) => {
     await refreshSchools({ quiet: true });
     try {
-      await selectSchool(m.school_id);
+      // selectSchool says false when the school is not in the refreshed list (it used to read the
+      // pre-refresh list, so a school joined a moment ago never opened and the screen just closed).
+      if (!(await selectSchool(m.school_id))) throw new Error('not listed yet');
       navigation.goBack();
     } catch {
       showDialog({
@@ -322,10 +324,13 @@ export function JoinSchoolScreen() {
   };
 
   const leaveSchool = (m: MembershipHit) => {
-    Alert.alert(
-      'Leave school?',
-      `This removes you from ${m.school_name}.\n\nTo join again later you must submit a new request and wait for school approval.`,
-      [
+    // In-app dialog: Alert.alert does nothing in the browser build.
+    showDialog({
+      title: 'Leave school?',
+      message: `This removes you from ${m.school_name}.\n\nTo join again later you must submit a new request and wait for school approval.`,
+      variant: 'warning',
+      icon: 'exit-outline',
+      buttons: [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Leave school',
@@ -357,7 +362,7 @@ export function JoinSchoolScreen() {
           },
         },
       ],
-    );
+    });
   };
 
   const selectedClassLabel = useMemo(() => {
@@ -413,6 +418,7 @@ export function JoinSchoolScreen() {
       if (role === 'parent') {
         let already = 0;
         let created = 0;
+        let approved = 0;
         for (const student of students) {
           const res = await createJoinRequest({
             school_id: school.id,
@@ -423,13 +429,21 @@ export function JoinSchoolScreen() {
           });
           if (res.already_pending) already += 1;
           else created += 1;
+          if ((res as { auto_approved?: boolean }).auto_approved) approved += 1;
         }
         await markJoinPromptSeen();
+        // Schools that auto-approve parents link the child at once — open it like teachers/learners.
+        if (approved) {
+          setJoinAutoApproved(true);
+          await refreshSchools({ quiet: true });
+          await selectSchool(school.id);
+        }
         setStep('done');
         showDialog({
-          title: already && !created ? 'Already pending' : 'Requests submitted',
-          message:
-            students.length > 1
+          title: approved ? 'You are in' : already && !created ? 'Already pending' : 'Requests submitted',
+          message: approved
+            ? 'Your child is linked. Their school dashboard is ready.'
+            : students.length > 1
               ? `${created} new · ${already} already pending. Waiting for school approval.`
               : 'Waiting for school admin approval.',
           variant: 'success',

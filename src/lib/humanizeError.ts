@@ -7,13 +7,16 @@ const MAP: Array<{ test: RegExp; message: string }> = [
       "School fee M-Pesa isn't configured on this server/staging. This isn't about your phone being unreachable — ask an admin to set Daraja keys.",
   },
   {
-    test: /authentication required|please login|unauthorized|invalid or expired session|invalid_jwt|auth_required/i,
-    message:
-      "We couldn't reach the registration service. Check you're online, or try again in a moment. If this keeps happening, restart the app.",
+    test: /invalid login credentials|invalid_credentials/i,
+    message: 'That email or password is not right. Try again, or sign in if you already have an account.',
   },
   {
-    test: /network request failed|failed to fetch|network error|ECONNREFUSED|timed out|timeout/i,
-    message: "We couldn't reach the server. Check your connection and try again.",
+    test: /authentication required|please login|unauthorized|invalid or expired session|invalid_jwt|auth_required|session expired/i,
+    message: 'Could not start payment yet. Tap Complete again.',
+  },
+  {
+    test: /network request failed|failed to fetch|network error|ECONNREFUSED|ECONNABORTED/i,
+    message: 'The server did not respond. Wait a moment and try again.',
   },
   {
     test: /password must be at least/i,
@@ -24,15 +27,15 @@ const MAP: Array<{ test: RegExp; message: string }> = [
     message: 'Those passwords do not match.',
   },
   {
-    test: /already registered|account_exists|phone_already_activated|duplicate|already in use/i,
-    message: 'That email or phone is already registered. Try signing in instead.',
+    test: /already registered|account_exists|phone_already_activated|duplicate|already in use|already on tukua/i,
+    message: 'That email or phone is already registered on Tukua. Try signing in instead.',
   },
   {
     test: /payment not found|pea_incomplete|not completed/i,
     message: 'We did not see a completed M-Pesa payment yet. Finish the prompt on your phone, then try again.',
   },
   {
-    test: /could not start m-pesa|mpesa|daraja|gateway/i,
+    test: /could not start m-pesa|mpesa is not configured|daraja.*(fail|error|unavailable)/i,
     message: 'We could not start M-Pesa right now. Check your phone number and try again in a moment.',
   },
   {
@@ -51,19 +54,51 @@ const MAP: Array<{ test: RegExp; message: string }> = [
 
 const DEFAULT = "Hmm, that didn't quite go through. Please try again.";
 
+/** Looks like a stack dump / HTTP blob, not a sentence we can show. */
+function looksLikeDump(raw: string): boolean {
+  if (raw.length > 280) return true;
+  return /StatusCode|at\s+\w+\.\w+|supabase|stack trace/i.test(raw) && /[{}\[\]]/.test(raw);
+}
+
+function extractFromObject(o: Record<string, unknown>): string {
+  const msg = o.message;
+  if (typeof msg === 'string' && msg.trim()) return msg;
+  if (Array.isArray(msg)) {
+    return msg.filter((x) => typeof x === 'string' && x.trim()).join('. ');
+  }
+  if (typeof o.error === 'string' && o.error.trim()) return o.error;
+  if (o.error && typeof o.error === 'object') {
+    const nested = extractFromObject(o.error as Record<string, unknown>);
+    if (nested) return nested;
+  }
+  if (typeof o.result_description === 'string' && o.result_description.trim()) {
+    return o.result_description;
+  }
+  return '';
+}
+
 function extractRaw(err: unknown): string {
   if (err == null) return '';
-  if (typeof err === 'string') return err;
-  if (err instanceof Error) return err.message;
+  if (typeof err === 'string') {
+    const s = err.trim();
+    if ((s.startsWith('{') || s.startsWith('[')) && s.length < 4000) {
+      try {
+        return extractRaw(JSON.parse(s));
+      } catch {
+        /* keep string */
+      }
+    }
+    return s;
+  }
+  if (err instanceof Error) return extractRaw(err.message);
   if (typeof err === 'object') {
-    const o = err as Record<string, unknown>;
-    if (typeof o.message === 'string' && o.message.trim()) return o.message;
-    if (typeof o.error === 'string' && o.error.trim()) return o.error;
+    const fromObj = extractFromObject(err as Record<string, unknown>);
+    if (fromObj) return fromObj;
   }
   return String(err);
 }
 
-/** Never show raw HTTP/JSON to the user. */
+/** Never show raw HTTP/JSON to the user. Prefer Nest/Daraja sentences as-is. */
 export function humanizeError(err: unknown, fallback = DEFAULT): string {
   const code =
     err && typeof err === 'object' && 'code' in err
@@ -80,9 +115,6 @@ export function humanizeError(err: unknown, fallback = DEFAULT): string {
   for (const row of MAP) {
     if (row.test.test(raw)) return row.message;
   }
-  // Short plain sentences from Nest are OK to show; strip codes.
-  if (raw.length < 160 && !/[{}\[\]StatusCode|stack|jwt|supabase]/i.test(raw)) {
-    return raw;
-  }
+  if (!looksLikeDump(raw)) return raw;
   return fallback;
 }

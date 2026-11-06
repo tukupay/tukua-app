@@ -1,5 +1,5 @@
 /**
- * Teacher timetable — GET /timetable/teacher/:teacherId (not scope=mine WebView).
+ * Timetable — teachers: GET /timetable/teacher/:teacherId; learners: GET /students/me/timetable.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -26,10 +26,8 @@ import { useDeskAuth } from '../../context/DeskAuthContext';
 import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
 import { log } from '../../lib/logger';
-import {
-  fetchClassTimetable,
-  fetchTeacherTimetable,
-} from '../../lib/teacherPortalApi';
+import { fetchTeacherTimetable } from '../../lib/teacherPortalApi';
+import { deskFetch } from '../../lib/deskApi';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'TeacherTimetable'>;
 
@@ -39,14 +37,32 @@ type TimetableEntry = {
   period_name?: string;
   period_start?: string;
   period_end?: string;
+  period_start_time?: string;
+  period_end_time?: string;
+  period_sort_order?: number;
   start_time?: string;
   end_time?: string;
   subject_name?: string;
   class_name?: string;
   room?: string;
+  classroom_name?: string;
+  teacher_name?: string;
 };
 
 const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+/** The API sends "MON".."SUN" (older rows 0-6); both become 0 = Monday. */
+function dayIndex(entry: TimetableEntry): number {
+  const raw = entry.day_of_week;
+  const n = Number(raw);
+  if (raw !== '' && raw != null && !Number.isNaN(n)) return n >= 0 && n <= 6 ? n : 0;
+  const i = DAY_NAMES.findIndex((d) => String(raw ?? '').toLowerCase().startsWith(d.toLowerCase()));
+  return i >= 0 ? i : 0;
+}
+
+function startOf(entry: TimetableEntry): string {
+  return String(entry.period_start_time || entry.period_start || entry.start_time || '');
+}
 
 function unwrapEntries(data: unknown): TimetableEntry[] {
   if (Array.isArray(data)) return data as TimetableEntry[];
@@ -60,14 +76,12 @@ function unwrapEntries(data: unknown): TimetableEntry[] {
 }
 
 function dayLabel(entry: TimetableEntry) {
-  const d = Number(entry.day_of_week);
-  if (!Number.isNaN(d) && d >= 0 && d <= 6) return DAY_NAMES[d] ?? `Day ${d + 1}`;
-  return 'Day';
+  return DAY_NAMES[dayIndex(entry)] ?? 'Day';
 }
 
 function timeLabel(entry: TimetableEntry) {
-  const start = entry.period_start || entry.start_time || '';
-  const end = entry.period_end || entry.end_time || '';
+  const start = startOf(entry);
+  const end = entry.period_end_time || entry.period_end || entry.end_time || '';
   if (start && end) return `${String(start).slice(0, 5)} – ${String(end).slice(0, 5)}`;
   if (start) return String(start).slice(0, 5);
   return entry.period_name || '';
@@ -75,9 +89,8 @@ function timeLabel(entry: TimetableEntry) {
 
 export function TeacherTimetableScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
-  const { deskUser, persona, selectedStudent } = useDeskAuth();
+  const { deskUser, persona } = useDeskAuth();
   const teacherId = String(deskUser?.id ?? deskUser?.user_id ?? '').trim();
-  const studentClassId = String(selectedStudent?.classId ?? '').trim();
 
   const [entries, setEntries] = useState<TimetableEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -88,11 +101,6 @@ export function TeacherTimetableScreen({ navigation }: Props) {
 
   const load = useCallback(
     async (soft = false) => {
-      if (persona === 'student' && !studentClassId) {
-        setError('Class not linked to your student profile yet.');
-        setLoading(false);
-        return;
-      }
       if (persona !== 'student' && !teacherId) {
         setError('Teacher profile not linked');
         setLoading(false);
@@ -101,9 +109,11 @@ export function TeacherTimetableScreen({ navigation }: Props) {
       if (!soft) setLoading(true);
       setError(null);
       try {
+        // A learner's own class comes from the server (there is no picked child for a learner;
+        // the old code read a classId that never existed and always said "Class not linked").
         const data =
           persona === 'student'
-            ? await fetchClassTimetable(studentClassId)
+            ? await deskFetch<{ entries?: TimetableEntry[] }>('/students/me/timetable')
             : await fetchTeacherTimetable(teacherId);
         setEntries(unwrapEntries(data));
       } catch (e) {
@@ -116,7 +126,7 @@ export function TeacherTimetableScreen({ navigation }: Props) {
         setRefreshing(false);
       }
     },
-    [persona, studentClassId, teacherId],
+    [persona, teacherId],
   );
 
   useEffect(() => {
@@ -126,22 +136,22 @@ export function TeacherTimetableScreen({ navigation }: Props) {
   const byDay = useMemo(() => {
     const map = new Map<number, TimetableEntry[]>();
     for (const e of entries) {
-      const d = Number(e.day_of_week);
-      const key = Number.isNaN(d) ? 0 : d;
+      const key = dayIndex(e);
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(e);
     }
     for (const [, list] of map) {
-      list.sort((a, b) =>
-        String(a.period_start || a.start_time || '').localeCompare(
-          String(b.period_start || b.start_time || ''),
-        ),
-      );
+      list.sort((a, b) => startOf(a).localeCompare(startOf(b)));
     }
     return map;
   }, [entries]);
 
-  const visible = view === 'day' ? byDay.get(dayFilter) ?? [] : entries;
+  // Week view in school order (Mon → Sun, then by period start), not database order.
+  const weekSorted = useMemo(
+    () => [...entries].sort((a, b) => dayIndex(a) - dayIndex(b) || startOf(a).localeCompare(startOf(b))),
+    [entries],
+  );
+  const visible = view === 'day' ? byDay.get(dayFilter) ?? [] : weekSorted;
 
   return (
     <View style={styles.root}>
@@ -214,7 +224,9 @@ export function TeacherTimetableScreen({ navigation }: Props) {
               <Text style={styles.periodTime}>{timeLabel(e)}</Text>
               <Text style={styles.subject}>{e.subject_name || 'Subject'}</Text>
               <Text style={styles.meta}>
-                {[dayLabel(e), e.class_name, e.room].filter(Boolean).join(' · ')}
+                {[dayLabel(e), persona === 'student' ? e.teacher_name : e.class_name, e.classroom_name || e.room]
+                  .filter(Boolean)
+                  .join(' · ')}
               </Text>
             </ModuleGlassCard>
           ))

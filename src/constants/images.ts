@@ -6,7 +6,7 @@ export const Images = {
   /** Desk-matching knockout fill for login wordmark */
   wordmarkFill: require('../../assets/images/wordmark-fill.jpg'),
   /** Desk login hero photo, clipped to the curve SVG */
-  loginHero: require('../../assets/images/login-hero.jpg'),
+  loginHero: require('../../assets/images/login-hero-kenya.jpg'),
   brandArtAlt: require('../../assets/images/samples/planting.jpg'),
   /** Tukua icon (school mark on the green tile), square */
   logoTrimmed: require('../../assets/images/logo/splash-tukua.png'),

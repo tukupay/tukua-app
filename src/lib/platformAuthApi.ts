@@ -141,7 +141,7 @@ export async function checkTukuaAccount(email: string, phone: string) {
 }
 
 export async function platformRegister(body: {
-  email?: string;
+  email: string;
   phone?: string;
   password: string;
   full_name?: string;

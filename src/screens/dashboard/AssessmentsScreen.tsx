@@ -210,7 +210,7 @@ export function AssessmentsScreen({ navigation }: Props) {
         <ModuleKicker>Assessments</ModuleKicker>
         <ModuleScreenHeader
           title={selectedStudent?.name ? selectedStudent.name : 'Exam results'}
-          description="Exams, report cards & slips."
+          description="Your child’s report form and class analysis — not Merit Lists."
         />
 
         {!loading && !error ? (
@@ -316,6 +316,34 @@ export function AssessmentsScreen({ navigation }: Props) {
                 {report?.principal_comment ? (
                   <Text style={styles.comment}>Principal: {report.principal_comment}</Text>
                 ) : null}
+                {examId && child.student_id ? (
+                  <View style={styles.actions}>
+                    <Pressable
+                      style={styles.actionBtn}
+                      onPress={() =>
+                        navigation.navigate('DeskModule', {
+                          title: 'Report form',
+                          deskPath: `/parent/assessments/print?exam_id=${encodeURIComponent(examId)}&student_id=${encodeURIComponent(String(child.student_id))}&reportType=report_forms&title=${encodeURIComponent(`Report form — ${child.full_name || 'Student'}`)}`,
+                          description: 'Same school report layout, with download.',
+                        })
+                      }>
+                      <Ionicons name="download-outline" size={16} color={Colors.primary} />
+                      <Text style={styles.actionText}>Report form</Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.actionBtn}
+                      onPress={() =>
+                        navigation.navigate('DeskModule', {
+                          title: 'Class analysis',
+                          deskPath: `/parent/assessments/print?exam_id=${encodeURIComponent(examId)}&reportType=class_performance&class_name=${encodeURIComponent(String(child.class_name || ''))}&title=${encodeURIComponent('Class analysis')}`,
+                          description: 'Class means — no other learners’ raw scores.',
+                        })
+                      }>
+                      <Ionicons name="bar-chart-outline" size={16} color={Colors.primary} />
+                      <Text style={styles.actionText}>Class analysis</Text>
+                    </Pressable>
+                  </View>
+                ) : null}
               </ModuleGlassCard>
             );
           })
@@ -419,6 +447,18 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     color: Colors.mutedForeground,
   },
+  actions: { flexDirection: 'row', gap: 8, marginTop: 14 },
+  actionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(10,61,46,0.08)',
+    borderRadius: 10,
+    paddingVertical: 10,
+  },
+  actionText: { fontSize: 12, fontWeight: '800', color: Colors.primary },
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.4)',

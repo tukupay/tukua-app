@@ -43,6 +43,10 @@ export type BoardedStudent = {
   class_name?: string | null;
   boarded_at?: string | null;
   method?: string | null;
+  /** When the learner left the vehicle; empty while still on board. */
+  dropped_at?: string | null;
+  drop_guardian_told?: boolean;
+  drop_not_told_reason?: string | null;
 };
 
 export async function fetchSecurityAssignment() {
@@ -68,7 +72,7 @@ export async function startSecurityTrip(body: {
 }
 
 export async function endSecurityTrip(tripRunId: string) {
-  return deskFetch<{ id?: string }>(`/transport/trip-runs/${encodeURIComponent(tripRunId)}/end`, {
+  return deskFetch<{ id?: string; dropped_at_end?: number }>(`/transport/trip-runs/${encodeURIComponent(tripRunId)}/end`, {
     method: 'POST',
   });
 }
@@ -144,7 +148,8 @@ export async function boardSecurityStudent(
 ) {
   return deskFetch<{
     boarding?: unknown;
-    notification?: { notified?: boolean; detail?: string };
+    /** Whether the guardian was told; `detail` says why not; `message` is the text that was sent. */
+    notification?: { notified?: boolean; detail?: string; channel?: 'sms' | 'email'; recipients?: number; message?: string };
     boarded_students?: BoardedStudent[];
     boarded_total?: number;
     trip_kind_label?: string;
@@ -152,6 +157,22 @@ export async function boardSecurityStudent(
     method: 'POST',
     body,
   });
+}
+
+/**
+ * Drop learners off, with no scan: one learner at their stop, or everyone still on board.
+ * Their guardians are texted; the school's account pays. For one learner `results[0]` says
+ * whether the guardian was told; for several the texts go out behind the reply.
+ */
+export async function dropTripStudents(tripRunId: string, body: { student_id?: string; all?: boolean }) {
+  return deskFetch<{
+    dropped?: number;
+    telling_guardians?: boolean;
+    results?: Array<{ student_id: string; name?: string; notified?: boolean; detail?: string }>;
+    boarded_students?: BoardedStudent[];
+    boarded_total?: number;
+    on_board?: number;
+  }>(`/transport/trip-runs/${encodeURIComponent(tripRunId)}/drop`, { method: 'POST', body });
 }
 
 export async function fetchBoardedStudents(tripRunId: string, page = 1, limit = 40) {

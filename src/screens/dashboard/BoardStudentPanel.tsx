@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../theme/yana';
 import {
   boardSecurityStudent,
+  dropTripStudents,
   analyzeTransportFace,
   fetchBoardedStudents,
   searchTransportStudents,
@@ -44,6 +45,14 @@ type FaceMatch = {
 
 const PAGE_SIZE = 30;
 
+/** The time on this phone's clock, as 16:35. */
+function localClock(iso?: string | null): string {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
 export function BoardStudentPanel({ tripId, tripActive, onBoarded, onCancel }: Props) {
   const { showDialog } = useDialog();
   const [mode, setMode] = useState<'face' | 'search'>('face');
@@ -61,6 +70,10 @@ export function BoardStudentPanel({ tripId, tripActive, onBoarded, onCancel }: P
   const [searchError, setSearchError] = useState('');
   const [boarded, setBoarded] = useState<BoardedStudent[]>([]);
   const [boardedTotal, setBoardedTotal] = useState(0);
+  /** The learner being dropped off right now, or 'all'. */
+  const [dropping, setDropping] = useState<string | null>(null);
+  /** "Drop all" asks for a second tap, so a slip of the thumb does not text every guardian. */
+  const [confirmDropAll, setConfirmDropAll] = useState(false);
   const [boardedPage, setBoardedPage] = useState(1);
   const [boardedLoading, setBoardedLoading] = useState(false);
   const [boardedLoadingMore, setBoardedLoadingMore] = useState(false);
@@ -156,10 +169,18 @@ export function BoardStudentPanel({ tripId, tripActive, onBoarded, onCancel }: P
         } else {
           await loadBoarded(1, false);
         }
+        // Say whether the guardian was told, and why not when they were not.
+        const who = opts.name || 'The learner';
+        const told = res?.notification?.notified === true;
+        const duplicate = (res as { duplicate?: boolean } | undefined)?.duplicate === true;
         showDialog({
-          title: 'Boarded',
-          message: opts.name ? `${opts.name} is on the bus.` : 'Student boarded.',
-          variant: 'success',
+          title: duplicate ? 'Already on the bus' : 'Boarded',
+          message: duplicate
+            ? `${who} was boarded earlier on this trip.`
+            : told
+              ? `${who} is on the bus. The guardian has been sent a text.`
+              : `${who} is on the bus, but the guardian was NOT told. ${res?.notification?.detail ?? 'The text could not be sent.'}`,
+          variant: duplicate || told ? 'success' : 'warning',
         });
         setMatched(null);
         setCameraOpen(false);
@@ -291,6 +312,49 @@ export function BoardStudentPanel({ tripId, tripActive, onBoarded, onCancel }: P
     if (boardedLoadingMore || boardedLoading) return;
     if (boarded.length >= boardedTotal) return;
     void loadBoarded(boardedPage + 1, true);
+  };
+
+  const stillOnBoard = boarded.filter((b) => !b.dropped_at);
+
+  /** Drop one learner at their stop, or everyone still on board. No scan; guardians are texted. */
+  const dropOff = async (student?: BoardedStudent) => {
+    if (!tripId || dropping) return;
+    setDropping(student ? student.student_id : 'all');
+    try {
+      const res = await dropTripStudents(tripId, student ? { student_id: student.student_id } : { all: true });
+      if (res?.boarded_students) {
+        setBoarded(res.boarded_students);
+        setBoardedTotal(Number(res.boarded_total ?? res.boarded_students.length));
+        setBoardedPage(1);
+      } else {
+        await loadBoarded(1, false);
+      }
+      const count = Number(res?.dropped ?? 0);
+      if (student) {
+        const one = res?.results?.[0];
+        showDialog({
+          title: count ? 'Dropped off' : 'Already dropped off',
+          message: !count
+            ? `${student.name} had already been dropped off.`
+            : one?.notified
+              ? `${student.name} is off the bus. The guardian has been sent a text.`
+              : `${student.name} is off the bus, but the guardian was NOT told. ${one?.detail ?? 'The text could not be sent.'}`,
+          variant: !count || one?.notified ? 'success' : 'warning',
+        });
+      } else {
+        showDialog({
+          title: count ? 'Everyone dropped off' : 'No one is on board',
+          message: count ? `${count} learner${count === 1 ? ' is' : 's are'} off the bus. Their guardians are being sent a text.` : 'Everyone had already been dropped off.',
+          variant: 'success',
+        });
+      }
+      onBoarded?.();
+    } catch (e) {
+      showDialog({ title: 'Could not drop off', message: e instanceof Error ? e.message : String(e), variant: 'danger' });
+    } finally {
+      setDropping(null);
+      setConfirmDropAll(false);
+    }
   };
 
   return (
@@ -468,11 +532,32 @@ export function BoardStudentPanel({ tripId, tripActive, onBoarded, onCancel }: P
       {tripActive ? (
         <View style={styles.onboardedBox}>
           <View style={styles.onboardedHead}>
-            <Text style={styles.onboardedTitle}>On board ({boardedTotal})</Text>
+            <Text style={styles.onboardedTitle}>
+              On board ({stillOnBoard.length}
+              {boardedTotal > stillOnBoard.length ? ` of ${boardedTotal}` : ''})
+            </Text>
             <Pressable onPress={() => void loadBoarded(1, false)} hitSlop={8}>
               <Text style={styles.refreshLink}>Refresh</Text>
             </Pressable>
           </View>
+          {stillOnBoard.length > 0 ? (
+            <Pressable
+              onPress={() => (confirmDropAll ? void dropOff() : setConfirmDropAll(true))}
+              disabled={Boolean(dropping)}
+              style={[styles.dropAllBtn, confirmDropAll && styles.dropAllBtnConfirm, Boolean(dropping) && styles.dropBtnBusy]}
+              accessibilityRole="button"
+              accessibilityLabel={confirmDropAll ? 'Confirm: drop everyone off' : 'Drop everyone off'}>
+              {dropping === 'all' ? (
+                <ActivityIndicator color={Colors.white} />
+              ) : (
+                <Text style={styles.dropAllText}>
+                  {confirmDropAll
+                    ? `Tap again to drop all ${stillOnBoard.length} and text their guardians`
+                    : `Drop all ${stillOnBoard.length} off`}
+                </Text>
+              )}
+            </Pressable>
+          ) : null}
           {boardedLoading && boarded.length === 0 ? (
             <ActivityIndicator color={Colors.brandGreenDark} />
           ) : boarded.length === 0 ? (
@@ -491,13 +576,29 @@ export function BoardStudentPanel({ tripId, tripActive, onBoarded, onCancel }: P
                 ) : null
               }
               renderItem={({ item }) => (
-                <View style={styles.onboardedRow}>
-                  <Text style={styles.resultName}>{item.name}</Text>
-                  <Text style={styles.resultMeta}>
-                    {item.student_number || '—'}
-                    {item.class_name ? ` · ${item.class_name}` : ''}
-                    {item.boarded_at ? ` · ${String(item.boarded_at).slice(11, 16)}` : ''}
-                  </Text>
+                <View style={[styles.onboardedRow, styles.onboardedRowSplit, item.dropped_at ? styles.onboardedRowOff : null]}>
+                  <View style={styles.onboardedWho}>
+                    <Text style={styles.resultName}>{item.name}</Text>
+                    <Text style={styles.resultMeta}>
+                      {item.student_number || '—'}
+                      {item.class_name ? ` · ${item.class_name}` : ''}
+                    </Text>
+                  </View>
+                  {item.dropped_at ? (
+                    <View style={styles.droppedTag}>
+                      <Text style={styles.droppedText}>Got off {localClock(item.dropped_at)}</Text>
+                      <Text style={styles.droppedSub}>{item.drop_guardian_told ? 'Guardian told' : 'Guardian not told'}</Text>
+                    </View>
+                  ) : (
+                    <Pressable
+                      onPress={() => void dropOff(item)}
+                      disabled={Boolean(dropping)}
+                      style={[styles.dropBtn, Boolean(dropping) && styles.dropBtnBusy]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Drop ${item.name} off`}>
+                      {dropping === item.student_id ? <ActivityIndicator color={Colors.brandGreenDark} /> : <Text style={styles.dropText}>Drop off</Text>}
+                    </Pressable>
+                  )}
                 </View>
               )}
             />
@@ -533,7 +634,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#0b1220',
     position: 'relative',
   },
-  camera: { ...StyleSheet.absoluteFillObject },
+  camera: { ...StyleSheet.absoluteFill },
   ovalGuide: {
     position: 'absolute',
     alignSelf: 'center',
@@ -545,7 +646,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.55)',
   },
   scanOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.35)',
     alignItems: 'center',
     justifyContent: 'center',
@@ -631,6 +732,35 @@ const styles = StyleSheet.create({
   },
   onboardedHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   onboardedTitle: { fontSize: 15, fontWeight: '800', color: Colors.ink },
+  onboardedRowSplit: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  onboardedRowOff: { opacity: 0.6 },
+  onboardedWho: { flex: 1, minWidth: 0 },
+  dropBtn: {
+    minWidth: 92,
+    minHeight: 40,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: Colors.brandGreenDark,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dropBtnBusy: { opacity: 0.5 },
+  dropText: { fontSize: 13, fontWeight: '800', color: Colors.brandGreenDark },
+  dropAllBtn: {
+    minHeight: 46,
+    borderRadius: 14,
+    backgroundColor: Colors.brandGreenDark,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    marginBottom: 8,
+  },
+  dropAllBtnConfirm: { backgroundColor: Colors.orange },
+  dropAllText: { fontSize: 14, fontWeight: '800', color: Colors.white, textAlign: 'center' },
+  droppedTag: { alignItems: 'flex-end' },
+  droppedText: { fontSize: 12, fontWeight: '700', color: Colors.ink },
+  droppedSub: { fontSize: 11, color: Colors.mutedForeground },
   refreshLink: { fontSize: 13, fontWeight: '700', color: Colors.brandGreenDark },
   onboardedList: { maxHeight: 280 },
   onboardedRow: {

@@ -1,5 +1,5 @@
 import { Platform } from 'react-native';
-import { Audio } from 'expo-av';
+import { setAudioModeAsync } from 'expo-audio';
 import type { WebViewProps } from 'react-native-webview';
 
 /** Inline HTML5 audio/video fixes for chat radio (Shoutcast / TV47 streams in WebView). */
@@ -56,12 +56,13 @@ export const webViewMediaProps = getWebViewMediaProps();
 export async function configureWebViewAudioSession(): Promise<void> {
   if (Platform.OS === 'web') return;
   try {
-    await Audio.setAudioModeAsync({
-      allowsRecordingIOS: false,
-      playsInSilentModeIOS: true,
-      staysActiveInBackground: false,
-      shouldDuckAndroid: true,
-      playThroughEarpieceAndroid: false,
+    // expo-audio (expo-av was removed from the SDK): same session as before under its new names.
+    await setAudioModeAsync({
+      allowsRecording: false,
+      playsInSilentMode: true,
+      shouldPlayInBackground: false,
+      interruptionMode: 'duckOthers',
+      shouldRouteThroughEarpiece: false,
     });
   } catch {
     // non-fatal

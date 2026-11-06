@@ -112,6 +112,14 @@ async function refreshAccess(): Promise<string | null> {
 }
 
 /**
+ * New platform token now (refresh re-reads roles and schools): after a join is approved or a role
+ * changes, the stored token still carries the old ones until it expires.
+ */
+export async function refreshPlatformNestToken(): Promise<string | null> {
+  return refreshAccess();
+}
+
+/**
  * Nest JWT for SPA `tukua_nest_access_token`.
  * Order: stored platform identity → refresh → password login → Desk Nest JWT.
  */

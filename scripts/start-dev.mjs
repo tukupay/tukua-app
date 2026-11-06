@@ -45,6 +45,27 @@ function waitForProxy(ms = 4000) {
   });
 }
 
+/**
+ * In development the app shows this PC's current web code (Vite :8080, live reload, no build) and
+ * talks to this PC's API (:3253, staging database), with the sign-in token injected into the web
+ * page — never the online v2.tukua.ai build or the live API that .env names for store builds.
+ * Variables set in the shell still win (Expo never lets .env override them).
+ * MOBILE_ENV=staging npm start → keep .env's hosted addresses instead.
+ */
+function devHosts() {
+  if (String(process.env.MOBILE_ENV || '').toLowerCase() === 'staging') return {};
+  const web = process.env.EXPO_PUBLIC_WEB_URL || 'http://localhost:8080';
+  const api = process.env.EXPO_PUBLIC_NEST_API_URL || 'http://localhost:3253/api';
+  return {
+    EXPO_PUBLIC_TUKUA_ENV: process.env.EXPO_PUBLIC_TUKUA_ENV || 'local',
+    // localhost is rewritten to this PC's network address on a phone (resolveLocalUrl).
+    EXPO_PUBLIC_WEB_URL: web,
+    EXPO_PUBLIC_TUKUA_WEB_URL: process.env.EXPO_PUBLIC_TUKUA_WEB_URL || web,
+    EXPO_PUBLIC_NEST_API_URL: api,
+    EXPO_PUBLIC_DESK_API_URL: process.env.EXPO_PUBLIC_DESK_API_URL || api,
+  };
+}
+
 async function main() {
   const expoArgs = process.argv.slice(2);
   let proxyChild = null;
@@ -77,9 +98,12 @@ async function main() {
   // (via killOthersOn:failure) the whole npm run dev:all stack. Skip that network check.
   const expoEnv = {
     ...process.env,
+    ...devHosts(),
     EXPO_NO_DEPENDENCY_VALIDATION:
       process.env.EXPO_NO_DEPENDENCY_VALIDATION ?? '1',
   };
+  console.log(`[start-dev]   Tukua AI web → ${expoEnv.EXPO_PUBLIC_WEB_URL}`);
+  console.log(`[start-dev]   API          → ${expoEnv.EXPO_PUBLIC_NEST_API_URL}`);
   const expo = spawn(
     process.platform === 'win32' ? 'npx.cmd' : 'npx',
     ['expo', 'start', ...expoArgs],

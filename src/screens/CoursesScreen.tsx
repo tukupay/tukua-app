@@ -2,7 +2,7 @@
  * Native Courses tab — Nest catalog + enrolled list.
  * Course detail / learn / exam / pay stay in-app via WebView (full web feature set).
  */
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
   Image,
@@ -232,22 +232,79 @@ export function CoursesScreen() {
   const [pageSize] = useState(20);
   const [visibleCount, setVisibleCount] = useState(20);
 
+  // Only the newest load may write to the screen (a pull-to-refresh can start while batches are still arriving).
+  const loadRun = useRef(0);
+
+  /**
+   * The catalogue arrives a batch at a time, as on the web (src/lib/tenantCourseCatalog.ts): the first
+   * courses show as soon as they are in, and the rest fill in behind. Asking for the whole catalogue
+   * in one call kept the screen on its spinner for several seconds.
+   */
   const load = useCallback(async () => {
     setError(null);
+    const run = ++loadRun.current;
+    const current = () => run === loadRun.current;
+    type Page = {
+      items: CatalogCourse[];
+      total?: number;
+      org_brand_by_course?: Record<string, OrgBrand>;
+      certifiers_by_course?: Record<string, CertifierEntry[]>;
+    };
+    const FIRST = 24;
+    const NEXT = 48;
+    const page = (limit: number, offset: number) =>
+      nestAuthGet<Page>(`/platform/courses/catalog-page?limit=${limit}&offset=${offset}&order=catalog`);
     try {
-      const [mine, page] = await Promise.all([
-        nestAuthGet<{ items: Enrolled[] }>('/platform/courses/mine?limit=40'),
-        nestAuthGet<{
-          items: CatalogCourse[];
-          org_brand_by_course?: Record<string, OrgBrand>;
-          certifiers_by_course?: Record<string, CertifierEntry[]>;
-        }>('/platform/courses/catalog-page'),
-      ]);
-      setEnrolled(mine?.items || []);
-      setCatalog(page?.items || []);
-      setOrgBrandByCourse(page?.org_brand_by_course || {});
-      setCertifiersByCourse(page?.certifiers_by_course || {});
+      // What the person is enrolled in comes on its own, so it never waits for the catalogue.
+      void nestAuthGet<{ items: Enrolled[] }>('/platform/courses/mine?limit=40')
+        .then((mine) => {
+          if (current()) setEnrolled(mine?.items || []);
+        })
+        .catch((e) => log.warn('Courses', 'enrolled load failed', e instanceof Error ? e.message : String(e)));
+
+      const first = await page(FIRST, 0);
+      if (!current()) return;
+      const seen = new Set<string>();
+      const all: CatalogCourse[] = [];
+      const brands: Record<string, OrgBrand> = {};
+      const certifiers: Record<string, CertifierEntry[]> = {};
+      const take = (p: Page | null | undefined) => {
+        for (const item of p?.items || []) {
+          const id = String((item as { id?: unknown }).id ?? '');
+          if (!id || seen.has(id)) continue;
+          seen.add(id);
+          all.push(item);
+        }
+        Object.assign(brands, p?.org_brand_by_course || {});
+        Object.assign(certifiers, p?.certifiers_by_course || {});
+      };
+      const show = () => {
+        setCatalog([...all]);
+        setOrgBrandByCourse({ ...brands });
+        setCertifiersByCourse({ ...certifiers });
+      };
+      take(first);
+      show();
       setVisibleCount(20);
+      setLoading(false);
+      setRefreshing(false);
+
+      const total = Number(first?.total) || all.length;
+      const offsets: number[] = [];
+      for (let offset = FIRST; offset < total && offsets.length < 60; offset += NEXT) offsets.push(offset);
+      if ((first?.items || []).length < FIRST) offsets.length = 0;
+      let next = 0;
+      const worker = async () => {
+        while (next < offsets.length) {
+          const offset = offsets[next];
+          next += 1;
+          const more = await page(NEXT, offset).catch(() => null);
+          if (!current()) return;
+          take(more);
+          show();
+        }
+      };
+      await Promise.all([worker(), worker(), worker()]);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Could not load courses';
       setError(msg);

@@ -185,6 +185,12 @@ export function NativeAppHeader() {
             icon: 'sparkles-outline' as const,
             onPress: () => sendChatCommand('open_models'),
           },
+          {
+            id: 'apps',
+            label: 'Apps (e-Post and others)',
+            icon: 'apps-outline' as const,
+            onPress: () => sendChatCommand('open_apps'),
+          },
         ],
       },
       {

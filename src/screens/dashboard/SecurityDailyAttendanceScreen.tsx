@@ -876,7 +876,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.65)',
   },
   scanOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.35)',
     alignItems: 'center',
     justifyContent: 'center',

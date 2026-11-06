@@ -14,12 +14,15 @@ import { MeetingRoomScreen } from '../screens/dashboard/MeetingRoomScreen';
 import { AssessmentsScreen } from '../screens/dashboard/AssessmentsScreen';
 import { TeachersScreen } from '../screens/dashboard/TeachersScreen';
 import { LibraryScreen } from '../screens/dashboard/LibraryScreen';
+import { ClubsScreen } from '../screens/dashboard/ClubsScreen';
 import { AccountsScreen } from '../screens/dashboard/AccountsScreen';
 import { ReceiptViewScreen } from '../screens/dashboard/ReceiptViewScreen';
 import { TransportScreen } from '../screens/dashboard/TransportScreen';
 import { AttendanceScreen } from '../screens/dashboard/AttendanceScreen';
 import { BursaryScreen } from '../screens/dashboard/BursaryScreen';
+import { ReferralScreen } from '../screens/dashboard/ReferralScreen';
 import { SecurityHomeScreen } from '../screens/dashboard/SecurityHomeScreen';
+import { FleetMapScreen } from '../screens/dashboard/FleetMapScreen';
 import { JoinSchoolScreen } from '../screens/dashboard/JoinSchoolScreen';
 import { EnterMarksScreen } from '../screens/dashboard/EnterMarksScreen';
 import { TeacherMarksheetScreen } from '../screens/dashboard/TeacherMarksheetScreen';
@@ -145,6 +148,11 @@ export function DashboardStack() {
         options={{ title: 'Library', headerShown: false }}
       />
       <Stack.Screen
+        name="Clubs"
+        component={ClubsScreen}
+        options={{ title: 'Clubs', headerShown: false }}
+      />
+      <Stack.Screen
         name="Accounts"
         component={AccountsScreen}
         options={{ title: 'Accounts', headerShown: false }}
@@ -170,10 +178,16 @@ export function DashboardStack() {
         options={{ title: 'Bursary', headerShown: false }}
       />
       <Stack.Screen
+        name="Referral"
+        component={ReferralScreen}
+        options={{ title: 'Refer & Earn', headerShown: false }}
+      />
+      <Stack.Screen
         name="SecurityHome"
         component={SecurityHomeScreen}
         options={{ title: 'Security', headerShown: false }}
       />
+      <Stack.Screen name="FleetMap" component={FleetMapScreen} options={{ title: 'Fleet map', headerShown: false }} />
       <Stack.Screen
         name="SecurityFaceEnroll"
         getComponent={lazyCamera.SecurityFaceEnroll}

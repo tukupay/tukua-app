@@ -1,9 +1,18 @@
 import React from 'react';
-import { StyleSheet, useWindowDimensions, View } from 'react-native';
-import Svg, { ClipPath, Defs, G, Image as SvgImage, Path, Rect } from 'react-native-svg';
+import { Image, StyleSheet, useWindowDimensions, View } from 'react-native';
+import Svg, {
+  ClipPath,
+  Defs,
+  G,
+  LinearGradient,
+  Path,
+  RadialGradient,
+  Rect,
+  Stop,
+} from 'react-native-svg';
 import { useAppTheme } from '../../context/AppThemeContext';
 import { Images } from '../../constants/images';
-import { useAuthScale } from './useAuthScale';
+import { Colors } from '../../theme/yana';
 
 /**
  * Desk login S-curve, rotated so it is the bottom edge of a top photo region.
@@ -13,8 +22,23 @@ import { useAuthScale } from './useAuthScale';
  */
 const CURVE_CLIP =
   'M0 0 L100 0 L100 50 C84 58 66 70 50 84 C28 104 12 102 0 86 Z';
+
 const CURVE_EDGE =
   'M0 86 C12 102 28 104 50 84 C66 70 84 58 100 50';
+
+/** Page colour below the S so the photo is not a stretched rectangle. */
+const BELOW_CURVE =
+  'M0 86 C12 102 28 104 50 84 C66 70 84 58 100 50 L100 108 L0 108 Z';
+
+/** Source JPEG is 1536×1024 (3:2). Cover crops; never squash. */
+export const LOGIN_HERO_ASPECT = 1536 / 1024;
+
+export function loginHeroHeight(screenW: number, screenH: number): number {
+  const fromPhoto = screenW / LOGIN_HERO_ASPECT;
+  const max = screenH * 0.48;
+  const min = screenH * 0.38;
+  return Math.round(Math.min(max, Math.max(min, fromPhoto)));
+}
 
 function bez(p0: number, c1: number, c2: number, p1: number, t: number): number {
   const u = 1 - t;
@@ -54,51 +78,64 @@ function hexToRgba(hex: string, alpha: number): string {
 
 export function LoginHeroCurve({ height }: { height: number }) {
   const { width } = useWindowDimensions();
-  const { s } = useAuthScale();
   const { palette } = useAppTheme();
   if (height <= 0) return null;
 
-  const wash = hexToRgba(palette.primary, 0.62);
-  const ground = hexToRgba(palette.muted, 0.22);
+  const wash = hexToRgba(palette.primary, 0.48);
+  const ground = hexToRgba(palette.muted, 0.16);
+  const page = Colors.background;
 
   return (
-    <View style={[styles.root, { height }]} pointerEvents="none">
-      <Svg width={width} height={height} viewBox="0 0 100 108" preserveAspectRatio="none">
+    <View style={[styles.root, { height, width }]} pointerEvents="none">
+      <Image
+        source={Images.loginHero}
+        resizeMode="cover"
+        style={[styles.photo, { width, height }]}
+      />
+      <Svg
+        width={width}
+        height={height}
+        viewBox="0 0 100 108"
+        preserveAspectRatio="none"
+        style={StyleSheet.absoluteFill}>
         <Defs>
           <ClipPath id="loginHeroClip" clipRule="nonzero">
             <Path d={CURVE_CLIP} />
           </ClipPath>
+          <RadialGradient id="loginHeroAroundFade" cx="50" cy="28" r="88" gradientUnits="userSpaceOnUse">
+            <Stop offset="0.42" stopColor={page} stopOpacity="0" />
+            <Stop offset="0.78" stopColor={page} stopOpacity="0.22" />
+            <Stop offset="1" stopColor={page} stopOpacity="0.55" />
+          </RadialGradient>
+          <LinearGradient id="loginHeroBottomFade" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0.48" stopColor={page} stopOpacity="0" />
+            <Stop offset="0.72" stopColor={page} stopOpacity="0.28" />
+            <Stop offset="1" stopColor={page} stopOpacity="0.72" />
+          </LinearGradient>
         </Defs>
         <G clipPath="url(#loginHeroClip)">
-          <SvgImage
-            href={Images.loginHero}
-            x="0"
-            y="0"
-            width="100"
-            height="108"
-            preserveAspectRatio="xMidYMid slice"
-          />
           <Rect x="0" y="0" width="100" height="108" fill={ground} />
           <Rect x="0" y="0" width="100" height="108" fill={wash} />
+          <Rect x="0" y="0" width="100" height="108" fill="url(#loginHeroAroundFade)" />
+          <Rect x="0" y="0" width="100" height="108" fill="url(#loginHeroBottomFade)" />
         </G>
         <Path
           d={CURVE_EDGE}
           fill="none"
-          stroke="#ffffff"
-          strokeWidth={Math.max(4, s(7))}
+          stroke={page}
+          strokeWidth={14}
           strokeLinecap="round"
-          strokeLinejoin="round"
-          vectorEffect="non-scaling-stroke"
+          strokeOpacity={0.35}
         />
         <Path
           d={CURVE_EDGE}
           fill="none"
-          stroke={palette.primary}
-          strokeWidth={Math.max(2, s(3.5))}
+          stroke={page}
+          strokeWidth={7}
           strokeLinecap="round"
-          strokeLinejoin="round"
-          vectorEffect="non-scaling-stroke"
+          strokeOpacity={0.55}
         />
+        <Path d={BELOW_CURVE} fill={page} />
       </Svg>
     </View>
   );
@@ -109,8 +146,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     left: 0,
-    right: 0,
-    zIndex: 0,
-    overflow: 'visible',
+    zIndex: 1,
+    overflow: 'hidden',
+  },
+  photo: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
   },
 });

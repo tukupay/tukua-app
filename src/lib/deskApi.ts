@@ -6,6 +6,7 @@
 import * as SecureStore from './secureStore';
 import { getDeskApiBaseUrl, getLocalUrlDebugInfo } from './localHost';
 import { log } from './logger';
+import { normalizeDeskRoles } from './deskRoles';
 
 const DESK_TOKEN_KEY = 'tukua_desk_auth_token';
 const DESK_USER_KEY = 'tukua_desk_user';
@@ -198,15 +199,21 @@ export async function ensureNestDeskSession(): Promise<boolean> {
     log.info('DeskApi', 'no stored nest credentials — sign in once to enable Desk parent APIs');
     return false;
   }
+  // The server already said this person has no school-API profile: calls use the platform token.
+  if (noDeskProfileEmail === creds.email) return false;
   try {
     log.info('DeskApi', 'soft reconnect nest with stored credentials', { email: creds.email });
     await deskLogin(creds.email, creds.password);
     return true;
   } catch (e) {
+    if ((e as { statusCode?: number })?.statusCode === 404) noDeskProfileEmail = creds.email;
     log.warn('DeskApi', 'soft reconnect nest failed', String(e));
     return false;
   }
 }
+
+/** Email whose /auth/login answered 404 (no Desk profile) this session — not retried on every call. */
+let noDeskProfileEmail: string | null = null;
 
 /** Await an in-flight Nest password login started elsewhere (e.g. connectDesk). */
 export async function awaitDeskLoginInFlight(): Promise<DeskLoginResult | null> {
@@ -262,7 +269,14 @@ export async function deskFetch<T = unknown>(
 ): Promise<T> {
   const base = getDeskApiBaseUrl();
   const url = `${base}${path.startsWith('/') ? path : `/${path}`}`;
-  const token = opts.token === undefined ? await getDeskToken() : opts.token;
+  let token = opts.token === undefined ? await getDeskToken() : opts.token;
+  if (!token && opts.token === undefined) {
+    // No school-API sign-in (someone who joined from the phone has no Desk staff profile, so
+    // /auth/login answers 404): the platform token carries their schools and roles and the same
+    // guard accepts it.
+    const { resolveNestAccessTokenForWebView } = await import('./platformNestAuth');
+    token = await resolveNestAccessTokenForWebView();
+  }
   const headers: Record<string, string> = {
     Accept: 'application/json',
     'Content-Type': 'application/json',
@@ -404,7 +418,12 @@ export async function deskLogin(email: string, password: string): Promise<DeskLo
   })();
 
   try {
-    return await deskLoginInFlight;
+    const result = await deskLoginInFlight;
+    noDeskProfileEmail = null;
+    return result;
+  } catch (e) {
+    if ((e as { statusCode?: number })?.statusCode === 404) noDeskProfileEmail = email.trim().toLowerCase();
+    throw e;
   } finally {
     deskLoginInFlight = null;
   }
@@ -413,15 +432,18 @@ export async function deskLogin(email: string, password: string): Promise<DeskLo
 export async function deskFetchMe(): Promise<DeskUser | null> {
   try {
     // Never block UI if /auth/me is slow.
-    const user = await Promise.race([
-      deskFetch<DeskUser>('/auth/me'),
+    const raw = await Promise.race([
+      deskFetch<{ user?: DeskUser } | DeskUser>('/auth/me'),
       new Promise<null>((resolve) => {
         setTimeout(() => resolve(null), 2500);
       }),
     ]);
+    // The API answers { user: {...} }; storing the wrapper lost the roles and the school.
+    const user =
+      raw && typeof raw === 'object' && 'user' in raw && raw.user ? raw.user : (raw as DeskUser | null);
     if (user) {
-      memoryUser = user;
-      await SecureStore.setItemAsync(DESK_USER_KEY, JSON.stringify(user));
+      memoryUser = { ...user, selected_context: memoryUser?.selected_context ?? user.selected_context };
+      await SecureStore.setItemAsync(DESK_USER_KEY, JSON.stringify(memoryUser));
     }
     return user;
   } catch (error) {
@@ -429,6 +451,57 @@ export async function deskFetchMe(): Promise<DeskUser | null> {
     log.warn('DeskApi', 'auth/me failed', msg);
     // Keep desk token on /auth/me miss — Chat still uses platform Nest JWT.
     return null;
+  }
+}
+
+/** Roles and school the desk token itself carries — what the server will act on. */
+export async function getDeskTokenClaims(): Promise<{ schoolId: string | null; roles: string[] } | null> {
+  const token = await getDeskToken();
+  if (!token) return null;
+  try {
+    const part = token.split('.')[1];
+    if (!part) return null;
+    const json = JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/'))) as {
+      school_id?: string | null;
+      user_roles?: unknown;
+      roles?: unknown;
+    };
+    return {
+      schoolId: json.school_id ? String(json.school_id) : null,
+      roles: normalizeDeskRoles(json.user_roles ?? json.roles),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A school can change someone's role (or approve a join) while they are signed in; the token keeps
+ * the old roles until a new sign-in. Compare the token with the server's current roles and sign in
+ * again with the stored credentials when they differ. Returns true when a new token was issued.
+ */
+export async function refreshDeskTokenIfRolesChanged(): Promise<boolean> {
+  const claims = await getDeskTokenClaims();
+  if (!claims) return false;
+  const me = await deskFetchMe();
+  if (!me?.user_roles) return false;
+  const current = normalizeDeskRoles(me.user_roles);
+  const same =
+    current.length === claims.roles.length && current.every((r) => claims.roles.includes(r)) &&
+    String(me.school_id ?? '') === String(claims.schoolId ?? '');
+  if (same) return false;
+  const creds = await getDeskCredentials();
+  if (!creds) return false;
+  try {
+    log.info('DeskApi', 'roles changed on the server — signing in again', {
+      was: claims.roles,
+      now: current,
+    });
+    await deskLogin(creds.email, creds.password);
+    return true;
+  } catch (e) {
+    log.warn('DeskApi', 'could not refresh token after role change', String(e));
+    return false;
   }
 }
 

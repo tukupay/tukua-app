@@ -152,7 +152,7 @@ export function SharedPublicWebLayer() {
 
 const styles = StyleSheet.create({
   host: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 0,
     backgroundColor: Colors.white,
   },
@@ -161,7 +161,7 @@ const styles = StyleSheet.create({
   },
   web: { flex: 1 },
   loaderOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     top: TOP_BAR_HEIGHT,
     alignItems: 'center',
     justifyContent: 'center',

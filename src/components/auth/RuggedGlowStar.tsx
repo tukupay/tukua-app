@@ -68,7 +68,7 @@ const styles = StyleSheet.create({
     }),
   },
   starHalo: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     borderRadius: 12,
     backgroundColor: 'rgba(251, 191, 36, 0.08)',
     ...Platform.select({

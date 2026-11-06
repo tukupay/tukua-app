@@ -51,7 +51,7 @@ const DOTS = Array.from({ length: 48 }, (_, i) => ({
 
 const styles = StyleSheet.create({
   dotGrid: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     opacity: 0.35,
   },
   dot: {

@@ -152,7 +152,7 @@ const styles = StyleSheet.create({
   body: { flex: 1 },
   web: { flex: 1, backgroundColor: Colors.white },
   loaderOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: Colors.white,

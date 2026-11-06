@@ -3,7 +3,6 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { formatPeaMessage } from '../../lib/peaConfig';
 import { PeaStatus } from '../../lib/peaRegistrationFlow';
-import { formatTokenCount } from '../../lib/tokenCounter';
 import { Colors } from '../../theme/yana';
 import { useAuthScale } from './useAuthScale';
 
@@ -65,17 +64,17 @@ export function PeaRegistrationCard({
   const { s, font } = useAuthScale();
 
   return (
-    <View style={[styles.box, { padding: s(16), borderRadius: s(14), marginBottom: s(12), gap: s(12) }]}>
+    <View style={[styles.box, { padding: s(12), borderRadius: s(14), marginBottom: s(12), gap: s(8) }]}>
       <View style={[styles.row, { gap: s(10) }]}>
-        <View style={[styles.iconWrap, { padding: s(10), borderRadius: s(10) }]}>
-          <Ionicons name="phone-portrait-outline" size={s(22)} color={Colors.primary} />
+        <View style={[styles.iconWrap, { padding: s(8), borderRadius: s(10) }]}>
+          <Ionicons name="phone-portrait-outline" size={s(20)} color={Colors.primary} />
         </View>
         <View style={styles.meta}>
           <Text style={[styles.kicker, { fontSize: font(11) }]}>
-            One-time M-Pesa registration{roleLabel ? ` · ${roleLabel}` : ''}
+            One-time M-Pesa{roleLabel ? ` · ${roleLabel}` : ''} · {phoneLabel}
           </Text>
           {loaded ? (
-            <Text style={[styles.amount, { fontSize: font(26) }]}>KES {peaAmount.toLocaleString()}</Text>
+            <Text style={[styles.amount, { fontSize: font(20) }]}>KES {peaAmount.toLocaleString()}</Text>
           ) : (
             <View style={styles.loadingRow}>
               <ActivityIndicator size="small" color={Colors.primary} />
@@ -85,17 +84,7 @@ export function PeaRegistrationCard({
         </View>
       </View>
       {loaded ? (
-        <>
-          <Text style={[styles.body, { fontSize: font(13), lineHeight: font(19) }]}>{explanation}</Text>
-          <Text style={[styles.body, { fontSize: font(13), lineHeight: font(19) }]}>
-            M-Pesa prompt on <Text style={styles.phone}>{phoneLabel}</Text> — enter your PIN to join.
-          </Text>
-          <Text style={[styles.bonus, { fontSize: font(13), lineHeight: font(19) }]}>
-            Welcome gift:{' '}
-            <Text style={styles.bonusStrong}>{formatTokenCount(freeTokens)} bonus tokens</Text> after
-            payment.
-          </Text>
-        </>
+        <Text style={[styles.body, { fontSize: font(11), lineHeight: font(16) }]}>{explanation}</Text>
       ) : null}
 
       {peaStatus !== 'idle' && peaMessage ? (

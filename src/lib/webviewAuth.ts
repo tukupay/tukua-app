@@ -748,6 +748,7 @@ export function shouldAllowWebViewRequest(url: string) {
     if (
       u.pathname === '/courses' ||
       u.pathname.startsWith('/courses/') ||
+      u.pathname === '/exams' ||
       u.pathname === '/profile' ||
       u.pathname.startsWith('/profile/')
     ) {

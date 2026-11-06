@@ -31,17 +31,14 @@ import {
 import {
   DEFAULT_SCHOOL_PIN,
   googleMapsDirectionsUrl,
-  googleMapsEmbedPathUrl,
-  googleMapsEmbedTwoPinUrl,
-  googleMapsEmbedUrl,
   googleMapsSearchUrl,
   LatLng,
-  mapPickerHtml,
   ParentTripHistory,
 } from '../../lib/parentTransportDummy';
 import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
 import { log } from '../../lib/logger';
+import { fleetMapHtml, pinMapHtml } from '../../lib/fleetMap';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'Transport'>;
 
@@ -266,12 +263,36 @@ export function TransportScreen({ navigation }: Props) {
     ? `${liveTrip.vehicle_label ?? 'School bus'} · ${liveTrip.route_label ?? 'Route'}`
     : 'School bus';
   const liveStatus = liveTrip ? tripStatusLabel(liveTrip.status) : 'No active trip';
-  const embed = useMemo(() => {
-    if (liveRoutePoints.length >= 2) {
-      return googleMapsEmbedPathUrl(liveRoutePoints, 13);
-    }
-    return googleMapsEmbedUrl(livePoint, 14);
-  }, [liveRoutePoints, livePoint]);
+  // Free map (OpenStreetMap). The line is the path the phone on the bus reported, nothing drawn in.
+  const liveMapHtml = useMemo(() => {
+    const path = (liveTrip?.gps_path ?? [])
+      .filter((p) => p.lat != null && p.lng != null)
+      .map((p) => [Number(p.lat), Number(p.lng)] as [number, number]);
+    const onRoute = Boolean(liveTrip) && isLiveStatus(liveTrip?.status);
+    return fleetMapHtml(
+      {
+        live: true,
+        pickedId: null,
+        showPaths: true,
+        vehicles: [
+          {
+            id: 'bus',
+            name: liveTrip?.vehicle_label ?? 'School bus',
+            plate: null,
+            icon: 'bus',
+            color: '#2563eb',
+            capacity: null,
+            route_name: liveTrip?.route_label ?? null,
+            status: onRoute ? 'on_trip' : 'available',
+            position: { lat: livePoint.lat, lng: livePoint.lng, speed_kmh: null, recorded_at: null, heading: null },
+            active_trip: null,
+            trips: path.length >= 2 ? [{ id: 'live', status: onRoute ? 'active' : 'completed', trip_kind: '', route_name: null, started_at: null, ended_at: null, distance_km: null, boarded: 0, top_speed_kmh: null, path }] : [],
+          },
+        ],
+      },
+      [livePoint.lat, livePoint.lng],
+    );
+  }, [liveTrip, livePoint]);
 
   const useCurrentLocation = async () => {
     setLocating(true);
@@ -300,12 +321,13 @@ export function TransportScreen({ navigation }: Props) {
   };
 
   const openMaps = () => {
-    void Linking.openURL(googleMapsSearchUrl(livePoint));
+    void Linking.openURL(googleMapsSearchUrl(`${livePoint.lat},${livePoint.lng}`));
   };
 
   const openTripRoute = (trip: ParentTripHistory) => {
-    const url = googleMapsDirectionsUrl(trip.route);
-    if (url) void Linking.openURL(url);
+    const from = trip.route[0];
+    const to = trip.route[trip.route.length - 1];
+    if (from && to) void Linking.openURL(googleMapsDirectionsUrl(from, to));
   };
 
   const saveHome = async () => {
@@ -421,9 +443,10 @@ export function TransportScreen({ navigation }: Props) {
                       </ModuleGlassCard>
                       <View style={styles.mapWrap}>
                         <WebView
-                          source={{ uri: embed }}
+                          source={{ html: liveMapHtml }}
                           style={styles.map}
-                          scrollEnabled={false}
+                          originWhitelist={['*']}
+                          nestedScrollEnabled
                           javaScriptEnabled
                           domStorageEnabled
                         />
@@ -517,7 +540,9 @@ export function TransportScreen({ navigation }: Props) {
                     <View style={styles.mapWrap}>
                       {mapPickerOpen ? (
                         <WebView
-                          source={{ html: mapPickerHtml(pickerLat, pickerLng) }}
+                          source={{ html: pinMapHtml([{ lat: pickerLat, lng: pickerLng, label: 'Pick-up point' }], { pick: true }) }}
+                          originWhitelist={['*']}
+                          nestedScrollEnabled
                           style={styles.map}
                           scrollEnabled
                           javaScriptEnabled
@@ -536,7 +561,8 @@ export function TransportScreen({ navigation }: Props) {
                         />
                       ) : (
                         <WebView
-                          source={{ uri: googleMapsEmbedTwoPinUrl(homePoint, DEFAULT_SCHOOL_PIN, 13) }}
+                          source={{ html: pinMapHtml([{ lat: homePoint.lat, lng: homePoint.lng, label: 'Pick-up point' }]) }}
+                          originWhitelist={['*']}
                           style={styles.map}
                           scrollEnabled={false}
                           javaScriptEnabled

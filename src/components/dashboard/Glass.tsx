@@ -99,7 +99,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
   },
   shine: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   content: {
     zIndex: 1,

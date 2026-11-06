@@ -46,6 +46,8 @@ import {
   INDIVIDUAL_DASHBOARD_ACTIONS,
   PARENT_DASHBOARD_ACTIONS,
   PARENT_HERO,
+  SCHOOL_ADMIN_DASHBOARD_ACTIONS,
+  SCHOOL_ADMIN_HERO,
   SECURITY_DASHBOARD_ACTIONS,
   SECURITY_HERO,
   STUDENT_DASHBOARD_ACTIONS,
@@ -54,7 +56,8 @@ import {
   TEACHER_DASHBOARD_ACTIONS,
   TEACHER_HERO,
 } from './dashboardActions';
-import { DeskPersona } from '../../lib/deskRoles';
+import { DeskPersona, holdsAnyRole } from '../../lib/deskRoles';
+import { fetchAccountsDashboard, fetchSchoolDashboardAnalytics } from '../../lib/adminPortalApi';
 import { fetchClasses, fetchMyTeacherWorkloads, fetchTeacherStats } from '../../lib/teacherPortalApi';
 import {
   fetchStudentAssignments,
@@ -66,6 +69,7 @@ import {
   resolveStudentRecordId,
   tryFetchStudentPocketBalance,
 } from '../../lib/studentPortalApi';
+import { DASHBOARD_ACTION_MODULE, schoolHasModule } from '../../lib/schoolModules';
 
 type ActionSection = {
   id: string;
@@ -223,8 +227,7 @@ function actionsForPersona(persona: DeskPersona): DashboardAction[] {
     case 'security':
       return SECURITY_DASHBOARD_ACTIONS;
     case 'school_admin':
-      // Legacy: school_admin maps to teacher (Desk for admin ops).
-      return TEACHER_DASHBOARD_ACTIONS;
+      return SCHOOL_ADMIN_DASHBOARD_ACTIONS;
     case 'super_admin':
       return SUPER_ADMIN_DASHBOARD_ACTIONS;
     default:
@@ -242,6 +245,8 @@ function heroForPersona(persona: DeskPersona): HeroStat[] {
       return TEACHER_HERO;
     case 'security':
       return SECURITY_HERO;
+    case 'school_admin':
+      return SCHOOL_ADMIN_HERO;
     default:
       return PARENT_HERO.slice(0, 3);
   }
@@ -305,19 +310,15 @@ export function DashboardHomeScreen() {
     linkedStudents,
     schools,
     requestSchoolChange,
-    selectedRole,
     schoolRoleOptions,
+    activeRoles: heldRoles,
   } = useDeskAuth();
   const { guardDashboardAction } = useTokenGate();
   const heroGreen = palette.primary;
 
-  const activeRoles = useMemo(() => {
-    const fromSchool = selectedSchool?.roles ?? schools[0]?.roles ?? [];
-    const list = selectedRole ? [selectedRole] : fromSchool;
-    const fromUser = deskUser?.user_roles;
-    const extra = Array.isArray(fromUser) ? fromUser : fromUser ? [fromUser] : [];
-    return [...list, ...extra].map((r) => String(r).toLowerCase());
-  }, [deskUser?.user_roles, schools, selectedRole, selectedSchool?.roles]);
+  // The person's own roles behind the hat (a bursar on the office hat holds "bursar", not
+  // "school_admin"), so office tiles match what the server lets them open.
+  const activeRoles = useMemo(() => heldRoles.map((r) => String(r).toLowerCase()), [heldRoles]);
 
   const [isClassTeacher, setIsClassTeacher] = useState(false);
   const [teacherHero, setTeacherHero] = useState<{
@@ -339,28 +340,27 @@ export function DashboardHomeScreen() {
 
   const baseActions = useMemo(() => actionsForPersona(persona), [persona]);
   const actions = useMemo(() => {
+    const schoolModules = selectedSchool?.enabledModules ?? schools[0]?.enabledModules ?? null;
     return baseActions.filter((action) => {
-      if (action.requireAnyRole?.length) {
-        const ok = action.requireAnyRole.some((need) =>
-          activeRoles.some((r) => r.includes(need.toLowerCase())),
-        );
-        if (!ok) return false;
+      if (action.requireAnyRole?.length && !holdsAnyRole(activeRoles, action.requireAnyRole)) {
+        return false;
       }
-      if (action.requireClassTeacher && !isClassTeacher) {
-        const hasRole = activeRoles.some(
-          (r) => r.includes('class_teacher') || r.includes('class-teacher'),
-        );
-        if (!hasRole) return false;
+      if (action.requireClassTeacher && !isClassTeacher && !holdsAnyRole(activeRoles, ['class_teacher'])) {
+        return false;
       }
+      const mod = DASHBOARD_ACTION_MODULE[action.id] ?? 'core';
+      if (!schoolHasModule(schoolModules, mod)) return false;
       return true;
     });
-  }, [activeRoles, baseActions, isClassTeacher]);
+  }, [activeRoles, baseActions, isClassTeacher, selectedSchool?.enabledModules, schools]);
   const sections = useMemo(() => sectionsForActions(actions), [actions]);
   const baseHero = useMemo(() => heroForPersona(persona), [persona]);
 
   const [tokens, setTokens] = useState<number | null>(null);
   const [tokensLoading, setTokensLoading] = useState(false);
   const [feeBalance, setFeeBalance] = useState<number | null>(null);
+  const [familyFees, setFamilyFees] = useState<number | null>(null);
+  const [officeHero, setOfficeHero] = useState<{ learners?: number; collected?: number; outstanding?: number } | null>(null);
   const [pocketBalance, setPocketBalance] = useState<number | null>(null);
   const [securityAssignment, setSecurityAssignment] = useState<SecurityAssignment | null>(null);
   const [securityActiveTrip, setSecurityActiveTrip] = useState<SecurityTripRun | null>(null);
@@ -404,17 +404,24 @@ export function DashboardHomeScreen() {
     }
   }, [deskToken]);
 
+  const latestStudentRef = useRef<string | null | undefined>(selectedStudentId);
+  latestStudentRef.current = selectedStudentId;
+
   const loadStudentBalances = useCallback(async () => {
     if (!deskToken || persona !== 'parent' || !selectedStudentId) {
       setFeeBalance(null);
       setPocketBalance(null);
       return;
     }
+    const forStudent = selectedStudentId;
     try {
-      const [accounts, pocket] = await Promise.allSettled([
+      const [accounts, pocket, family] = await Promise.allSettled([
         fetchParentAccountsStatement(selectedStudentId),
         fetchParentPocketMoney(selectedStudentId),
+        // No student_id → one balance row per linked child.
+        deskFetch<{ balances?: Array<{ balance?: number }> }>('/parents/me/accounts-statement'),
       ]);
+      if (forStudent !== latestStudentRef.current) return; // parent switched child meanwhile
       if (accounts.status === 'fulfilled') {
         const rows = accounts.value?.balances ?? [];
         const total = rows.reduce((sum, b) => sum + (Number(b.balance ?? 0) || 0), 0);
@@ -422,6 +429,11 @@ export function DashboardHomeScreen() {
       } else {
         setFeeBalance(null);
       }
+      setFamilyFees(
+        family.status === 'fulfilled'
+          ? (family.value?.balances ?? []).reduce((sum, b) => sum + Math.max(0, Number(b.balance ?? 0) || 0), 0)
+          : null,
+      );
       if (pocket.status === 'fulfilled') {
         const wallets = pocket.value?.wallets ?? [];
         const total = wallets.reduce((sum, w) => sum + (Number(w.balance ?? 0) || 0), 0);
@@ -481,6 +493,33 @@ export function DashboardHomeScreen() {
     void loadTokens();
   }, [loadTokens]);
 
+  // School office hero: roll + fees, both from cached server dashboards (one request each, in parallel).
+  useEffect(() => {
+    if (!deskToken || persona !== 'school_admin') {
+      setOfficeHero(null);
+      return;
+    }
+    let cancelled = false;
+    const schoolId = String(selectedSchool?.id ?? deskUser?.school_id ?? '').trim();
+    void (async () => {
+      const [acc, school] = await Promise.allSettled([
+        fetchAccountsDashboard(),
+        schoolId ? fetchSchoolDashboardAnalytics(schoolId) : Promise.resolve(null),
+      ]);
+      if (cancelled) return;
+      const o = acc.status === 'fulfilled' ? acc.value?.overview : undefined;
+      const t = school.status === 'fulfilled' ? school.value?.totals : undefined;
+      setOfficeHero({
+        learners: t?.students_active ?? t?.students,
+        collected: o?.collected,
+        outstanding: o?.outstanding,
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [deskToken, persona, selectedSchool?.id, deskUser?.school_id]);
+
   useEffect(() => {
     void loadStudentBalances();
   }, [loadStudentBalances]);
@@ -496,6 +535,7 @@ export function DashboardHomeScreen() {
       return;
     }
     const teacherId = String(deskUser?.id ?? deskUser?.user_id ?? '').trim();
+    let cancelled = false;
     void (async () => {
       try {
         const [stats, workloads, classes] = await Promise.allSettled([
@@ -503,6 +543,7 @@ export function DashboardHomeScreen() {
           teacherId ? fetchMyTeacherWorkloads(teacherId) : Promise.resolve([]),
           fetchClasses(80),
         ]);
+        if (cancelled) return;
         const raw =
           stats.status === 'fulfilled'
             ? ((stats.value as { stats?: Record<string, unknown> })?.stats ??
@@ -520,7 +561,7 @@ export function DashboardHomeScreen() {
           class_count: classCount,
           student_count: studentCount,
           workload_count: workloadCount,
-          school_name: selectedSchool?.name || selectedSchool?.school_name,
+          school_name: selectedSchool?.name,
         });
         const ct = cls.some((c) => {
           const tid = String(
@@ -535,9 +576,12 @@ export function DashboardHomeScreen() {
         );
         setIsClassTeacher(ct || roleCt);
       } catch {
-        setTeacherHero(null);
+        if (!cancelled) setTeacherHero(null);
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [
     activeRoles,
     deskToken,
@@ -545,7 +589,6 @@ export function DashboardHomeScreen() {
     deskUser?.user_id,
     persona,
     selectedSchool?.name,
-    selectedSchool?.school_name,
   ]);
 
   useEffect(() => {
@@ -554,6 +597,7 @@ export function DashboardHomeScreen() {
       return;
     }
     const sid = resolveStudentRecordId(deskUser) || String(selectedStudentId ?? '').trim();
+    let cancelled = false;
     void (async () => {
       try {
         const [profile, exams, att, pocket, assignments, fees, overviewRes] = await Promise.allSettled([
@@ -589,6 +633,7 @@ export function DashboardHomeScreen() {
             /* keep fallback */
           }
         }
+        if (cancelled) return;
         const latest = overview?.grades?.latest;
         if (latest?.mean != null) gradeLabel = `${latest.mean}%${latest.grade ? ` · ${latest.grade}` : ''}`;
         // Homework still to hand in (handed-in or marked work is not "pending").
@@ -622,9 +667,12 @@ export function DashboardHomeScreen() {
           assignmentsLabel: String(pendingCount),
         });
       } catch {
-        setStudentHero(null);
+        if (!cancelled) setStudentHero(null);
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [deskToken, deskUser, persona, selectedStudentId]);
 
   useEffect(() => {
@@ -744,9 +792,11 @@ export function DashboardHomeScreen() {
     return 'Good evening';
   }, []);
 
+  // A child linked at two schools appears once per school: count each child once.
+  const childCount = useMemo(() => new Set(linkedStudents.map((s) => s.id)).size, [linkedStudents]);
   const tokensLabel = formatTokensShort(tokens ?? 0);
   const showSwitch =
-    linkedStudents.length > 1 ||
+    childCount > 1 ||
     schools.length > 1 ||
     schoolRoleOptions.length > 1 ||
     (linkedStudents.length === 0 && schools.length >= 1);
@@ -778,7 +828,6 @@ export function DashboardHomeScreen() {
       case 'student':
         return 'person';
       case 'school_admin':
-      case 'principal':
         return 'briefcase';
       case 'super_admin':
         return 'sparkles';
@@ -800,7 +849,10 @@ export function DashboardHomeScreen() {
     n == null ? 'KES —' : `KES ${n.toLocaleString()}`;
 
   const heroStats = useMemo(() => {
-    const next = baseHero.map((s) => ({ ...s }));
+    // With one child "Family fees" repeats that child's fee balance — show it only for families.
+    const next = baseHero
+      .filter((s) => !(persona === 'parent' && s.id === 'total' && childCount <= 1))
+      .map((s) => ({ ...s }));
     if (persona === 'parent') {
       const fees = next.find((s) => s.id === 'fees');
       const pocket = next.find((s) => s.id === 'pocket');
@@ -814,13 +866,21 @@ export function DashboardHomeScreen() {
         pocket.subtitleValue = selectedStudent?.name || 'Available';
       }
       if (total) {
-        const sum =
-          feeBalance != null || pocketBalance != null
-            ? (feeBalance ?? 0) + (pocketBalance ?? 0)
-            : null;
-        total.value = kesLabel(sum);
-        total.subtitleValue = selectedStudent?.name || 'Student balances';
+        // Fees owed across every linked child (pocket money is savings, never added to a debt).
+        total.value = kesLabel(familyFees);
+        total.subtitleValue = childCount ? `${childCount} ${childCount === 1 ? 'child' : 'children'}` : 'Outstanding';
       }
+    }
+    if (persona === 'school_admin' && officeHero) {
+      const learners = next.find((s) => s.id === 'learners');
+      const collected = next.find((s) => s.id === 'collected');
+      const outstanding = next.find((s) => s.id === 'outstanding');
+      if (learners) {
+        learners.value = officeHero.learners != null ? officeHero.learners.toLocaleString() : '—';
+        learners.subtitleValue = selectedSchool?.name || 'Active roll';
+      }
+      if (collected) collected.value = kesLabel(officeHero.collected ?? null);
+      if (outstanding) outstanding.value = kesLabel(officeHero.outstanding ?? null);
     }
     if (persona === 'security') {
       const active = next.find((s) => s.id === 'active-trip');
@@ -893,12 +953,12 @@ export function DashboardHomeScreen() {
       }
       if (pendingFees && studentHero.feesLabel) {
         pendingFees.value = studentHero.feesLabel;
-        pendingFees.subtitleValue = 'No student fees API';
+        pendingFees.subtitleValue = 'School fees';
       }
       if (pocket && studentHero.pocketLabel) {
         pocket.value = studentHero.pocketLabel;
         pocket.subtitleValue =
-          studentHero.pocketBalance != null ? 'Wallet balance' : 'Manager-only on Nest';
+          studentHero.pocketBalance != null ? 'Wallet balance' : 'Ask the school office';
       }
       if (pending && studentHero.assignmentsLabel) {
         pending.value = studentHero.assignmentsLabel;
@@ -911,6 +971,10 @@ export function DashboardHomeScreen() {
     baseHero,
     persona,
     feeBalance,
+    familyFees,
+    officeHero,
+    childCount,
+    selectedSchool?.name,
     pocketBalance,
     selectedStudent?.name,
     securityActiveTrip,
@@ -979,29 +1043,19 @@ export function DashboardHomeScreen() {
                 accessibilityLabel="Notifications">
                 <Ionicons name="notifications-outline" size={18} color={heroGreen} />
               </Pressable>
+              {/* One switcher: both old buttons opened the same school → role → child picker. */}
               {showSwitch ? (
-                <>
-                  <Pressable
-                    style={styles.headerIconBtn}
-                    onPress={() => void requestSchoolChange()}
-                    accessibilityRole="button"
-                    accessibilityLabel={
-                      linkedStudents.length > 0 ? 'Change student' : 'Change school'
-                    }>
-                    <Ionicons
-                      name={linkedStudents.length > 0 ? 'people-outline' : 'school-outline'}
-                      size={18}
-                      color={heroGreen}
-                    />
-                  </Pressable>
-                  <Pressable
-                    style={styles.headerIconBtn}
-                    onPress={() => void requestSchoolChange()}
-                    accessibilityRole="button"
-                    accessibilityLabel="Switch context">
-                    <Ionicons name="swap-horizontal" size={18} color={heroGreen} />
-                  </Pressable>
-                </>
+                <Pressable
+                  style={styles.headerIconBtn}
+                  onPress={() => void requestSchoolChange()}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    childCount > 1
+                      ? 'Switch child, school or role'
+                      : 'Switch school or role'
+                  }>
+                  <Ionicons name="swap-horizontal" size={18} color={heroGreen} />
+                </Pressable>
               ) : null}
             </View>
           </View>
@@ -1087,15 +1141,14 @@ export function DashboardHomeScreen() {
 
           {persona === 'student' && studentHero ? (
             <View style={styles.studentMetricsRow}>
+              {/* Pocket money and fees are already on the card above; only the rest goes here. */}
               {[
-                { label: 'Pocket', value: studentHero.pocketLabel ?? '—' },
                 { label: 'Assignments', value: studentHero.assignmentsLabel ?? '—' },
                 {
                   label: 'Attendance',
                   value:
                     studentHero.attendancePct != null ? `${studentHero.attendancePct}%` : '—%',
                 },
-                { label: 'Fees', value: studentHero.feesLabel ?? 'Via parent' },
               ].map((m) => (
                 <View key={m.label} style={styles.studentMetric}>
                   <Text style={styles.studentMetricLabel}>{m.label}</Text>

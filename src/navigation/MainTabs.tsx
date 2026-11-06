@@ -135,7 +135,12 @@ function MainTabNavigator({
     if (Platform.OS !== 'android') return;
     // Keep soft nav / gesture bar visible — only the top status bar is hidden.
     void NavigationBar.setVisibilityAsync('visible').catch(() => {});
-    void NavigationBar.setButtonStyleAsync('dark').catch(() => {});
+    // setButtonStyleAsync was replaced by setStyle in the navigation bar module.
+    try {
+      NavigationBar.setStyle('dark');
+    } catch {
+      /* not supported on this device */
+    }
     const focusPoll = setInterval(() => hideSystemStatusBar(), 700);
     return () => clearInterval(focusPoll);
   }, []);
@@ -205,7 +210,7 @@ function MainTabNavigator({
         )}
       </Tab.Screen>
       {/* Tukua Connect parked for next release — tab hidden */}
-      <Tab.Screen name="Courses" options={{ title: 'Courses' }} component={CoursesStack} listeners={tabPressGuard('Courses')} />
+      <Tab.Screen name="Courses" options={{ title: 'Courses & Exams' }} component={CoursesStack} listeners={tabPressGuard('Courses')} />
       <Tab.Screen name="Content" options={{ title: 'Content' }} component={ContentScreen} listeners={tabPressGuard('Content')} />
       <Tab.Screen name="Dashboard" options={{ title: 'Dashboard' }} component={DashboardStack} listeners={tabPressGuard('Dashboard')} />
       <Tab.Screen name="Profile" options={{ title: 'Profile' }} component={ProfileStack} listeners={tabPressGuard('Profile')} />

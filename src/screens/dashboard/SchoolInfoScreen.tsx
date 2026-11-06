@@ -330,6 +330,28 @@ export function SchoolInfoScreen({ navigation }: Props) {
             </GlassPanel>
           </>
         ) : null}
+
+        {/* Join / switch / leave live on Join school; this replaces the separate dashboard tile. */}
+        <GlassPanel tone="frost" radius={18} style={styles.card}>
+          <Pressable
+            style={styles.joinRow}
+            onPress={() => navigation.navigate('JoinSchool')}
+            accessibilityRole="button"
+            accessibilityLabel="Join another school">
+            <View style={styles.joinIcon}>
+              <Ionicons name="log-in-outline" size={20} color={HERO_GREEN} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.joinTitle}>Join another school</Text>
+              <Text style={styles.joinHint}>
+                {schools.length > 1
+                  ? `You belong to ${schools.length} schools · open, join or leave`
+                  : 'Send a request · see your requests · leave a school'}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={Colors.mutedForeground} />
+          </Pressable>
+        </GlassPanel>
       </ScrollView>
     </View>
   );
@@ -386,6 +408,17 @@ const styles = StyleSheet.create({
   actionBtnText: { color: Colors.white, fontWeight: '700', fontSize: 13 },
   card: { overflow: 'hidden' },
   cardPad: { paddingVertical: 8, paddingHorizontal: 4 },
+  joinRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, paddingHorizontal: 14 },
+  joinIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(21,65,29,0.08)',
+  },
+  joinTitle: { fontSize: 14, fontWeight: '800', color: Colors.ink },
+  joinHint: { marginTop: 2, fontSize: 12, color: Colors.mutedForeground },
   section: {
     marginTop: 4,
     marginBottom: 4,

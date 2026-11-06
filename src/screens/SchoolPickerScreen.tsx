@@ -1265,7 +1265,7 @@ export function SchoolPickerScreen() {
 
 const styles = StyleSheet.create({
   root: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 40,
     top: 0,
     left: 0,

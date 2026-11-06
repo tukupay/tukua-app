@@ -137,7 +137,7 @@ export function MeetingsScreen({ navigation }: Props) {
       return;
     }
     setError(
-      'Ask the host to add a Google Meet, Zoom, or Teams link. In-app Jitsi rooms are disabled.',
+      'Ask the host to add the Google Meet, Zoom or Teams link for this meeting.',
     );
   }, []);
 
@@ -497,7 +497,7 @@ const styles = StyleSheet.create({
   },
   inlineErr: { marginTop: 12, color: '#b42318', fontSize: 13 },
   gateOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'center',
     padding: 20,

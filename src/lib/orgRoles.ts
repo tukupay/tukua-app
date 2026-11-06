@@ -6,6 +6,7 @@
 import { getNestApiBaseUrl } from './localHost';
 import { log } from './logger';
 import { resolveNestAccessTokenForWebView } from './platformNestAuth';
+import { parseEnabledModules } from './schoolModules';
 
 export type OrgMembership = {
   roles: string[];
@@ -21,6 +22,8 @@ export type UserSchool = {
   roles: string[];
   /** Linked students for this school (parents). */
   students?: SchoolStudent[];
+  /** Portal modules this school has switched on (null = all). */
+  enabledModules?: string[] | null;
 };
 
 export type SchoolStudent = {
@@ -88,11 +91,16 @@ async function platformDbSelect<T = Record<string, unknown>>(opts: {
         `platform/db ${res.status}`;
       return { data: opts.maybeSingle ? null : [], error: msg };
     }
-    const payload = json?.data?.data ?? json?.data ?? null;
-    if (opts.maybeSingle) {
-      return { data: (payload as T) ?? null, error: null };
-    }
-    return { data: (Array.isArray(payload) ? payload : []) as T[], error: null };
+        const payload = json?.data?.data ?? json?.data ?? null;
+        if (opts.maybeSingle) {
+          return { data: (payload as T) ?? null, error: null };
+        }
+        const rows = Array.isArray(payload)
+          ? payload
+          : Array.isArray((payload as { data?: unknown })?.data)
+            ? ((payload as { data: T[] }).data)
+            : [];
+        return { data: rows as T[], error: null };
   } catch (e) {
     return {
       data: opts.maybeSingle ? null : [],
@@ -234,24 +242,24 @@ export async function fetchUserSchools(userId: string): Promise<UserSchool[]> {
       const orgIds = await loadOrganizationIds(userId);
       if (!orgIds.length) return [];
 
-      const [{ data: orgs, error: orgErr }, studentsByOrg, rolesList] = await Promise.all([
-        platformDbSelect<{ id?: string; name?: string; short_name?: string; logo_url?: string }>({
-          table: 'organizations',
-          select: 'id, name, short_name, logo_url',
-          filters: [{ op: 'in', column: 'id', value: orgIds }],
-        }),
-        fetchStudentsBySchool(userId, orgIds),
-        Promise.all(orgIds.map((id) => rolesForOrg(userId, id))),
-      ]);
+      const [{ data: orgs, error: orgErr }, { data: adminSchools }, studentsByOrg, rolesList] =
+        await Promise.all([
+          platformDbSelect<{ id?: string; name?: string; short_name?: string; logo_url?: string }>({
+            table: 'organizations',
+            select: 'id, name, short_name, logo_url',
+            filters: [{ op: 'in', column: 'id', value: orgIds }],
+          }),
+          platformDbSelect<{ id?: string; name?: string; logo_url?: string; enabled_modules?: unknown }>({
+            table: 'admin_schools',
+            select: 'id, name, logo_url, enabled_modules',
+            filters: [{ op: 'in', column: 'id', value: orgIds }],
+          }),
+          fetchStudentsBySchool(userId, orgIds),
+          Promise.all(orgIds.map((id) => rolesForOrg(userId, id))),
+        ]);
 
       if (orgErr) {
         log.warn('OrgRoles', 'organizations query failed', orgErr);
-        return orgIds.map((id, i) => ({
-          id,
-          name: 'School',
-          roles: rolesList[i] ?? [],
-          students: studentsByOrg.get(id) ?? [],
-        }));
       }
 
       const orgList = (Array.isArray(orgs) ? orgs : []) as Array<{
@@ -260,16 +268,50 @@ export async function fetchUserSchools(userId: string): Promise<UserSchool[]> {
         short_name?: string;
         logo_url?: string;
       }>;
-      const byId = new Map(orgList.map((o) => [String(o.id), o]));
+      let orgRows = orgList;
+      if (!orgRows.length && orgIds.length) {
+        const retry = await platformDbSelect<{ id?: string; name?: string; logo_url?: string }>({
+          table: 'organizations',
+          select: 'id, name, logo_url',
+          filters: [{ op: 'in', column: 'id', value: orgIds }],
+        });
+        if (!retry.error && Array.isArray(retry.data) && retry.data.length) {
+          orgRows = retry.data as Array<{ id?: string; name?: string; logo_url?: string }>;
+        }
+      }
+      const adminList = (Array.isArray(adminSchools) ? adminSchools : []) as Array<{
+        id?: string;
+        name?: string;
+        logo_url?: string;
+        enabled_modules?: unknown;
+      }>;
+      const byId = new Map(orgRows.map((o) => [String(o.id), o]));
+      const adminById = new Map(adminList.map((s) => [String(s.id), s]));
+
+      const displayName = (id: string): string => {
+        const admin = adminById.get(id);
+        const org = byId.get(id);
+        const candidates = [admin?.name, org?.name, org?.short_name];
+        for (const c of candidates) {
+          const n = String(c ?? '').trim();
+          if (!n) continue;
+          if (/^(name|school|null|undefined)$/i.test(n)) continue;
+          return n;
+        }
+        return 'School';
+      };
+
       const schools: UserSchool[] = orgIds.map((id, i) => {
         const org = byId.get(id);
+        const admin = adminById.get(id);
         return {
           id,
-          name: String(org?.name ?? org?.short_name ?? 'School'),
+          name: displayName(id),
           shortName: org?.short_name ? String(org.short_name) : null,
-          logoUrl: org?.logo_url ? String(org.logo_url) : null,
+          logoUrl: admin?.logo_url || org?.logo_url ? String(admin?.logo_url || org?.logo_url) : null,
           roles: rolesList[i] ?? [],
           students: studentsByOrg.get(id) ?? [],
+          enabledModules: parseEnabledModules(admin?.enabled_modules),
         };
       });
 
@@ -361,7 +403,12 @@ async function nestParentsChildren(organizationId: string): Promise<SchoolStuden
     if (!res.ok) return [];
     const json = await res.json().catch(() => null);
     const data = json?.data ?? json;
-    const children = Array.isArray(data?.children) ? data.children : [];
+    const all = Array.isArray(data?.children) ? data.children : [];
+    // The API answers for the token's school when it does not accept the header, so the same
+    // children came back for every school (and were listed under each). Keep this school's own.
+    const children = all.filter(
+      (c: { school_id?: string | null }) => !c.school_id || String(c.school_id) === organizationId,
+    );
     return children.map(
       (c: {
         student_id?: string;

@@ -44,13 +44,11 @@ function absoluteMeetUrl(pathOrUrl?: string | null): string | null {
 }
 
 /**
- * Prefer Nest HMAC host_room_path / room_url for in-app join.
- * Never fall through to bare meet.jit.si `jitsi_join_url` (stale public lobby links).
+ * Prefer Nest HMAC host_room_path / room_url for in-app join (both lead to the meeting's saved link).
  */
 export function resolveHostRoomUrl(entered: {
   host_room_path?: string;
   room_url?: string;
-  jitsi_join_url?: string;
   join_url?: string;
 } | null | undefined): string | null {
   if (!entered) return null;
@@ -99,7 +97,6 @@ export async function hostEnterMeeting(meetingId: string, displayName?: string) 
     SchoolMeeting & {
       host_room_path?: string;
       room_url?: string;
-      jitsi_join_url?: string;
       participant_session_id?: string;
     }
   >(`/meetings/${encodeURIComponent(meetingId)}/host-enter`, {

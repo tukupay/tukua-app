@@ -243,7 +243,7 @@ const styles = StyleSheet.create({
     overflow: 'visible',
   },
   strokeLayer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
   },

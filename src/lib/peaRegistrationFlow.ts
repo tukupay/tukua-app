@@ -104,6 +104,7 @@ export async function checkBlockedPhone(_phone: string): Promise<string | null> 
 export async function initiatePeaPayment(
   form: RegistrationForm,
   amount: number,
+  accessToken?: string | null,
 ): Promise<{
   ok: boolean;
   checkoutId?: string;
@@ -114,19 +115,29 @@ export async function initiatePeaPayment(
 }> {
   const phoneE164 = toE164Kenya(form.phone);
   const mpesaPhone = toMpesaPhone(phoneE164, form.phone);
-  const r = await mpesaGwInit({
-    phone_number: mpesaPhone,
-    email: form.email.trim(),
-    amount,
-    purpose: 'phone_activation',
-    description: `PEA — Phone Activation (KES ${amount})`,
-  });
+  const r = await mpesaGwInit(
+    {
+      phone_number: mpesaPhone,
+      email: form.email.trim(),
+      amount,
+      purpose: 'phone_activation',
+      description: `PEA — Phone Activation (KES ${amount})`,
+    },
+    accessToken,
+  );
   const payload = (r.data || {}) as Record<string, any>;
   const nested = payload.checkout_request_id ? payload : payload.data || payload;
   if (!r.ok || !nested?.checkout_request_id) {
+    const raw = r.message || (typeof payload.error === 'string' ? payload.error : '') || '';
+    let error = raw || "We couldn't start M-Pesa. Please try again.";
+    if (r.error === 'network_error' || r.status === 0) {
+      error = 'M-Pesa did not start. Wait a moment and tap Complete again.';
+    } else if (r.status === 401 || r.status === 403) {
+      error = 'Could not start payment. Tap Complete again.';
+    }
     return {
       ok: false,
-      error: r.message || payload.error || "We couldn't reach M-Pesa. Please try again.",
+      error,
       code: r.error != null ? String(r.error) : undefined,
     };
   }
@@ -142,11 +153,12 @@ export async function pollPeaPayment(
   checkoutId: string,
   maxAttempts = 40,
   intervalMs = 3000,
+  accessToken?: string | null,
 ): Promise<{ status: 'completed' | 'failed' | 'timeout'; message?: string; resultCode?: number }> {
   for (let i = 0; i < maxAttempts; i++) {
     await new Promise((r) => setTimeout(r, intervalMs));
     try {
-      const r = await mpesaCheckStatus(checkoutId);
+      const r = await mpesaCheckStatus(checkoutId, accessToken);
       const data = (r.data || {}) as Record<string, any>;
       const status = data.status || data.data?.status;
       if (status === 'completed') return { status: 'completed' };
@@ -227,6 +239,20 @@ export async function finalizePeaAccount(
   return { ok: true, userId, accessToken };
 }
 
+const ALREADY_ON_TUKUA = 'This email or phone is already registered on Tukua. Sign in.';
+
+function unpaidPea(user?: {
+  activation_status?: string | null;
+  registration_payment_status?: string | null;
+} | null): boolean {
+  const pay = String(user?.registration_payment_status || '').toLowerCase();
+  const act = String(user?.activation_status || '').toLowerCase();
+  if (pay === 'paid') return false;
+  if (pay === 'unpaid' || pay === 'deferred' || pay === 'pending') return true;
+  if (act === 'pending_payment') return true;
+  return false;
+}
+
 /** Deferred / remind-me — Nest register without PEA (same as web nestRegister). */
 export async function registerDeferredAccount(form: RegistrationForm): Promise<{
   ok: boolean;
@@ -242,14 +268,60 @@ export async function registerDeferredAccount(form: RegistrationForm): Promise<{
     full_name: form.fullName.trim(),
     account_type: form.isOrg ? form.accountType : 'individual',
     role: form.role || form.accountType || 'individual',
+    activation_status: 'pending_payment',
+    registration_payment_status: 'unpaid',
   });
   if (!reg.ok) {
-    return { ok: false, error: reg.message || reg.error || 'Could not create account' };
+    const code = String(reg.error || '');
+    const msg = String(reg.message || '');
+    const already =
+      code === 'account_exists' ||
+      code === 'account_unpaid' ||
+      /already registered|already exists|conflict|taken|sign in/i.test(msg);
+    if (!already) {
+      return { ok: false, error: reg.message || reg.error || 'Could not create account' };
+    }
+    if (code === 'account_exists') {
+      return { ok: false, error: ALREADY_ON_TUKUA };
+    }
+    const login = await platformLogin(form.email.trim(), form.password);
+    if (!login.ok) {
+      return {
+        ok: false,
+        error: 'Already on Tukua. Sign in, or use a different email or phone.',
+      };
+    }
+    const data = login.data as
+      | {
+          access_token?: string;
+          user?: {
+            id?: string;
+            activation_status?: string | null;
+            registration_payment_status?: string | null;
+          };
+        }
+      | undefined;
+    // Paid / active Tukua account — do not start another PEA. Unpaid may finish payment.
+    if (code !== 'account_unpaid' && !unpaidPea(data?.user)) {
+      return { ok: false, error: ALREADY_ON_TUKUA };
+    }
+    return {
+      ok: true,
+      userId: data?.user?.id,
+      accessToken: data?.access_token,
+    };
   }
   const data = reg.data as { access_token?: string; user?: { id?: string } } | undefined;
+  let accessToken = data?.access_token;
+  if (!accessToken) {
+    const login = await platformLogin(form.email.trim(), form.password);
+    if (login.ok) {
+      accessToken = (login.data as { access_token?: string } | undefined)?.access_token;
+    }
+  }
   return {
     ok: true,
     userId: data?.user?.id,
-    accessToken: data?.access_token,
+    accessToken,
   };
 }

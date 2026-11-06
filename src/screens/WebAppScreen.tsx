@@ -408,7 +408,7 @@ export function WebAppScreen({ path, label }: Props) {
       return true;
     }
 
-    // Native WebView back only for external full-page history (e.g. Jitsi), not iframe embeds on /chat.
+    // Native WebView back only for external full-page history (e.g. a meeting page), not iframe embeds on /chat.
     const top = historyRef.current.peek();
     if (canGoBack && !top.spa && isAtTabRoot(currentPathname, path)) {
       pendingWebBackRef.current = true;
@@ -875,7 +875,7 @@ const styles = StyleSheet.create({
   web: { flex: 1, backgroundColor: Colors.white },
   webHiddenUnderLoader: { opacity: 0.01 },
   loaderOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(255,255,255,0.88)',
@@ -890,7 +890,7 @@ const styles = StyleSheet.create({
   },
   /** Full chat-chrome loader — solid, not translucent over white WebView. */
   chatShellLoader: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 30,
     paddingHorizontal: 20,
     justifyContent: 'center',

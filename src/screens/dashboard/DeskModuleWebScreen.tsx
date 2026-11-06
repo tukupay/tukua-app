@@ -191,7 +191,7 @@ const styles = StyleSheet.create({
   backText: { color: Colors.foreground, fontWeight: '600', fontSize: 16, flexShrink: 1 },
   web: { flex: 1 },
   loader: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 2,

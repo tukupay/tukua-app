@@ -2,16 +2,11 @@
   "expo": {
     "name": "Tukua",
     "slug": "tukua",
-    "version": "1.0.9",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/icons/tukua-app-icon-1024.png",
     "scheme": "tukua",
     "userInterfaceStyle": "light",
-    "splash": {
-      "backgroundColor": "#FFFFFF",
-      "image": "./assets/images/logo/splash-tukua.png",
-      "resizeMode": "contain"
-    },
     "assetBundlePatterns": [
       "**/*"
     ],
@@ -42,7 +37,7 @@
       },
       "package": "com.app.tukua",
       "googleServicesFile": "./google-services.json",
-      "versionCode": 10,
+      "versionCode": 11,
       "softwareKeyboardLayoutMode": "resize",
       "intentFilters": [
         {
@@ -99,10 +94,10 @@
       "translucent": true,
       "backgroundColor": "#FFFFFF"
     },
-  "web": {
-    "favicon": "./assets/images/icons/tukua-favicon-48.png",
-    "bundler": "metro"
-  },
+    "web": {
+      "favicon": "./assets/images/icons/tukua-favicon-48.png",
+      "bundler": "metro"
+    },
     "plugins": [
       [
         "expo-splash-screen",
@@ -136,7 +131,7 @@
         }
       ],
       [
-        "expo-av",
+        "expo-audio",
         {
           "microphonePermission": "Tukua needs microphone access for voice features."
         }
@@ -160,7 +155,7 @@
         "expo-navigation-bar",
         {
           "backgroundColor": "#FFFFFF",
-          "barStyle": "dark"
+          "style": "dark"
         }
       ],
       [
@@ -183,7 +178,10 @@
             ]
           }
         }
-      ]
+      ],
+      "expo-font",
+      "expo-sharing",
+      "expo-status-bar"
     ],
     "extra": {
       "expo-navigation-bar": {

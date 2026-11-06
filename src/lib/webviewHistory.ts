@@ -7,7 +7,7 @@ export type HistoryEntry = {
   spa: boolean;
 };
 
-/** Per-tab navigation stack for hardware back (SPA paths + external pages like Jitsi). */
+/** Per-tab navigation stack for hardware back (SPA paths + external pages such as a meeting link). */
 export class TabHistoryStack {
   private items: HistoryEntry[] = [];
 

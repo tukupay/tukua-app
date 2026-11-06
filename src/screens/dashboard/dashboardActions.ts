@@ -27,6 +27,7 @@ export type DashboardAction = {
   tukuaTab?: 'Courses' | 'Profile';
 
   nativeScreen?:
+    | 'Referral'
     | 'SchoolInfo'
     | 'Discipline'
     | 'Events'
@@ -35,10 +36,12 @@ export type DashboardAction = {
     | 'Transport'
     | 'Teachers'
     | 'Library'
+    | 'Clubs'
     | 'Accounts'
     | 'Attendance'
     | 'Bursary'
     | 'SecurityHome'
+    | 'FleetMap'
     | 'SecurityFaceEnroll'
     | 'SecurityDailyAttendance'
     | 'FaceSelfEnroll'
@@ -124,10 +127,10 @@ export type HeroStat = {
 export const PARENT_HERO: HeroStat[] = [
   {
     id: 'total',
-    title: 'Total Balance',
+    title: 'Family fees',
     value: 'KES —',
-    subtitle: 'Account',
-    subtitleValue: 'Parent wallet',
+    subtitle: 'All children',
+    subtitleValue: 'Outstanding',
     colors: ['#059669', '#0EA5E9'],
     icon: 'credit-card',
   },
@@ -157,14 +160,15 @@ export const PARENT_DASHBOARD_ACTIONS: DashboardAction[] = [
   { id: 'assessments', title: 'Exams & assessments', description: 'Exams, report cards & slips', icon: 'clipboard', nativeScreen: 'Assessments', accent: '#0EA5E9' },
   { id: 'events', title: 'Events', description: 'RSVP, pay & scan check-in', icon: 'calendar', nativeScreen: 'Events', accent: '#F59E0B' },
   { id: 'meetings', title: 'Meetings', description: 'Join school video meetings', icon: 'video', nativeScreen: 'Meetings', accent: '#0284C7' },
+  { id: 'clubs', title: 'Clubs', description: 'Register · club notes', icon: 'award', nativeScreen: 'Clubs', accent: '#E11D48' },
   { id: 'discipline', title: 'Discipline', description: 'Conduct records', icon: 'shield', nativeScreen: 'Discipline', accent: '#EF4444' },
   { id: 'library', title: 'Library', description: 'Borrow & return statement', icon: 'book', nativeScreen: 'Library', accent: '#8B5CF6' },
   { id: 'attendance', title: 'Attendance', description: 'View attendance', icon: 'check-square', nativeScreen: 'Attendance', accent: '#14B8A6' },
   { id: 'teachers', title: 'Teachers', description: "Your child's teachers", icon: 'users', nativeScreen: 'Teachers', accent: '#6366F1' },
   { id: 'transport', title: 'Transport', description: 'Track bus · live location', icon: 'navigation', nativeScreen: 'Transport', accent: '#0E7490' },
   { id: 'bursary', title: 'Bursary', description: 'Kitty & contributions', icon: 'gift', nativeScreen: 'Bursary', accent: '#EC4899' },
-  { id: 'school-info', title: 'School Info', description: 'About your school', icon: 'home', nativeScreen: 'SchoolInfo', accent: '#15411D', tokenGated: false },
-  { id: 'join-school', title: 'Join school', description: 'Request to join a school', icon: 'log-in', nativeScreen: 'JoinSchool', accent: '#2563EB', tokenGated: false },
+  { id: 'school-info', title: 'My school', description: 'About · join another school', icon: 'home', nativeScreen: 'SchoolInfo', accent: '#15411D', tokenGated: false },
+  { id: 'refer-earn', title: 'Refer & Earn', description: 'Share your link · earn per sign-up', icon: 'gift', nativeScreen: 'Referral', tokenGated: false, accent: '#D97706' },
 ];
 
 
@@ -269,13 +273,12 @@ export const STUDENT_DASHBOARD_ACTIONS: DashboardAction[] = [
   { id: 'tukua-pay', title: 'Tukua Pay', description: 'Balances · deposit · send', icon: 'credit-card', nativeScreen: 'TukuaPayHome', accent: '#0EA5E9', tokenGated: false },
   { id: 'face-enroll', title: 'My face', description: 'Enroll your face for boarding', icon: 'user', nativeScreen: 'FaceSelfEnroll', accent: '#0E7490' },
 
-  { id: 'my-grades', title: 'My Grades', description: 'View assessments & grades', icon: 'award', nativeScreen: 'StudentGrades', accent: '#1F8B4C' },
+  { id: 'my-grades', title: 'Grades & progress', description: 'Results, rank & report forms', icon: 'award', nativeScreen: 'StudentGrades', accent: '#1F8B4C' },
   { id: 'my-assignments', title: 'Assignments', description: 'Homework & classwork', icon: 'clipboard', nativeScreen: 'StudentAssignments', accent: '#6366F1' },
   { id: 'my-timetable', title: 'My Timetable', description: 'Class schedules', icon: 'calendar', nativeScreen: 'TeacherTimetable', accent: '#D97706' },
 
   { id: 'elearning', title: 'E-Learning', description: 'Courses & materials', icon: 'book-open', tukuaPath: '/courses', tukuaTab: 'Courses', accent: '#0D9488' },
 
-  { id: 'my-progress', title: 'My Progress', description: 'Grades & rank summary', icon: 'trending-up', nativeScreen: 'StudentGrades', accent: '#059669' },
 
   { id: 'my-attendance', title: 'My Attendance', description: 'View attendance', icon: 'users', nativeScreen: 'StudentAttendance', accent: '#0891B2' },
 
@@ -291,9 +294,11 @@ export const STUDENT_DASHBOARD_ACTIONS: DashboardAction[] = [
 
   { id: 'meetings', title: 'Meetings', description: 'Video calls — not event QR scan', icon: 'video', nativeScreen: 'Meetings', accent: '#0284C7' },
 
-  { id: 'school-info', title: 'School Info', description: 'About your school', icon: 'info', nativeScreen: 'SchoolInfo', accent: '#0A3D2E', tokenGated: false },
+  { id: 'clubs', title: 'Clubs', description: 'My clubs · notes', icon: 'award', nativeScreen: 'Clubs', accent: '#E11D48' },
 
-  { id: 'join-school', title: 'Join school', description: 'Request to join a school', icon: 'log-in', nativeScreen: 'JoinSchool', accent: '#2563EB', tokenGated: false },
+  { id: 'school-info', title: 'My school', description: 'About · join another school', icon: 'info', nativeScreen: 'SchoolInfo', accent: '#0A3D2E', tokenGated: false },
+
+  { id: 'refer-earn', title: 'Refer & Earn', description: 'Share your link · earn per sign-up', icon: 'gift', nativeScreen: 'Referral', tokenGated: false, accent: '#D97706' },
 
 ];
 
@@ -372,8 +377,9 @@ export const TEACHER_DASHBOARD_ACTIONS: DashboardAction[] = [
   { id: 'library', title: 'Library', description: 'Digital books', icon: 'book', nativeScreen: 'Library', accent: '#4F46E5', requireAnyRole: ['librarian'] },
   { id: 'discipline', title: 'Discipline', description: 'Record & see my cases', icon: 'shield', nativeScreen: 'Discipline', accent: '#DC2626' },
   { id: 'bursary', title: 'Bursary', description: 'Kitty & programs', icon: 'gift', nativeScreen: 'Bursary', accent: '#EC4899' },
-  { id: 'reports', title: 'Reports', description: 'Mark sheets & forms', icon: 'file-text', nativeScreen: 'TeacherReports', accent: '#4E74F9' },
-  { id: 'progress', title: 'Progress', description: 'Outstanding mark entry', icon: 'trending-up', nativeScreen: 'TeacherProgress', accent: '#059669' },
+  { id: 'reports', title: 'Reports', description: 'Mark sheets · progress · forms', icon: 'file-text', nativeScreen: 'TeacherReports', accent: '#4E74F9' },
+  // Teachers and principals: refer learners and parents (owner, 2026-10-17).
+  { id: 'refer-earn', title: 'Refer & Earn', description: 'Share your link · earn per sign-up', icon: 'gift', nativeScreen: 'Referral', tokenGated: false, accent: '#D97706' },
   // School admin / principal — existing stack screens, role-gated only
   {
     id: 'approvals',
@@ -382,7 +388,7 @@ export const TEACHER_DASHBOARD_ACTIONS: DashboardAction[] = [
     icon: 'check-circle',
     nativeScreen: 'Approvals',
     accent: '#CA8A04',
-    requireAnyRole: ['school_admin', 'principal', 'deputy', 'admin'],
+    requireAnyRole: ['school_admin', 'principal'],
   },
   {
     id: 'school-overview',
@@ -391,7 +397,7 @@ export const TEACHER_DASHBOARD_ACTIONS: DashboardAction[] = [
     icon: 'home',
     nativeScreen: 'SchoolOverview',
     accent: '#0F766E',
-    requireAnyRole: ['school_admin', 'principal', 'deputy', 'admin'],
+    requireAnyRole: ['school_admin', 'principal', 'deputy_principal', 'admin'],
   },
   {
     id: 'admin-students',
@@ -400,7 +406,7 @@ export const TEACHER_DASHBOARD_ACTIONS: DashboardAction[] = [
     icon: 'user-plus',
     nativeScreen: 'AdminStudents',
     accent: '#2563EB',
-    requireAnyRole: ['school_admin', 'principal', 'deputy', 'admin', 'registrar'],
+    requireAnyRole: ['school_admin', 'principal', 'deputy_principal', 'admin', 'registrar'],
   },
   {
     id: 'admin-teachers',
@@ -409,7 +415,7 @@ export const TEACHER_DASHBOARD_ACTIONS: DashboardAction[] = [
     icon: 'users',
     nativeScreen: 'AdminTeachers',
     accent: '#4F46E5',
-    requireAnyRole: ['school_admin', 'principal', 'deputy', 'admin'],
+    requireAnyRole: ['school_admin', 'principal', 'deputy_principal', 'admin'],
   },
   {
     id: 'admin-parents',
@@ -418,16 +424,7 @@ export const TEACHER_DASHBOARD_ACTIONS: DashboardAction[] = [
     icon: 'heart',
     nativeScreen: 'AdminParents',
     accent: '#DB2777',
-    requireAnyRole: ['school_admin', 'principal', 'deputy', 'admin'],
-  },
-  {
-    id: 'admit-student',
-    title: 'Admit student',
-    description: 'New admission',
-    icon: 'user-check',
-    nativeScreen: 'AdmitStudent',
-    accent: '#059669',
-    requireAnyRole: ['school_admin', 'principal', 'deputy', 'admin', 'registrar'],
+    requireAnyRole: ['school_admin', 'principal', 'deputy_principal', 'admin'],
   },
   {
     id: 'admin-accounts',
@@ -436,11 +433,10 @@ export const TEACHER_DASHBOARD_ACTIONS: DashboardAction[] = [
     icon: 'dollar-sign',
     nativeScreen: 'AdminAccounts',
     accent: '#047857',
-    requireAnyRole: ['bursar', 'accountant', 'accounts_clerk', 'school_admin', 'principal', 'admin'],
+    requireAnyRole: ['bursar', 'accountant', 'accounts_clerk', 'finance_officer', 'school_admin', 'principal', 'admin'],
   },
   { id: 'my-profile', title: 'My Profile', description: 'Account settings', icon: 'user', tukuaPath: '/profile', tukuaTab: 'Profile', accent: '#059669' },
-  { id: 'school-info', title: 'School Info', description: 'About your school', icon: 'info', nativeScreen: 'SchoolInfo', accent: '#0A3D2E', tokenGated: false },
-  { id: 'join-school', title: 'Join school', description: 'Request to join a school', icon: 'log-in', nativeScreen: 'JoinSchool', accent: '#2563EB', tokenGated: false },
+  { id: 'school-info', title: 'My school', description: 'About · join another school', icon: 'info', nativeScreen: 'SchoolInfo', accent: '#0A3D2E', tokenGated: false },
 ];
 
 export const SECURITY_HERO: HeroStat[] = [
@@ -509,21 +505,43 @@ export const SECURITY_DASHBOARD_ACTIONS: DashboardAction[] = [
 
   { id: 'trips', title: 'Trips & board', description: 'Start trip · GPS · board students', icon: 'navigation', nativeScreen: 'SecurityHome', accent: '#0E7490' },
 
+  { id: 'fleet-map', title: 'Fleet map', description: 'Every vehicle · live position · paths', icon: 'map-pin', nativeScreen: 'FleetMap', accent: '#2563EB' },
+
   { id: 'gate-qr', title: 'Gate QR display', description: 'Show rotating QR for staff check-in', icon: 'grid', nativeScreen: 'GateQr', accent: '#7C3AED' },
 
   { id: 'face-enroll', title: 'Face enroll', description: 'Save faces for students · staff · teachers', icon: 'user', nativeScreen: 'SecurityFaceEnroll', accent: '#2563EB' },
 
   { id: 'bursary', title: 'Bursary', description: 'Kitty & programs', icon: 'gift', nativeScreen: 'Bursary', accent: '#EC4899' },
 
-  { id: 'school-info', title: 'School', description: 'About your school', icon: 'info', nativeScreen: 'SchoolInfo', accent: '#0A3D2E', tokenGated: false },
+  { id: 'school-info', title: 'My school', description: 'About · join another school', icon: 'info', nativeScreen: 'SchoolInfo', accent: '#0A3D2E', tokenGated: false },
 
-  { id: 'join-school', title: 'Join school', description: 'Request to join a school', icon: 'log-in', nativeScreen: 'JoinSchool', accent: '#2563EB', tokenGated: false },
 
 ];
 
 
 
-export const SCHOOL_ADMIN_DASHBOARD_ACTIONS: DashboardAction[] = TEACHER_DASHBOARD_ACTIONS;
+/**
+ * School office (principal, deputy, admin, bursar, registrar): admin tools first, then shared school tools;
+ * classroom tools only for people who also teach. Every admin tile keeps its own requireAnyRole gate.
+ */
+const OFFICE_FIRST = ['approvals', 'school-overview', 'admin-accounts', 'admin-students', 'admin-teachers', 'admin-parents'];
+const CLASSROOM = ['enter-marks', 'scan-marks', 'class-lists', 'my-timetable', 'reports'];
+const byId = (id: string) => TEACHER_DASHBOARD_ACTIONS.find((a) => a.id === id);
+export const SCHOOL_ADMIN_DASHBOARD_ACTIONS: DashboardAction[] = [
+  ...OFFICE_FIRST.map(byId).filter((a): a is DashboardAction => Boolean(a)),
+  // Fleet map: the server's transport roles (TRANSPORT_BOARDING_ROLES) — not a deputy or a bursar alone.
+  { id: 'fleet-map', title: 'Fleet map', description: 'Every vehicle · live position · paths', icon: 'map-pin', nativeScreen: 'FleetMap', accent: '#2563EB', requireAnyRole: ['school_admin', 'principal', 'admin', 'staff', 'security'] },
+  ...TEACHER_DASHBOARD_ACTIONS.filter((a) => !OFFICE_FIRST.includes(a.id) && !CLASSROOM.includes(a.id)),
+  ...CLASSROOM.map(byId)
+    .filter((a): a is DashboardAction => Boolean(a))
+    .map((a) => ({ ...a, requireAnyRole: ['teacher', 'class_teacher'] })),
+];
+
+export const SCHOOL_ADMIN_HERO: HeroStat[] = [
+  { id: 'learners', title: 'Learners', value: '—', subtitle: 'School', subtitleValue: 'Active roll', colors: ['#0A3D2E', '#0F5C42'], icon: 'users' },
+  { id: 'collected', title: 'Fees collected', value: 'KES —', subtitle: 'This year', subtitleValue: 'Receipts', colors: ['#059669', '#0EA5E9'], icon: 'dollar-sign' },
+  { id: 'outstanding', title: 'Outstanding', value: 'KES —', subtitle: 'Fee balances', subtitleValue: 'To collect', colors: ['#B45309', '#F59E0B'], icon: 'alert-circle' },
+];
 
 /** Super-admin on mobile: switch into a school + hat (no company hub). */
 export const SUPER_ADMIN_DASHBOARD_ACTIONS: DashboardAction[] = [
@@ -557,7 +575,7 @@ export const INDIVIDUAL_DASHBOARD_ACTIONS: DashboardAction[] = [
     icon: 'dollar-sign',
     nativeScreen: 'AdminAccounts',
     accent: '#047857',
-    requireAnyRole: ['bursar', 'accountant', 'accounts_clerk'],
+    requireAnyRole: ['bursar', 'accountant', 'accounts_clerk', 'finance_officer'],
   },
 
   { id: 'bursary', title: 'Bursary', description: 'Kitty & programs', icon: 'gift', nativeScreen: 'Bursary', accent: '#EC4899' },

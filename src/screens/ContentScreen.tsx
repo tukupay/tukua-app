@@ -196,8 +196,9 @@ function youtubeEmbedHtml(videoId: string, muted: boolean, isShort: boolean, aut
   }
   function onCmd(ev){
     try{
-      var d = typeof ev.data==='string' ? JSON.parse(ev.data) : ev.data;
-      if(!d||!player) return;
+      var raw = (typeof ev==='string') ? ev : (ev && ev.data);
+      var d = typeof raw==='string' ? JSON.parse(raw) : raw;
+      if(!d||!d.cmd||!player) return;
       if(d.cmd==='pause' && player.pauseVideo) player.pauseVideo();
       if(d.cmd==='play') tryPlay();
     }catch(e){}
@@ -260,8 +261,9 @@ function youtubeEmbedHtml(videoId: string, muted: boolean, isShort: boolean, aut
   }
   function onCmd(ev){
     try{
-      var d = typeof ev.data==='string' ? JSON.parse(ev.data) : ev.data;
-      if(!d||!player) return;
+      var raw = (typeof ev==='string') ? ev : (ev && ev.data);
+      var d = typeof raw==='string' ? JSON.parse(raw) : raw;
+      if(!d||!d.cmd||!player) return;
       if(d.cmd==='pause' && player.pauseVideo) player.pauseVideo();
       if(d.cmd==='play') tryPlay();
     }catch(e){}
@@ -350,14 +352,29 @@ export function ContentScreen() {
     [isZeroBalance, navigation, showZeroTokenModal],
   );
 
+  const sendPlayerCmd = useCallback((id: string, cmd: 'pause' | 'play') => {
+    const ref = webRefs.current.get(id);
+    if (!ref) return;
+    const js =
+      cmd === 'pause'
+        ? 'try{if(player&&player.pauseVideo)player.pauseVideo();}catch(e){} true;'
+        : 'try{if(player){if(player.playVideo)player.playVideo();}}catch(e){} true;';
+    try {
+      ref.injectJavaScript?.(js);
+      ref.postMessage?.(JSON.stringify({ cmd }));
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   const pauseOthers = useCallback((exceptId: string | null) => {
     webRefs.current.forEach((ref, id) => {
       if (!ref || id === exceptId) return;
       try {
-        ref.postMessage(JSON.stringify({ cmd: 'pause' }));
         ref.injectJavaScript?.(
-          'try{if(player&&player.pauseVideo)player.pauseVideo();}catch(e){};true;',
+          'try{if(player&&player.pauseVideo)player.pauseVideo();}catch(e){} true;',
         );
+        ref.postMessage?.(JSON.stringify({ cmd: 'pause' }));
       } catch {
         /* ignore */
       }
@@ -619,14 +636,8 @@ export function ContentScreen() {
               <WebView
                 key={`wv-${item.id}-${isShort ? 's' : 'w'}-${muted ? 'm' : 'u'}`}
                 ref={(r) => {
-                  webRefs.current.set(item.id, r);
-                  if (r) {
-                    try {
-                      r.postMessage?.(JSON.stringify({ cmd: 'play' }));
-                    } catch {
-                      /* ignore */
-                    }
-                  }
+                  if (r) webRefs.current.set(item.id, r);
+                  else webRefs.current.delete(item.id);
                 }}
                 originWhitelist={['*']}
                 source={
@@ -710,6 +721,12 @@ export function ContentScreen() {
                   {courseTitle}
                   {unitTitle ? ` · ${unitTitle}` : ''}
                 </Text>
+                <Pressable
+                  style={styles.ctrlBtn}
+                  onPress={() => sendPlayerCmd(item.id, playingItemId === item.id ? 'pause' : 'play')}
+                >
+                  <Text style={styles.ctrlTxt}>{playingItemId === item.id ? 'Pause' : 'Play'}</Text>
+                </Pressable>
                 {classLevel ? (
                   <View style={styles.levelTag}>
                     <Text style={styles.levelTagTxt} numberOfLines={1}>
@@ -751,6 +768,12 @@ export function ContentScreen() {
                 swipe up for next
               </Text>
               <View style={styles.controls}>
+                <Pressable
+                  style={styles.ctrlBtn}
+                  onPress={() => sendPlayerCmd(item.id, playingItemId === item.id ? 'pause' : 'play')}
+                >
+                  <Text style={styles.ctrlTxt}>{playingItemId === item.id ? 'Pause' : 'Play'}</Text>
+                </Pressable>
                 <Pressable style={styles.ctrlBtn} onPress={() => setMuted((m) => !m)}>
                   <Text style={styles.ctrlTxt}>{muted ? 'Unmute' : 'Mute'}</Text>
                 </Pressable>
