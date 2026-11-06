@@ -1,6 +1,6 @@
 import 'react-native-gesture-handler';
 import React, { useCallback, useEffect, useState } from 'react';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 // Polyfill crypto.randomUUID — never throw at module load (host crypto can be read-only).
@@ -60,6 +60,8 @@ import { AppThemeProvider } from './src/context/AppThemeContext';
 import { FontPreferenceProvider } from './src/context/FontPreferenceContext';
 import { SplashLoadingScreen } from './src/components/SplashLoadingScreen';
 import { configureWebViewAudioSession } from './src/lib/webViewMedia';
+import { checkAppVersion, type AppVersionCheck } from './src/lib/appVersion';
+import { UpdateRequiredScreen } from './src/components/UpdateRequiredScreen';
 
 if (Platform.OS !== 'web') {
   SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -119,6 +121,34 @@ export default function App() {
       void configureWebViewAudioSession();
     }
   }, [onLayoutRootView]);
+
+  // Update gate: at start and each time the app comes back to the front, ask whether this version may still
+  // run. Does not delay start-up; offline or any error never blocks (lib/appVersion.ts).
+  const [updateGate, setUpdateGate] = useState<AppVersionCheck | null>(null);
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    let alive = true;
+    const run = () =>
+      void checkAppVersion().then((r) => {
+        if (alive && r) setUpdateGate(r.update_required ? r : null);
+      });
+    run();
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') run();
+    });
+    return () => {
+      alive = false;
+      sub.remove();
+    };
+  }, []);
+
+  if (updateGate?.update_required) {
+    return (
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <UpdateRequiredScreen check={updateGate} />
+      </GestureHandlerRootView>
+    );
+  }
 
   if (!appReady) {
     return (
