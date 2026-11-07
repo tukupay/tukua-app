@@ -39,8 +39,81 @@ export type FleetMapVehicle = {
 export type FleetMapData = { day: string; live: boolean; refreshed_at: string; on_trip: number; vehicles: FleetMapVehicle[] };
 
 /** Today's live map when `day` is left out; an earlier day as YYYY-MM-DD. */
-export async function fetchFleetMap(day?: string) {
-  return deskFetch<FleetMapData>(`/transport/fleet/map${day ? `?from=${encodeURIComponent(day)}` : ''}`);
+export async function fetchFleetMap(day?: string): Promise<FleetMapData> {
+  const raw = await deskFetch<Partial<FleetMapData> | null>(
+    `/transport/fleet/map${day ? `?from=${encodeURIComponent(day)}` : ''}`,
+  );
+  return normalizeFleetMap(raw, day);
+}
+
+function finiteOrNull(v: unknown): number | null {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Fill gaps in the server's answer so the screen and the map page never trip over a null. */
+export function normalizeFleetMap(raw: Partial<FleetMapData> | null | undefined, day?: string): FleetMapData {
+  const list = Array.isArray(raw?.vehicles) ? raw!.vehicles : [];
+  const vehicles: FleetMapVehicle[] = list
+    .filter((v): v is FleetMapVehicle => Boolean(v && typeof v === 'object' && (v as FleetMapVehicle).id))
+    .map((v) => {
+      const lat = finiteOrNull(v.position?.lat);
+      const lng = finiteOrNull(v.position?.lng);
+      const trips = (Array.isArray(v.trips) ? v.trips : [])
+        .filter((t) => t && t.id)
+        .map((t) => ({
+          ...t,
+          boarded: finiteOrNull(t.boarded) ?? 0,
+          distance_km: finiteOrNull(t.distance_km),
+          top_speed_kmh: finiteOrNull(t.top_speed_kmh),
+          path: (Array.isArray(t.path) ? t.path : []).filter(
+            (p): p is [number, number] =>
+              Array.isArray(p) && Number.isFinite(Number(p[0])) && Number.isFinite(Number(p[1])),
+          ),
+        }));
+      return {
+        ...v,
+        id: String(v.id),
+        name: String(v.name || v.plate || 'Vehicle'),
+        plate: v.plate ? String(v.plate) : null,
+        icon: String(v.icon || 'bus'),
+        color: typeof v.color === 'string' && v.color ? v.color : '#2563eb',
+        capacity: finiteOrNull(v.capacity),
+        status: (v.status || 'available') as FleetMapVehicle['status'],
+        position:
+          lat != null && lng != null
+            ? {
+                lat,
+                lng,
+                speed_kmh: finiteOrNull(v.position?.speed_kmh),
+                recorded_at: v.position?.recorded_at ?? null,
+                heading: finiteOrNull(v.position?.heading),
+              }
+            : null,
+        active_trip: v.active_trip
+          ? { ...v.active_trip, boarded: finiteOrNull(v.active_trip.boarded) ?? 0 }
+          : null,
+        trips,
+      };
+    });
+  return {
+    day: String(raw?.day ?? day ?? ''),
+    live: raw?.live == null ? !day : Boolean(raw.live),
+    refreshed_at: String(raw?.refreshed_at ?? new Date().toISOString()),
+    on_trip: finiteOrNull(raw?.on_trip) ?? vehicles.filter((v) => v.status === 'on_trip').length,
+    vehicles,
+  };
+}
+
+/** No position for this long while "on a trip" means the bus phone stopped reporting. */
+export const FLEET_SIGNAL_STALE_MS = 30 * 60_000;
+
+/** On a trip but its last position is older than FLEET_SIGNAL_STALE_MS (or there is none). */
+export function fleetSignalLost(v: FleetMapVehicle, now = Date.now()): boolean {
+  if (v.status !== 'on_trip') return false;
+  const t = v.position?.recorded_at ? new Date(v.position.recorded_at).getTime() : NaN;
+  return !Number.isFinite(t) || now - t > FLEET_SIGNAL_STALE_MS;
 }
 
 /** The icon font's nearest picture for each kind of vehicle, for lists beside the map. */

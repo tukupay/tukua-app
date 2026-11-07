@@ -1,11 +1,16 @@
+/**
+ * Clubs on the phone. A parent sees the selected child's school clubs, registers or takes them out, and reads
+ * the patrons' notes; a learner sees their own clubs and notes (their parent registers them).
+ *
+ * 2026-11-07: dashboard theme (white cards, palette pills, Tukua loader / skeleton, error + Retry); a parent
+ * with several children and none picked app-wide gets child chips (the API already sends the children);
+ * each card opens to its details and all its notes; "No linked children" shows as such, not as an error;
+ * fee / counts never crash on odd values; other clubs come in batches.
+ */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ThemedBackdrop } from '../../components/theme/ThemedPage';
-import { ModuleBackBar, ModuleEmpty, ModuleGlassCard, ModuleKicker, ModuleScreenHeader } from './ModuleChrome';
-import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import { useDeskAuth } from '../../context/DeskAuthContext';
 import { useDialog } from '../../context/DialogContext';
 import { useAppTheme } from '../../context/AppThemeContext';
@@ -20,74 +25,105 @@ import {
   type FamilyClubsView,
 } from '../../lib/clubsApi';
 import { DashboardStackParamList } from '../../navigation/types';
-import { Colors } from '../../theme/yana';
 import { log } from '../../lib/logger';
-import { Loader } from '../../components/ui/Loader';
+import { INK, rgba } from '../../components/theme/ThemedPage';
+import {
+  ChipRow,
+  ErrorState,
+  ListSkeleton,
+  ModuleScrollPage,
+  MUTED_INK,
+  SectionLabel,
+  ShowMoreButton,
+  StateCard,
+  StatusPill,
+  SurfaceCard,
+  fmtRelative,
+  useClientPager,
+  type PillTone,
+} from '../../components/ui/ModuleKit';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'Clubs'>;
 
-function shortDate(iso?: string | null): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+type ClubsView = FamilyClubsView & { children?: Array<{ student_id: string; name?: string; school_id?: string }> };
+
+function money(v: unknown): string {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? `KES ${n.toLocaleString()}` : '';
 }
 
-/**
- * Clubs on the phone. A parent sees the selected child's school clubs, registers or takes them out,
- * and reads the patrons' notes; a learner sees their own clubs and notes (their parent registers them).
- */
+function count(v: unknown): number {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
 export function ClubsScreen({ navigation }: Props) {
-  const insets = useSafeAreaInsets();
   const { palette } = useAppTheme();
   const { showDialog } = useDialog();
   const { persona, selectedStudentId, selectedStudent } = useDeskAuth();
   const isParent = persona === 'parent';
-  const [view, setView] = useState<FamilyClubsView | null>(null);
+  const [pickedChild, setPickedChild] = useState<string | null>(null);
+  const [view, setView] = useState<ClubsView | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [showOthers, setShowOthers] = useState(true);
+  const [openId, setOpenId] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      setView(isParent ? await fetchParentClubs(selectedStudentId) : await fetchStudentClubs());
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      log.warn('Clubs', msg);
-      setError(msg);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [isParent, selectedStudentId]);
+  const childId = selectedStudentId ?? pickedChild;
+
+  const load = useCallback(
+    async (soft = false) => {
+      if (!soft) setLoading(true);
+      setError(null);
+      try {
+        const v = (isParent ? await fetchParentClubs(childId) : await fetchStudentClubs()) as ClubsView | null;
+        setView(v && typeof v === 'object' ? { ...v, clubs: Array.isArray(v.clubs) ? v.clubs.filter((c) => c && c.id) : [] } : null);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        log.warn('Clubs', msg);
+        setError(msg);
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [isParent, childId],
+  );
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const clubs = view?.clubs ?? [];
-  const mine = useMemo(() => clubs.filter((c) => c.membership && ['active', 'pending'].includes(c.membership.status)), [clubs]);
+  const clubs = useMemo(() => view?.clubs ?? [], [view]);
+  const mine = useMemo(
+    () => clubs.filter((c) => c.membership && ['active', 'pending'].includes(String(c.membership.status))),
+    [clubs],
+  );
   const others = useMemo(() => clubs.filter((c) => !mine.includes(c)), [clubs, mine]);
+  const othersPager = useClientPager(others, 8, view?.student?.id);
   const notes = useMemo(
     () =>
       mine
-        .flatMap((c) => c.notes.map((n) => ({ ...n, club: c.name })))
+        .flatMap((c) => (Array.isArray(c.notes) ? c.notes : []).map((n) => ({ ...n, club: c.name })))
         .sort((a, b) => Number(b.pinned) - Number(a.pinned) || String(b.created_at).localeCompare(String(a.created_at)))
-        .slice(0, 10),
+        .slice(0, 5),
     [mine],
   );
-  const childName = selectedStudent?.name?.split(' ')[0] || view?.student?.name?.split(' ')[0] || 'your child';
+
+  const childName =
+    selectedStudent?.name?.split(' ')[0] || view?.student?.name?.split(' ')[0] || 'your child';
+  const children = (view?.children ?? []).filter((k) => k && k.student_id);
 
   const doRegister = (c: FamilyClub) => {
     const studentId = view?.student?.id;
     if (!studentId) return;
+    const meets = clubMeets(c);
     showDialog({
       title: c.requires_approval ? `Ask for a place in ${c.name}?` : `Register ${childName} for ${c.name}?`,
       message: [
-        clubMeets(c) ? `Meets ${clubMeets(c)}.` : null,
-        c.fee ? `Fee: KES ${c.fee.toLocaleString()} (paid to the school).` : null,
+        meets ? `Meets ${meets}.` : null,
+        money(c.fee) ? `Fee: ${money(c.fee)} (paid to the school).` : null,
         c.requires_approval ? `${c.patron_name || 'The patron'} confirms the place.` : null,
       ]
         .filter(Boolean)
@@ -104,13 +140,21 @@ export function ClubsScreen({ navigation }: Props) {
                 const res = await registerForClub(c.id, studentId);
                 showDialog({
                   title: res?.status === 'pending' ? 'Registered' : `${childName} is in`,
-                  message: res?.status === 'pending' ? `${c.patron_name || 'The patron'} will confirm the place.` : `Welcome to ${c.name}.`,
+                  message:
+                    res?.status === 'pending'
+                      ? `${c.patron_name || 'The patron'} will confirm the place.`
+                      : `Welcome to ${c.name}.`,
                   variant: 'success',
                   icon: 'checkmark-circle',
                 });
-                await load();
+                await load(true);
               } catch (e) {
-                showDialog({ title: 'Not registered', message: e instanceof Error ? e.message : 'Try again', variant: 'warning', icon: 'alert-circle' });
+                showDialog({
+                  title: 'Not registered',
+                  message: e instanceof Error ? e.message : 'Try again',
+                  variant: 'warning',
+                  icon: 'alert-circle',
+                });
               } finally {
                 setBusy(null);
               }
@@ -140,9 +184,14 @@ export function ClubsScreen({ navigation }: Props) {
               setBusy(c.id);
               try {
                 await leaveClub(c.id, studentId);
-                await load();
+                await load(true);
               } catch (e) {
-                showDialog({ title: 'That did not go through', message: e instanceof Error ? e.message : 'Try again', variant: 'warning', icon: 'alert-circle' });
+                showDialog({
+                  title: 'That did not go through',
+                  message: e instanceof Error ? e.message : 'Try again',
+                  variant: 'warning',
+                  icon: 'alert-circle',
+                });
               } finally {
                 setBusy(null);
               }
@@ -153,142 +202,225 @@ export function ClubsScreen({ navigation }: Props) {
     });
   };
 
-  const placeChip = (c: FamilyClub) => {
+  const placePill = (c: FamilyClub): { label: string; tone: PillTone } | null => {
     const s = c.membership?.status;
-    if (s === 'active') return { text: c.membership!.position !== 'member' ? `In · ${c.membership!.position}` : 'In the club', bg: '#DCFCE7', fg: '#166534' };
-    if (s === 'pending') return { text: 'Waiting', bg: '#FEF3C7', fg: '#B45309' };
-    if (s === 'declined') return { text: 'Not accepted', bg: '#FEE2E2', fg: '#B91C1C' };
+    const pos = String(c.membership?.position ?? 'member');
+    if (s === 'active') return { label: pos && pos !== 'member' ? `In · ${pos}` : 'Member', tone: 'success' };
+    if (s === 'pending') return { label: 'Waiting', tone: 'warning' };
+    if (s === 'declined') return { label: 'Not accepted', tone: 'danger' };
     return null;
   };
 
   const card = (c: FamilyClub) => {
-    const chip = placeChip(c);
+    const pill = placePill(c);
     const inClub = c.membership?.status === 'active' || c.membership?.status === 'pending';
+    const open = openId === c.id;
+    const members = count(c.member_count);
+    const clubNotes = Array.isArray(c.notes) ? c.notes : [];
+    const meets = clubMeets(c);
     return (
-      <ModuleGlassCard key={c.id} style={styles.card}>
-        <View style={styles.cardHead}>
-          <View style={[styles.icon, { backgroundColor: `${palette.primary}14` }]}>
+      <SurfaceCard key={c.id}>
+        <Pressable
+          onPress={() => setOpenId(open ? null : c.id)}
+          accessibilityRole="button"
+          accessibilityState={{ expanded: open }}
+          style={styles.cardHead}>
+          <View style={[styles.icon, { backgroundColor: rgba(palette.primary, 0.08) }]}>
             <Ionicons name="medal-outline" size={20} color={palette.primary} />
           </View>
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text style={styles.kind}>{CLUB_KIND[c.category] || 'Other'}</Text>
-            <Text style={styles.name} numberOfLines={1}>
+            <Text style={styles.name} numberOfLines={open ? 3 : 1}>
               {c.name}
             </Text>
+            <Text style={styles.meta} numberOfLines={1}>
+              {[meets, `${members} ${members === 1 ? 'member' : 'members'}`].filter(Boolean).join(' · ')}
+            </Text>
           </View>
-          {chip ? (
-            <View style={[styles.chip, { backgroundColor: chip.bg }]}>
-              <Text style={[styles.chipText, { color: chip.fg }]}>{chip.text}</Text>
+          {pill ? <StatusPill label={pill.label} tone={pill.tone} /> : null}
+          <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={18} color={MUTED_INK} />
+        </Pressable>
+
+        {open ? (
+          <View style={styles.details}>
+            {c.description ? <Text style={styles.desc}>{c.description}</Text> : null}
+            <View style={styles.facts}>
+              {c.patron_name ? <Fact icon="person-outline" text={`Patron: ${c.patron_name}`} /> : null}
+              {meets ? <Fact icon="time-outline" text={meets} /> : null}
+              <Fact
+                icon="people-outline"
+                text={`${members} ${members === 1 ? 'member' : 'members'}${c.spots_left != null ? ` · ${count(c.spots_left)} places left` : ''}`}
+              />
+              <Fact icon="cash-outline" text={money(c.fee) || 'No fee'} />
+              {c.requires_approval ? <Fact icon="shield-checkmark-outline" text="The patron confirms each place" /> : null}
             </View>
-          ) : null}
-        </View>
-        {c.description ? (
-          <Text style={styles.desc} numberOfLines={3}>
-            {c.description}
-          </Text>
+            {clubNotes.length ? (
+              <View style={{ marginTop: 10 }}>
+                <Text style={styles.notesHead}>Notes</Text>
+                {clubNotes.slice(0, 10).map((n) => (
+                  <View key={n.id} style={[styles.noteInline, { borderLeftColor: n.pinned ? palette.secondary : rgba(palette.primary, 0.15) }]}>
+                    <Text style={styles.noteTitle}>{n.title}</Text>
+                    <Text style={styles.meta}>{[n.author_name, fmtRelative(n.created_at)].filter(Boolean).join(' · ')}</Text>
+                    {n.body ? <Text style={styles.noteBody}>{n.body}</Text> : null}
+                  </View>
+                ))}
+              </View>
+            ) : null}
+          </View>
         ) : null}
-        <Text style={styles.meta}>
-          {[c.patron_name ? `Patron: ${c.patron_name}` : null, clubMeets(c) || null].filter(Boolean).join('\n')}
-        </Text>
-        <Text style={styles.meta}>
-          {c.member_count} {c.member_count === 1 ? 'member' : 'members'}
-          {c.spots_left != null ? ` · ${c.spots_left} left` : ''}
-          {c.fee ? ` · KES ${c.fee.toLocaleString()}` : ''}
-        </Text>
+
         {isParent ? (
           inClub ? (
-            <Pressable style={[styles.btn, styles.btnOutline]} disabled={busy === c.id} onPress={() => doLeave(c)} accessibilityRole="button">
-              {busy === c.id ? <ActivityIndicator size="small" color={palette.primary} /> : <Text style={[styles.btnOutlineText, { color: palette.primary }]}>{c.membership?.status === 'pending' ? 'Cancel registration' : 'Leave club'}</Text>}
+            <Pressable
+              style={({ pressed }) => [styles.btn, styles.btnOutline, { borderColor: rgba(palette.primary, 0.2) }, pressed && { opacity: 0.85 }]}
+              disabled={busy === c.id}
+              onPress={() => doLeave(c)}
+              accessibilityRole="button">
+              {busy === c.id ? (
+                <ActivityIndicator size="small" color={palette.primary} />
+              ) : (
+                <Text style={[styles.btnOutlineText, { color: palette.primary }]}>
+                  {c.membership?.status === 'pending' ? 'Cancel registration' : 'Leave club'}
+                </Text>
+              )}
             </Pressable>
           ) : c.can_register ? (
-            <Pressable style={[styles.btn, { backgroundColor: palette.primary }]} disabled={busy === c.id} onPress={() => doRegister(c)} accessibilityRole="button" accessibilityLabel={`Register for ${c.name}`}>
-              {busy === c.id ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.btnText}>{c.requires_approval ? 'Ask for a place' : 'Register'}</Text>}
+            <Pressable
+              style={({ pressed }) => [styles.btn, { backgroundColor: palette.primary }, pressed && { opacity: 0.85 }]}
+              disabled={busy === c.id}
+              onPress={() => doRegister(c)}
+              accessibilityRole="button"
+              accessibilityLabel={`Register for ${c.name}`}>
+              {busy === c.id ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.btnText}>
+                  {c.requires_approval ? 'Ask for a place' : 'Register'}
+                  {money(c.fee) ? ` · ${money(c.fee)}` : ''}
+                </Text>
+              )}
             </Pressable>
           ) : (
             <Text style={styles.closed}>{c.spots_left === 0 ? 'Full' : 'Not taking registrations now'}</Text>
           )
         ) : null}
-      </ModuleGlassCard>
+      </SurfaceCard>
     );
   };
 
-  return (
-    <View style={styles.root}>
-      <ThemedBackdrop />
-      <ScrollView
-        contentContainerStyle={[styles.content, { paddingTop: floatingHeaderInset(insets.top), paddingBottom: moduleScrollBottomPad(insets.bottom) }]}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} />}
-        showsVerticalScrollIndicator={false}>
-        <ModuleBackBar onBack={() => navigation.goBack()} />
-        <ModuleKicker>Clubs</ModuleKicker>
-        <ModuleScreenHeader
-          title={isParent ? `${childName}'s clubs` : 'My clubs'}
-          description={isParent ? 'Register for clubs and read what the patrons post.' : 'Your clubs and their notes. Your parent registers you.'}
-        />
+  const noChildren = !!error && /no linked children/i.test(error);
 
-        {loading ? (
-          <Loader />
-        ) : error ? (
-          <ModuleEmpty title="Clubs could not load" body={error} onRetry={() => void load()} />
-        ) : (
-          <>
-            {notes.length ? (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Notes from the clubs</Text>
-                {notes.map((n) => (
-                  <ModuleGlassCard key={n.id} style={styles.note}>
-                    <Text style={styles.noteTitle}>
-                      {n.pinned ? '📌 ' : ''}
+  return (
+    <ModuleScrollPage
+      title={isParent ? `${childName === 'your child' ? 'Clubs' : `${childName}'s clubs`}` : 'My clubs'}
+      description={
+        isParent ? 'Register for clubs and read what the patrons post.' : 'Your clubs and their notes. Your parent registers you.'
+      }
+      onBack={() => navigation.goBack()}
+      refreshing={refreshing}
+      onRefresh={() => {
+        setRefreshing(true);
+        void load(true);
+      }}>
+      {isParent && !selectedStudentId && children.length > 1 ? (
+        <ChipRow
+          value={view?.student?.id ?? children[0].student_id}
+          onChange={setPickedChild}
+          options={children.map((k) => ({ key: k.student_id, label: String(k.name || 'Child').split(' ')[0] }))}
+        />
+      ) : null}
+
+      {loading ? (
+        <ListSkeleton rows={4} height={72} />
+      ) : noChildren ? (
+        <StateCard
+          icon="people-outline"
+          title="No linked children yet"
+          body="Once the school links your child to your account, their clubs show here."
+        />
+      ) : error ? (
+        <ErrorState title="Clubs could not load" message={error} onRetry={() => void load()} />
+      ) : clubs.length === 0 ? (
+        <StateCard icon="medal-outline" title="No clubs yet" body="When the school opens clubs, they will show here." />
+      ) : (
+        <>
+          {notes.length ? (
+            <>
+              <SectionLabel>Latest from the clubs</SectionLabel>
+              {notes.map((n) => (
+                <SurfaceCard key={`${n.club}-${n.id}`} style={styles.note}>
+                  <View style={styles.noteHead}>
+                    {n.pinned ? <Ionicons name="pin" size={14} color={palette.tertiary || palette.primary} /> : null}
+                    <Text style={[styles.noteTitle, { flex: 1 }]} numberOfLines={2}>
                       {n.title}
                     </Text>
-                    <Text style={styles.meta}>{[n.club, n.author_name, shortDate(n.created_at)].filter(Boolean).join(' · ')}</Text>
-                    {n.body ? <Text style={styles.noteBody}>{n.body}</Text> : null}
-                  </ModuleGlassCard>
-                ))}
-              </View>
-            ) : null}
+                  </View>
+                  <Text style={styles.meta}>{[n.club, n.author_name, fmtRelative(n.created_at)].filter(Boolean).join(' · ')}</Text>
+                  {n.body ? (
+                    <Text style={styles.noteBody} numberOfLines={4}>
+                      {n.body}
+                    </Text>
+                  ) : null}
+                </SurfaceCard>
+              ))}
+            </>
+          ) : null}
 
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>{isParent ? `In these clubs` : 'My clubs'}</Text>
-              {mine.length ? mine.map(card) : <Text style={styles.empty}>{isParent ? 'Not in a club yet. Pick one below.' : 'Not in a club yet. Ask your parent to register you.'}</Text>}
-            </View>
+          <SectionLabel>{isParent ? `In these clubs · ${mine.length}` : `My clubs · ${mine.length}`}</SectionLabel>
+          {mine.length ? (
+            mine.map(card)
+          ) : (
+            <StateCard
+              icon="sparkles-outline"
+              title="Not in a club yet"
+              body={isParent ? 'Pick one below to register.' : 'Ask your parent to register you for a club below.'}
+            />
+          )}
 
-            <View style={styles.section}>
-              <Pressable style={styles.sectionHead} onPress={() => setShowOthers((v) => !v)} accessibilityRole="button">
-                <Text style={styles.sectionTitle}>Other clubs ({others.length})</Text>
-                <Ionicons name={showOthers ? 'chevron-up' : 'chevron-down'} size={18} color={Colors.mutedForeground} />
-              </Pressable>
-              {showOthers ? (others.length ? others.map(card) : <Text style={styles.empty}>{clubs.length ? 'No other clubs.' : 'The school has no clubs yet.'}</Text>) : null}
-            </View>
-          </>
-        )}
-      </ScrollView>
+          {others.length ? (
+            <>
+              <SectionLabel>{`Other clubs · ${others.length}`}</SectionLabel>
+              {othersPager.visible.map(card)}
+              {othersPager.hasMore ? (
+                <ShowMoreButton shown={othersPager.shown} total={othersPager.total} onPress={othersPager.showMore} />
+              ) : null}
+            </>
+          ) : null}
+        </>
+      )}
+    </ModuleScrollPage>
+  );
+}
+
+function Fact({ icon, text }: { icon: keyof typeof Ionicons.glyphMap; text: string }) {
+  return (
+    <View style={styles.fact}>
+      <Ionicons name={icon} size={14} color={MUTED_INK} />
+      <Text style={styles.factText}>{text}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
-  content: { paddingHorizontal: 18, gap: 12 },
-  section: { gap: 10, marginTop: 4 },
-  sectionHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  sectionTitle: { fontSize: 13, fontWeight: '800', letterSpacing: 0.6, textTransform: 'uppercase', color: Colors.ink },
-  card: { padding: 14, gap: 6 },
   cardHead: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  icon: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  kind: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase', color: Colors.mutedForeground },
-  name: { fontSize: 16, fontWeight: '800', color: Colors.ink },
-  chip: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
-  chipText: { fontSize: 11, fontWeight: '700' },
-  desc: { fontSize: 13, color: Colors.ink, lineHeight: 18 },
-  meta: { fontSize: 12, color: Colors.mutedForeground, lineHeight: 17 },
-  btn: { marginTop: 6, borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
+  icon: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
+  kind: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5, textTransform: 'uppercase', color: MUTED_INK },
+  name: { fontSize: 15.5, fontWeight: '800', color: INK },
+  meta: { marginTop: 2, fontSize: 12, color: MUTED_INK, lineHeight: 17 },
+  details: { marginTop: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E6E1D3', paddingTop: 10 },
+  desc: { fontSize: 13.5, color: INK, lineHeight: 19 },
+  facts: { marginTop: 8, gap: 6 },
+  fact: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  factText: { flex: 1, fontSize: 12.5, color: INK },
+  notesHead: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5, color: MUTED_INK, marginBottom: 6 },
+  noteInline: { borderLeftWidth: 3, paddingLeft: 10, marginBottom: 10 },
+  btn: { marginTop: 12, borderRadius: 12, paddingVertical: 11, alignItems: 'center' },
   btnText: { color: '#fff', fontWeight: '800', fontSize: 14 },
-  btnOutline: { borderWidth: 1, borderColor: 'rgba(10,61,46,0.2)' },
+  btnOutline: { borderWidth: 1, backgroundColor: '#FFFFFF' },
   btnOutlineText: { fontWeight: '800', fontSize: 14 },
-  closed: { marginTop: 4, fontSize: 12, color: Colors.mutedForeground },
-  note: { padding: 12, gap: 4 },
-  noteTitle: { fontSize: 14, fontWeight: '800', color: Colors.ink },
-  noteBody: { fontSize: 13, color: Colors.ink, lineHeight: 18, marginTop: 2 },
-  empty: { fontSize: 13, color: Colors.mutedForeground, paddingVertical: 6 },
+  closed: { marginTop: 10, fontSize: 12, color: MUTED_INK },
+  note: { paddingVertical: 12 },
+  noteHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  noteTitle: { fontSize: 14, fontWeight: '800', color: INK },
+  noteBody: { fontSize: 13, color: INK, lineHeight: 18, marginTop: 4 },
 });

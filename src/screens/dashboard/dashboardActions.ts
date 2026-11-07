@@ -2,7 +2,9 @@
  * Dashboard tiles per persona — Feather icons (modern stroke set via Expo).
  *
  * Each persona has titled sections: "Quick access" first (the most-used actions for that kind of user,
- * max 8, Courses always there, Tukua AI present but never first), then related modules grouped together.
+ * by importance and use, max 8, Courses always there, Tukua AI present but never first), then related
+ * modules grouped together. TukuaPay sits in the last rows and "Join school" is the very last tile on
+ * every persona (owner, 2026-11-07). No Notifications tile: the header bell opens it.
  * `*_DASHBOARD_ACTIONS` are the same tiles flattened in section order (Quick access first).
  */
 
@@ -111,16 +113,6 @@ function coursesAction(description = 'Browse & continue learning'): DashboardAct
   };
 }
 
-const NOTIFICATIONS_ACTION: DashboardAction = {
-  id: 'notifications',
-  title: 'Notifications',
-  description: 'Alerts & updates',
-  icon: 'bell',
-  nativeScreen: 'Notifications',
-  accent: '#0F766E',
-  tokenGated: false,
-};
-
 const REFER_EARN_ACTION: DashboardAction = {
   id: 'refer-earn',
   title: 'Refer & Earn',
@@ -154,6 +146,58 @@ export function flattenDashboardSections(sections: DashboardSection[]): Dashboar
   return out;
 }
 
+// ─── Shared tail tiles ─────────────────────────────────────────────────────────────────────────
+// Owner, 2026-11-07: on every persona TukuaPay sits in the last rows and "Join school" is the very
+// last tile. Notifications has no tile any more (the bell in the dashboard header opens it).
+
+const TUKUA_PAY_ACTION: DashboardAction = {
+  id: 'tukua-pay',
+  title: 'Tukua Pay',
+  description: 'Wallet · deposit · send',
+  icon: 'smartphone',
+  nativeScreen: 'TukuaPayHome',
+  tokenGated: false,
+  accent: Colors.primary,
+};
+
+const JOIN_SCHOOL_ACTION: DashboardAction = {
+  id: 'join-school',
+  title: 'Join school',
+  description: 'Add a role · join another school',
+  icon: 'log-in',
+  nativeScreen: 'JoinSchool',
+  accent: '#2563EB',
+  tokenGated: false,
+};
+
+const MY_SCHOOL_ACTION: DashboardAction = {
+  id: 'school-info',
+  title: 'My school',
+  description: 'About your school',
+  icon: 'home',
+  nativeScreen: 'SchoolInfo',
+  accent: Colors.primary,
+  tokenGated: false,
+};
+
+const PROFILE_ACTION: DashboardAction = {
+  id: 'my-profile',
+  title: 'My Profile',
+  description: 'Account & balances',
+  icon: 'user',
+  tukuaPath: '/profile',
+  tukuaTab: 'Profile',
+  accent: '#059669',
+  tokenGated: false,
+};
+
+const BURSARY_ACTION: DashboardAction = { id: 'bursary', title: 'Bursary', description: 'Kitty & programs', icon: 'gift', nativeScreen: 'Bursary', accent: '#EC4899' };
+
+/** Last section on every school persona: account tiles, then TukuaPay, then Join school (last). */
+function accountAndWalletSection(lead: DashboardAction[]): DashboardSection {
+  return { id: 'account-wallet', title: 'Account & wallet', actions: [...lead, TUKUA_PAY_ACTION, JOIN_SCHOOL_ACTION] };
+}
+
 // ─── Parent ────────────────────────────────────────────────────────────────────────────────────
 
 export const PARENT_DASHBOARD_SECTIONS: DashboardSection[] = [
@@ -162,36 +206,27 @@ export const PARENT_DASHBOARD_SECTIONS: DashboardSection[] = [
     title: 'Quick access',
     actions: [
       { id: 'school-fees', title: 'School Fees', description: 'Pay · invoices · bank slips', icon: 'credit-card', nativeScreen: 'Accounts', accent: '#059669' },
-      { id: 'tukua-pay', title: 'Tukua Pay', description: 'Wallets · deposit · send', icon: 'smartphone', nativeScreen: 'TukuaPayHome', tokenGated: false, accent: Colors.primary },
       { id: 'assessments', title: 'Exams & results', description: 'Exams, report cards & slips', icon: 'clipboard', nativeScreen: 'Assessments', accent: '#0EA5E9' },
-      TUKUA_AI_ACTION,
-      coursesAction('Courses for you & your child'),
       { id: 'attendance', title: 'Attendance', description: 'View attendance', icon: 'check-square', nativeScreen: 'Attendance', accent: '#14B8A6' },
       { id: 'transport', title: 'Transport', description: 'Track bus · live location', icon: 'navigation', nativeScreen: 'Transport', accent: '#0E7490' },
+      coursesAction('Courses for you & your child'),
+      TUKUA_AI_ACTION,
       { id: 'events', title: 'Events', description: 'RSVP, pay & scan check-in', icon: 'calendar', nativeScreen: 'Events', accent: '#F59E0B' },
+      { id: 'teachers', title: 'Teachers', description: "Your child's teachers", icon: 'users', nativeScreen: 'Teachers', accent: '#6366F1' },
     ],
   },
   {
     id: 'school-life',
     title: 'School life',
     actions: [
-      { id: 'teachers', title: 'Teachers', description: "Your child's teachers", icon: 'users', nativeScreen: 'Teachers', accent: '#6366F1' },
+      { id: 'meetings', title: 'Meetings', description: 'Join school video meetings', icon: 'video', nativeScreen: 'Meetings', accent: '#0284C7' },
       { id: 'clubs', title: 'Clubs', description: 'Register · club notes', icon: 'award', nativeScreen: 'Clubs', accent: '#E11D48' },
       { id: 'discipline', title: 'Discipline', description: 'Conduct records', icon: 'shield', nativeScreen: 'Discipline', accent: '#EF4444' },
       { id: 'library', title: 'Library', description: 'Borrow & return statement', icon: 'book', nativeScreen: 'Library', accent: '#8B5CF6' },
-      { id: 'bursary', title: 'Bursary', description: 'Kitty & contributions', icon: 'gift', nativeScreen: 'Bursary', accent: '#EC4899' },
+      { ...BURSARY_ACTION, description: 'Kitty & contributions' },
     ],
   },
-  {
-    id: 'connect',
-    title: 'Stay connected',
-    actions: [
-      { id: 'meetings', title: 'Meetings', description: 'Join school video meetings', icon: 'video', nativeScreen: 'Meetings', accent: '#0284C7' },
-      NOTIFICATIONS_ACTION,
-      { id: 'school-info', title: 'My school', description: 'About · join another school', icon: 'home', nativeScreen: 'SchoolInfo', accent: '#15411D', tokenGated: false },
-      REFER_EARN_ACTION,
-    ],
-  },
+  accountAndWalletSection([MY_SCHOOL_ACTION, REFER_EARN_ACTION]),
 ];
 export const PARENT_DASHBOARD_ACTIONS: DashboardAction[] = flattenDashboardSections(PARENT_DASHBOARD_SECTIONS);
 
@@ -202,38 +237,32 @@ export const STUDENT_DASHBOARD_SECTIONS: DashboardSection[] = [
     id: 'quick',
     title: 'Quick access',
     actions: [
-      coursesAction('Courses & materials'),
       { id: 'my-assignments', title: 'Assignments', description: 'Homework & classwork', icon: 'clipboard', nativeScreen: 'StudentAssignments', accent: '#6366F1' },
       { id: 'my-timetable', title: 'My Timetable', description: 'Class schedules', icon: 'calendar', nativeScreen: 'TeacherTimetable', accent: '#D97706' },
-      TUKUA_AI_ACTION,
       { id: 'my-grades', title: 'Grades & progress', description: 'Results, rank & report forms', icon: 'award', nativeScreen: 'StudentGrades', accent: '#1F8B4C' },
+      coursesAction('Courses & materials'),
+      TUKUA_AI_ACTION,
+      { id: 'my-attendance', title: 'My Attendance', description: 'View attendance', icon: 'check-square', nativeScreen: 'StudentAttendance', accent: '#0891B2' },
       { id: 'school-fees', title: 'School Fees', description: 'Pay fees online', icon: 'dollar-sign', nativeScreen: 'Accounts', accent: '#059669' },
-      { id: 'pocket-money', title: 'Pocket Money', description: 'Wallet (read-only)', icon: 'pocket', nativeScreen: 'StudentPocketMoney', accent: '#7C3AED' },
-      { id: 'tukua-pay', title: 'Tukua Pay', description: 'Balances · deposit · send', icon: 'credit-card', nativeScreen: 'TukuaPayHome', accent: '#0EA5E9', tokenGated: false },
+      { id: 'school-events', title: 'School Events', description: 'RSVP, pay & scan check-in', icon: 'calendar', nativeScreen: 'Events', accent: '#EA580C' },
     ],
   },
   {
     id: 'school-life',
     title: 'School life',
     actions: [
-      { id: 'my-attendance', title: 'My Attendance', description: 'View attendance', icon: 'users', nativeScreen: 'StudentAttendance', accent: '#0891B2' },
-      { id: 'school-events', title: 'School Events', description: 'RSVP, pay & scan check-in', icon: 'calendar', nativeScreen: 'Events', accent: '#EA580C' },
       { id: 'clubs', title: 'Clubs', description: 'My clubs · notes', icon: 'award', nativeScreen: 'Clubs', accent: '#E11D48' },
+      { id: 'meetings', title: 'Meetings', description: 'Video calls — not event QR scan', icon: 'video', nativeScreen: 'Meetings', accent: '#0284C7' },
       { id: 'my-discipline', title: 'My Discipline', description: 'Conduct records', icon: 'shield', nativeScreen: 'Discipline', accent: '#DC2626' },
       { id: 'face-enroll', title: 'My face', description: 'Enroll your face for boarding', icon: 'user', nativeScreen: 'FaceSelfEnroll', accent: '#0E7490' },
-      { id: 'bursary', title: 'Bursary', description: 'Kitty & programs', icon: 'gift', nativeScreen: 'Bursary', accent: '#EC4899' },
+      BURSARY_ACTION,
     ],
   },
-  {
-    id: 'connect',
-    title: 'Stay connected',
-    actions: [
-      { id: 'meetings', title: 'Meetings', description: 'Video calls — not event QR scan', icon: 'video', nativeScreen: 'Meetings', accent: '#0284C7' },
-      NOTIFICATIONS_ACTION,
-      { id: 'school-info', title: 'My school', description: 'About · join another school', icon: 'info', nativeScreen: 'SchoolInfo', accent: Colors.primary, tokenGated: false },
-      REFER_EARN_ACTION,
-    ],
-  },
+  accountAndWalletSection([
+    MY_SCHOOL_ACTION,
+    REFER_EARN_ACTION,
+    { id: 'pocket-money', title: 'Pocket Money', description: 'Wallet (read-only)', icon: 'pocket', nativeScreen: 'StudentPocketMoney', accent: '#7C3AED' },
+  ]),
 ];
 export const STUDENT_DASHBOARD_ACTIONS: DashboardAction[] = flattenDashboardSections(STUDENT_DASHBOARD_SECTIONS);
 
@@ -243,7 +272,6 @@ const OFFICE_ROLES = ['school_admin', 'principal', 'deputy_principal', 'admin'];
 
 /** Every tile a teacher or school-office user can have, by id (sections below pick from here). */
 const T = {
-  tukuaPay: { id: 'tukua-pay', title: 'Tukua Pay', description: 'Wallets · deposit · send', icon: 'smartphone', nativeScreen: 'TukuaPayHome', tokenGated: false, accent: Colors.primary },
   gateCheckIn: { id: 'attendance-scanner', title: 'My gate check-in', description: 'Scan gate QR for yourself', icon: 'camera', nativeScreen: 'GateCheckIn', accent: '#0891B2' },
   enterMarks: { id: 'enter-marks', title: 'Enter Marks', description: 'Grade assessments', icon: 'edit-3', nativeScreen: 'EnterMarks', accent: '#1F8B4C' },
   scanMarks: { id: 'scan-marks', title: 'Scan marksheet', description: 'Photo → AI extracts & batch-saves marks', icon: 'camera', nativeScreen: 'ScanMarksheet', accent: '#059669' },
@@ -256,7 +284,6 @@ const T = {
   courses: coursesAction('Learn · instructor studio'),
   library: { id: 'library', title: 'Library', description: 'Digital books', icon: 'book', nativeScreen: 'Library', accent: '#4F46E5', requireAnyRole: ['librarian'] },
   discipline: { id: 'discipline', title: 'Discipline', description: 'Record & see my cases', icon: 'shield', nativeScreen: 'Discipline', accent: '#DC2626' },
-  bursary: { id: 'bursary', title: 'Bursary', description: 'Kitty & programs', icon: 'gift', nativeScreen: 'Bursary', accent: '#EC4899' },
   // School admin / principal — existing stack screens, role-gated only
   approvals: { id: 'approvals', title: 'Approvals', description: 'Join requests & admissions', icon: 'check-circle', nativeScreen: 'Approvals', accent: '#CA8A04', requireAnyRole: ['school_admin', 'principal'] },
   overview: { id: 'school-overview', title: 'School overview', description: 'Roll & staff snapshot', icon: 'home', nativeScreen: 'SchoolOverview', accent: '#0F766E', requireAnyRole: OFFICE_ROLES },
@@ -274,25 +301,20 @@ const T = {
   },
   // Fleet map: the server's transport roles (TRANSPORT_BOARDING_ROLES) — not a deputy or a bursar alone.
   fleetMap: { id: 'fleet-map', title: 'Fleet map', description: 'Every vehicle · live position · paths', icon: 'map-pin', nativeScreen: 'FleetMap', accent: '#2563EB', requireAnyRole: ['school_admin', 'principal', 'admin', 'staff', 'security'] },
-  profile: { id: 'my-profile', title: 'My Profile', description: 'Account settings', icon: 'user', tukuaPath: '/profile', tukuaTab: 'Profile', accent: '#059669' },
-  schoolInfo: { id: 'school-info', title: 'My school', description: 'About · join another school', icon: 'info', nativeScreen: 'SchoolInfo', accent: Colors.primary, tokenGated: false },
 } satisfies Record<string, DashboardAction>;
 
 export const TEACHER_DASHBOARD_SECTIONS: DashboardSection[] = [
   {
     id: 'quick',
     title: 'Quick access',
-    actions: [T.timetable, T.enterMarks, T.courses, TUKUA_AI_ACTION, T.gateCheckIn, T.classLists, T.reports, T.tukuaPay],
+    // Class Lists only shows for class teachers; the tiles after it shift up.
+    actions: [T.timetable, T.enterMarks, T.classLists, T.scanMarks, T.courses, TUKUA_AI_ACTION, T.reports, T.gateCheckIn],
   },
-  { id: 'classroom', title: 'Classroom', actions: [T.scanMarks, T.progress, T.discipline, T.library] },
+  { id: 'classroom', title: 'Classroom & school life', actions: [T.progress, T.discipline, T.events, T.meetings, T.library, BURSARY_ACTION] },
   // Principals / office staff on the teacher hat: each tile keeps its own role gate.
   { id: 'office', title: 'School office', actions: [T.approvals, T.overview, T.students, T.teachers, T.parents, T.accounts] },
   // Teachers and principals: refer learners and parents (owner, 2026-10-17).
-  {
-    id: 'community',
-    title: 'School life & account',
-    actions: [T.events, T.meetings, NOTIFICATIONS_ACTION, T.bursary, T.schoolInfo, T.profile, REFER_EARN_ACTION],
-  },
+  accountAndWalletSection([MY_SCHOOL_ACTION, PROFILE_ACTION, REFER_EARN_ACTION]),
 ];
 export const TEACHER_DASHBOARD_ACTIONS: DashboardAction[] = flattenDashboardSections(TEACHER_DASHBOARD_SECTIONS);
 
@@ -305,23 +327,15 @@ export const SECURITY_DASHBOARD_SECTIONS: DashboardSection[] = [
     actions: [
       { id: 'daily-attendance', title: 'Daily attendance', description: 'Mark students · teachers · staff (face · QR · search)', icon: 'check-square', nativeScreen: 'SecurityDailyAttendance', accent: '#0891B2' },
       { id: 'trips', title: 'Trips & board', description: 'Start trip · GPS · board students', icon: 'navigation', nativeScreen: 'SecurityHome', accent: '#0E7490' },
-      coursesAction(),
-      TUKUA_AI_ACTION,
-      { id: 'fleet-map', title: 'Fleet map', description: 'Every vehicle · live position · paths', icon: 'map-pin', nativeScreen: 'FleetMap', accent: '#2563EB' },
       { id: 'gate-qr', title: 'Gate QR display', description: 'Show rotating QR for staff check-in', icon: 'grid', nativeScreen: 'GateQr', accent: '#7C3AED' },
       { id: 'face-enroll', title: 'Face enroll', description: 'Save faces for students · staff · teachers', icon: 'user', nativeScreen: 'SecurityFaceEnroll', accent: '#2563EB' },
-      { id: 'tukua-pay', title: 'Tukua Pay', description: 'Staff wallet & tokens', icon: 'credit-card', nativeScreen: 'TukuaPayHome', accent: '#0EA5E9', tokenGated: false },
+      { id: 'fleet-map', title: 'Fleet map', description: 'Every vehicle · live position · paths', icon: 'map-pin', nativeScreen: 'FleetMap', accent: '#2563EB' },
+      coursesAction(),
+      TUKUA_AI_ACTION,
+      { id: 'events', title: 'Events', description: 'School events & check-in', icon: 'calendar', nativeScreen: 'Events', accent: '#EA580C' },
     ],
   },
-  {
-    id: 'more',
-    title: 'School & account',
-    actions: [
-      NOTIFICATIONS_ACTION,
-      { id: 'bursary', title: 'Bursary', description: 'Kitty & programs', icon: 'gift', nativeScreen: 'Bursary', accent: '#EC4899' },
-      { id: 'school-info', title: 'My school', description: 'About · join another school', icon: 'info', nativeScreen: 'SchoolInfo', accent: Colors.primary, tokenGated: false },
-    ],
-  },
+  accountAndWalletSection([MY_SCHOOL_ACTION, BURSARY_ACTION]),
 ];
 export const SECURITY_DASHBOARD_ACTIONS: DashboardAction[] = flattenDashboardSections(SECURITY_DASHBOARD_SECTIONS);
 
@@ -338,19 +352,19 @@ export const SCHOOL_ADMIN_DASHBOARD_SECTIONS: DashboardSection[] = [
   {
     id: 'quick',
     title: 'Quick access',
-    actions: [T.overview, T.approvals, T.courses, TUKUA_AI_ACTION, T.students, T.accounts, T.teachers, T.tukuaPay],
+    actions: [T.overview, T.approvals, T.students, T.accounts, T.teachers, T.parents, T.courses, TUKUA_AI_ACTION],
   },
   {
     id: 'school',
-    title: 'People & school life',
-    actions: [T.parents, T.fleetMap, T.events, T.meetings, T.discipline, T.library, T.bursary, T.gateCheckIn],
+    title: 'School life',
+    actions: [T.events, T.meetings, T.fleetMap, T.discipline, T.library, BURSARY_ACTION, T.gateCheckIn],
   },
   {
     id: 'classroom',
     title: 'Classroom',
-    actions: [T.enterMarks, T.scanMarks, T.classLists, T.timetable, T.reports, T.progress].map(teachingOnly),
+    actions: [T.timetable, T.enterMarks, T.scanMarks, T.classLists, T.reports, T.progress].map(teachingOnly),
   },
-  { id: 'account', title: 'Account', actions: [NOTIFICATIONS_ACTION, T.profile, T.schoolInfo, REFER_EARN_ACTION] },
+  accountAndWalletSection([MY_SCHOOL_ACTION, PROFILE_ACTION, REFER_EARN_ACTION]),
 ];
 export const SCHOOL_ADMIN_DASHBOARD_ACTIONS: DashboardAction[] = flattenDashboardSections(SCHOOL_ADMIN_DASHBOARD_SECTIONS);
 
@@ -372,12 +386,13 @@ export const SUPER_ADMIN_DASHBOARD_SECTIONS: DashboardSection[] = [
         tokenGated: false,
       },
       coursesAction(),
-      { id: 'tukua-pay', title: 'Tukua Pay', description: 'Wallets · deposit · send', icon: 'smartphone', nativeScreen: 'TukuaPayHome', tokenGated: false, accent: Colors.primary },
       TUKUA_AI_ACTION,
-      NOTIFICATIONS_ACTION,
-      { id: 'bursary', title: 'Bursary', description: 'Kitty & programs', icon: 'gift', nativeScreen: 'Bursary', accent: '#EC4899' },
-      { id: 'profile', title: 'Profile', description: 'Account & balances', icon: 'user', tukuaPath: '/profile', tukuaTab: 'Profile', accent: '#1F8B4C', tokenGated: false },
-      { id: 'join-school', title: 'Join school', description: 'Request to join a school', icon: 'log-in', nativeScreen: 'JoinSchool', accent: '#2563EB', tokenGated: false },
+      BURSARY_ACTION,
+      // Second row: account, then TukuaPay, then Join school last.
+      PROFILE_ACTION,
+      REFER_EARN_ACTION,
+      TUKUA_PAY_ACTION,
+      JOIN_SCHOOL_ACTION,
     ],
   },
 ];
@@ -391,8 +406,6 @@ export const INDIVIDUAL_DASHBOARD_SECTIONS: DashboardSection[] = [
     title: 'Quick access',
     actions: [
       coursesAction(),
-      { id: 'tukua-pay', title: 'Tukua Pay', description: 'Wallets · deposit · send', icon: 'smartphone', nativeScreen: 'TukuaPayHome', tokenGated: false, accent: Colors.primary },
-      { id: 'join-school', title: 'Join school', description: 'Request to join a school', icon: 'log-in', nativeScreen: 'JoinSchool', accent: '#2563EB', tokenGated: false },
       TUKUA_AI_ACTION,
       {
         id: 'admin-accounts',
@@ -403,9 +416,12 @@ export const INDIVIDUAL_DASHBOARD_SECTIONS: DashboardSection[] = [
         accent: '#047857',
         requireAnyRole: ['bursar', 'accountant', 'accounts_clerk', 'finance_officer'],
       },
-      { id: 'bursary', title: 'Bursary', description: 'Kitty & programs', icon: 'gift', nativeScreen: 'Bursary', accent: '#EC4899' },
-      NOTIFICATIONS_ACTION,
-      { id: 'profile', title: 'Profile', description: 'Account & balances', icon: 'user', tukuaPath: '/profile', tukuaTab: 'Profile', accent: '#1F8B4C', tokenGated: false },
+      BURSARY_ACTION,
+      // Second row: account, then TukuaPay, then Join school last.
+      PROFILE_ACTION,
+      REFER_EARN_ACTION,
+      TUKUA_PAY_ACTION,
+      JOIN_SCHOOL_ACTION,
     ],
   },
 ];

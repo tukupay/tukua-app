@@ -3,8 +3,9 @@
  * narrower in height … more table than cards, though cards").
  *
  * The header, the rows and the footer stack into one white rounded container: the header carries the
- * top corners, every row a hairline divider, the footer the bottom corners. Every row has the same
- * height (COURSE_ROW_HEIGHT) so the FlatList can use getItemLayout and scroll smoothly.
+ * top corners, every row a hairline divider, the footer the bottom corners. Titles wrap to two lines
+ * (owner, 2026-11-07: "the course title must be fully visible"), so rows are at least COURSE_ROW_HEIGHT
+ * tall and grow with the title.
  */
 import React, { memo } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -15,9 +16,9 @@ import { Colors } from '../../theme/yana';
 import { Skeleton } from '../ui/Skeleton';
 import { LoaderMark } from '../ui/Loader';
 
-/** Fixed row height: about two thirds of the old course card. */
+/** Minimum row height (one-line title); a two-line title makes the row a little taller. */
 export const COURSE_ROW_HEIGHT = 76;
-const PRICE_COL = 92;
+const PRICE_COL = 80;
 const THUMB = 50;
 
 const SURFACE = 'rgba(255,255,255,0.96)';
@@ -34,6 +35,8 @@ export type CourseRowProps = {
   featured?: boolean;
   /** Primary certifier short name, shown as a tiny badge when present. */
   certifier?: string | null;
+  /** Enrolled course: show progress in the price column instead of the price. */
+  progressPercent?: number | null;
   onPress: () => void;
 };
 
@@ -51,6 +54,7 @@ export const CourseTableRow = memo(function CourseTableRow({
   certified,
   featured,
   certifier,
+  progressPercent,
   onPress,
 }: CourseRowProps) {
   const { palette } = useAppTheme();
@@ -73,7 +77,7 @@ export const CourseTableRow = memo(function CourseTableRow({
       )}
 
       <View style={styles.main}>
-        <Text style={styles.title} numberOfLines={1}>
+        <Text style={styles.title} numberOfLines={2}>
           {title}
         </Text>
         {secondary ? (
@@ -102,7 +106,18 @@ export const CourseTableRow = memo(function CourseTableRow({
       </View>
 
       <View style={styles.priceCol}>
-        {free ? (
+        {progressPercent != null ? (
+          <>
+            <View style={[styles.freePill, { backgroundColor: rgba(palette.secondary, 0.22) }]}>
+              <Text style={[styles.freeText, { color: palette.primary }]}>
+                {Math.round(Math.max(0, Math.min(100, progressPercent)))}%
+              </Text>
+            </View>
+            <Text style={[styles.discount, { color: palette.primary }]} numberOfLines={1}>
+              Continue
+            </Text>
+          </>
+        ) : free ? (
           <View style={[styles.freePill, { backgroundColor: rgba(palette.primary, 0.1) }]}>
             <Text style={[styles.freeText, { color: palette.primary }]}>Free</Text>
           </View>
@@ -111,12 +126,12 @@ export const CourseTableRow = memo(function CourseTableRow({
             {pricing.label}
           </Text>
         )}
-        {pricing.strike ? (
+        {progressPercent == null && pricing.strike ? (
           <Text style={styles.strike} numberOfLines={1}>
             {pricing.strike}
           </Text>
         ) : null}
-        {pricing.discount ? (
+        {progressPercent == null && pricing.discount ? (
           <Text style={[styles.discount, { color: palette.primary }]} numberOfLines={1}>
             {pricing.discount}
           </Text>
@@ -198,11 +213,12 @@ const sides = {
 const styles = StyleSheet.create({
   row: {
     ...sides,
-    height: COURSE_ROW_HEIGHT,
+    minHeight: COURSE_ROW_HEIGHT,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     paddingHorizontal: 12,
+    paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: 'rgba(15,42,26,0.10)',
   },

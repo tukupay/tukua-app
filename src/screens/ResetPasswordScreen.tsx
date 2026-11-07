@@ -20,6 +20,7 @@ import { AuthButton } from '../components/auth/AuthButton';
 import { GreenPattern } from '../components/dashboard/DashboardBackground';
 import { RootStackParamList } from '../navigation/types';
 import { forgotPassword, resetPassword } from '../lib/platformAuthApi';
+import { userMessageFromError, warnDev } from '../lib/apiHttp';
 import { Images } from '../constants/images';
 import { Colors } from '../theme/yana';
 import { useAuth } from '../context/AuthContext';
@@ -165,14 +166,13 @@ export function ResetPasswordScreen({ navigation, route }: Props) {
         }
       }, 1500);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : '';
+      warnDev('ResetPassword', err);
+      const msg = userMessageFromError(
+        err,
+        "Couldn't update password. The reset link may have expired — request a new one.",
+      );
       if (/expired|already used|invalid/i.test(msg)) markExpired(msg);
-      else {
-        setError(
-          msg ||
-            "Couldn't update password. The reset link may have expired — request a new one.",
-        );
-      }
+      else setError(msg);
     } finally {
       setIsLoading(false);
     }
@@ -204,7 +204,8 @@ export function ResetPasswordScreen({ navigation, route }: Props) {
         'If an account exists, a new reset link was sent by email and/or SMS. Open the new link.',
       );
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Could not send a new reset link.');
+      warnDev('ResetPassword.resend', err);
+      setError(userMessageFromError(err, 'Could not send a new reset link.'));
     } finally {
       setResending(false);
     }

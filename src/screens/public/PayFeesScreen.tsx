@@ -1,9 +1,9 @@
 /**
  * Pay school fees with no account (native tukua.ai/fees): pick the school, find the learner, see the balance,
  * enter the amount and M-Pesa number, confirm the prompt on the phone, see the receipt.
- * Public Nest routes only (payFeesApi.ts). Flat colours, one-line fields.
+ * Public Nest routes only (payFeesApi.ts). Flat colours, one-line fields, the sign-in page's curved top bar.
  */
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -17,6 +17,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AuthButton } from '../../components/auth/AuthButton';
 import { AuthTextField } from '../../components/auth/AuthTextField';
 import { KeyboardAwareScroll } from '../../components/auth/KeyboardAwareScroll';
+import { TopWave, TukuaPatternLayer, topWaveHeight } from '../../components/auth/TopWave';
+import { userMessageFromError } from '../../lib/apiHttp';
 import { useAuthScale } from '../../components/auth/useAuthScale';
 import { PagerSafeStrip } from '../../components/BookPager';
 import { Colors } from '../../theme/yana';
@@ -41,7 +43,21 @@ const POLL_MAX = 40;
 
 type Payment = { checkout: string; status: string; message?: string; receipt?: string; total: number };
 
-const errText = (e: unknown) => (e instanceof Error && e.message ? e.message : 'Something went wrong. Please try again.');
+const errText = (e: unknown) => userMessageFromError(e, 'Something went wrong. Please try again.');
+
+/** Same votehead twice (two invoices) → one row with the amounts added; order kept (oldest first). */
+function mergeVoteheads(items: FeeQuote['pays_for'] | undefined) {
+  const out: Array<{ label: string; amount: number }> = [];
+  for (const it of items ?? []) {
+    const label = String(it?.label || 'School fees').trim();
+    const amount = Number(it?.amount) || 0;
+    if (amount <= 0) continue;
+    const hit = out.find((x) => x.label.toLowerCase() === label.toLowerCase());
+    if (hit) hit.amount += amount;
+    else out.push({ label, amount });
+  }
+  return out;
+}
 
 export function PayFeesScreen({ bottomSpace = 0 }: { bottomSpace?: number }) {
   const layout = useAuthScale(0.9);
@@ -222,33 +238,41 @@ export function PayFeesScreen({ bottomSpace = 0 }: { bottomSpace?: number }) {
     }
   };
 
+  const waveH = topWaveHeight(layout.width);
+  const badge = s(layout.compact ? 58 : 66);
+  const voteheads = useMemo(() => mergeVoteheads(quote?.pays_for), [quote?.pays_for]);
+  const clearedTotal = voteheads.reduce((a, v) => a + v.amount, 0);
+  const years = (quote?.balance_years ?? []).filter((y) => Number(y?.balance) > 0);
+
   return (
     <View style={styles.root}>
+      <TukuaPatternLayer />
       <KeyboardAwareScroll
           style={styles.flex}
           showsVerticalScrollIndicator={false}
+          // The Pay button and the total sit under the M-Pesa field: keep them in view while typing.
+          revealMargin={step === 2 ? s(170) : step === 1 ? s(80) : s(28)}
           contentContainerStyle={{
             paddingBottom: bottomSpace + insets.bottom + s(24),
             paddingHorizontal: layout.padH,
           }}>
-          {/* Flat green header with a rounded foot */}
-          <View
-            style={[
-              styles.header,
-              {
-                marginHorizontal: -layout.padH,
-                paddingHorizontal: layout.padH,
-                paddingTop: insets.top + s(20),
-                paddingBottom: s(22),
-                borderBottomLeftRadius: s(28),
-                borderBottomRightRadius: s(28),
-              },
-            ]}>
-            <Text style={[styles.kicker, { fontSize: font(11) }]}>NO ACCOUNT NEEDED</Text>
-            <Text style={[styles.heroTitle, { fontSize: font(24) }]}>Pay school fees</Text>
-            <Text style={[styles.heroSub, { fontSize: font(13), marginTop: s(6) }]}>
-              By M-Pesa, in a minute. The money goes to the school's own account and the receipt into its books.
-            </Text>
+          {/* The sign-in page's flat green curved top bar; scrolls away with the page. */}
+          <View style={{ marginHorizontal: -layout.padH, height: Math.max(waveH * 0.55, insets.top + s(16)) }}>
+            <TopWave />
+          </View>
+          <View style={styles.hero}>
+            <View style={[styles.badge, { width: badge, height: badge, borderRadius: badge / 2 }]}>
+              <Ionicons name="wallet" size={badge * 0.46} color={Colors.primary} />
+            </View>
+            <Text style={[styles.heroTitle, { fontSize: font(24), marginTop: s(10) }]}>Pay school fees</Text>
+            <View style={[styles.kickerPill, { paddingHorizontal: s(10), paddingVertical: s(3), marginTop: s(6) }]}>
+              <Text style={[styles.kicker, { fontSize: font(10.5) }]}>NO ACCOUNT NEEDED</Text>
+            </View>
+            {step === 0 ? (
+              <Text style={[styles.heroSub, { fontSize: font(13), marginTop: s(8), maxWidth: layout.formWidth }]}>
+                By M-Pesa, in a minute. The money goes to the school's own account and the receipt into its books.
+              </Text>
+            ) : null}
           </View>
 
           <Steps at={step} s={s} font={font} />
@@ -350,7 +374,7 @@ export function PayFeesScreen({ bottomSpace = 0 }: { bottomSpace?: number }) {
                         onPress={() => void choose(l)}
                         disabled={busy}
                         title={l.name}
-                        sub={[l.class_name, l.admission].filter(Boolean).join(' · ')}
+                        sub={[l.class_name, l.admission, l.parent_name ? `Parent: ${l.parent_name}` : null].filter(Boolean).join(' · ')}
                         initials={l.initials}
                         trailing={busy && learner?.ref === l.ref ? 'busy' : 'Choose'}
                         s={s}
@@ -370,54 +394,118 @@ export function PayFeesScreen({ bottomSpace = 0 }: { bottomSpace?: number }) {
           {step === 2 && school && learner && quote ? (
             <View>
               <BackLink label={`${learner.name} · ${school.name}`} onPress={() => reset('learner')} s={s} font={font} />
-              <View style={[styles.balanceCard, { padding: s(16), borderRadius: s(16), marginBottom: s(16) }]}>
+
+              {/* Who and what is owed */}
+              <View style={[styles.balanceCard, { padding: s(16), borderRadius: s(18), marginBottom: s(14) }]}>
+                <View style={[styles.balanceTop, { gap: s(12) }]}>
+                  <View style={[styles.balanceAvatar, { width: s(40), height: s(40), borderRadius: s(20) }]}>
+                    <Text style={[styles.balanceAvatarText, { fontSize: font(13) }]}>{learner.initials || initialsOf(learner.name)}</Text>
+                  </View>
+                  <View style={styles.flex}>
+                    <Text style={[styles.balanceName, { fontSize: font(15) }]} numberOfLines={1}>
+                      {learner.name}
+                    </Text>
+                    <Text style={[styles.balanceWho, { fontSize: font(12) }]} numberOfLines={1}>
+                      {[learner.class_name, learner.admission].filter(Boolean).join(' · ') || school.name}
+                    </Text>
+                  </View>
+                </View>
+                <View style={[styles.balanceDivider, { marginVertical: s(12) }]} />
                 <Text style={[styles.balanceLabel, { fontSize: font(11) }]}>FEES BALANCE</Text>
-                <Text style={[styles.balanceValue, { fontSize: font(26) }]}>{kes(quote.balance_kes)}</Text>
-                <Text style={[styles.balanceWho, { fontSize: font(12) }]} numberOfLines={1}>
-                  {[learner.name, learner.class_name, learner.admission].filter(Boolean).join(' · ')}
+                <Text style={[styles.balanceValue, { fontSize: font(28) }]} numberOfLines={1} adjustsFontSizeToFit>
+                  {quote.balance_kes == null ? 'Not available' : kes(quote.balance_kes)}
                 </Text>
+                {years.length > 1
+                  ? years.map((y) => (
+                      <View key={y.year} style={[styles.yearRow, { marginTop: s(4) }]}>
+                        <Text style={[styles.balanceWho, styles.flex, { fontSize: font(12) }]} numberOfLines={1}>
+                          {y.year}
+                        </Text>
+                        <Text style={[styles.yearValue, { fontSize: font(12) }]}>{kes(y.balance)}</Text>
+                      </View>
+                    ))
+                  : null}
               </View>
 
-              <Text style={[styles.label, { fontSize: font(11) }]}>AMOUNT (KES)</Text>
-              <AuthTextField
-                hint="Amount"
-                suffixIcon="cash-outline"
-                keyboardType="number-pad"
-                value={amount}
-                onChangeText={(t) => setAmount(t.replace(/[^\d]/g, ''))}
-              />
-              <Text style={[styles.label, { fontSize: font(11), marginTop: s(16) }]}>M-PESA NUMBER</Text>
-              <AuthTextField
-                hint="0712 345 678"
-                suffixIcon="phone-portrait-outline"
-                keyboardType="phone-pad"
-                autoComplete="tel"
-                textContentType="telephoneNumber"
-                value={phone}
-                onChangeText={setPhone}
-              />
-
-              {quote.pays_for?.length ? (
-                <View style={{ marginTop: s(18) }}>
-                  <Text style={[styles.label, { fontSize: font(11) }]}>THIS CLEARS</Text>
-                  {quote.pays_for.map((p) => (
-                    <SumLine key={p.label} label={p.label} value={kes(p.amount)} font={font} />
+              {/* Voteheads this amount clears: one clear row each, never a cramped table */}
+              {voteheads.length ? (
+                <View style={[styles.card, { borderRadius: s(18), marginBottom: s(14) }]}>
+                  <View style={[styles.cardHead, { paddingHorizontal: s(16), paddingTop: s(14), paddingBottom: s(8) }]}>
+                    <Text style={[styles.cardTitle, { fontSize: font(14) }]}>This payment clears</Text>
+                    <Text style={[styles.cardHint, { fontSize: font(11) }]}>
+                      {voteheads.length} {voteheads.length === 1 ? 'votehead' : 'voteheads'}, oldest first
+                    </Text>
+                  </View>
+                  {voteheads.map((v, i) => (
+                    <View
+                      key={`${v.label}-${i}`}
+                      style={[
+                        styles.vhRow,
+                        { paddingHorizontal: s(16), paddingVertical: s(11), gap: s(12) },
+                        i > 0 ? styles.vhDivider : null,
+                      ]}>
+                      <View style={[styles.vhDot, { width: s(8), height: s(8), borderRadius: s(4) }]} />
+                      <Text style={[styles.vhName, { fontSize: font(14) }]} numberOfLines={2}>
+                        {v.label}
+                      </Text>
+                      <Text style={[styles.vhAmount, { fontSize: font(14) }]}>{kes(v.amount)}</Text>
+                    </View>
                   ))}
+                  <View style={[styles.vhTotal, { paddingHorizontal: s(16), paddingVertical: s(12) }]}>
+                    <Text style={[styles.vhTotalLabel, { fontSize: font(13) }]}>Cleared by this payment</Text>
+                    <Text style={[styles.vhTotalValue, { fontSize: font(15) }]}>{kes(clearedTotal)}</Text>
+                  </View>
                 </View>
               ) : null}
 
-              <View style={[styles.summary, { marginTop: s(18), paddingTop: s(10) }]}>
-                <SumLine label="Fees" value={kes(quote.amount_kes)} font={font} />
-                <SumLine label="Bank and app charge" value={kes(quote.bank_app_charge_kes)} font={font} />
-                <SumLine label="Total on the M-Pesa prompt" value={kes(quote.total_kes)} font={font} strong />
-              </View>
+              {/* Amount, number, totals and the button together, so the keyboard never hides the total */}
+              <View style={[styles.card, { borderRadius: s(18), padding: s(16) }]}>
+                <Text style={[styles.label, { fontSize: font(11) }]}>AMOUNT (KES)</Text>
+                <AuthTextField
+                  hint="Amount"
+                  suffixIcon="cash-outline"
+                  keyboardType="number-pad"
+                  returnKeyType="next"
+                  value={amount}
+                  onChangeText={(t) => setAmount(t.replace(/[^\d]/g, ''))}
+                />
+                {quote.balance_kes != null && quote.balance_kes > 0 && Math.round(Number(amount)) !== Math.round(quote.balance_kes) ? (
+                  <Pressable
+                    onPress={() => setAmount(String(Math.round(quote.balance_kes ?? 0)))}
+                    hitSlop={6}
+                    accessibilityRole="button"
+                    style={{ alignSelf: 'flex-start', marginTop: s(8) }}>
+                    <Text style={[styles.linkText, { fontSize: font(12) }]}>Pay the full balance ({kes(quote.balance_kes)})</Text>
+                  </Pressable>
+                ) : null}
+                <Text style={[styles.label, { fontSize: font(11), marginTop: s(14) }]}>M-PESA NUMBER</Text>
+                <AuthTextField
+                  hint="0712 345 678"
+                  suffixIcon="phone-portrait-outline"
+                  keyboardType="phone-pad"
+                  autoComplete="tel"
+                  textContentType="telephoneNumber"
+                  returnKeyType="done"
+                  value={phone}
+                  onChangeText={setPhone}
+                />
 
-              <View style={[styles.btnRow, { marginTop: s(18) }]}>
-                <AuthButton text={`Pay ${kes(quote.total_kes)}`} loading={busy} onPress={() => void pay()} />
+                <View style={[styles.summary, { marginTop: s(16), paddingTop: s(10) }]}>
+                  <SumLine label="Fees" value={kes(quote.amount_kes)} font={font} />
+                  <SumLine label="Bank and app charge" value={kes(quote.bank_app_charge_kes)} font={font} />
+                  <View style={[styles.totalRow, { marginTop: s(6), padding: s(12), borderRadius: s(12) }]}>
+                    <Text style={[styles.totalLabel, { fontSize: font(13) }]}>Total on the M-Pesa prompt</Text>
+                    <Text style={[styles.totalValue, { fontSize: font(17) }]}>{kes(quote.total_kes)}</Text>
+                  </View>
+                </View>
+
+                <View style={[styles.btnRow, { marginTop: s(16) }]}>
+                  <AuthButton text={`Pay ${kes(quote.total_kes)}`} loading={busy} onPress={() => void pay()} />
+                </View>
+                <Text style={[styles.note, { fontSize: font(12), marginTop: s(10), textAlign: 'center' }]}>
+                  You will get a prompt on your phone. Enter your M-Pesa PIN to finish.
+                </Text>
               </View>
-              <Text style={[styles.note, { fontSize: font(12), marginTop: s(10) }]}>
-                You will get a prompt on your phone. Enter your M-Pesa PIN to finish.
-              </Text>
             </View>
           ) : null}
 
@@ -597,10 +685,18 @@ function SumLine({ label, value, strong, font }: { label: string; value: string;
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.background },
   flex: { flex: 1 },
+  hero: { alignItems: 'center' },
+  badge: {
+    backgroundColor: Colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  kickerPill: { backgroundColor: Colors.primary, borderRadius: 999 },
   kicker: { color: Colors.orange, fontFamily: 'Inter_600SemiBold', letterSpacing: 0.8 },
-  heroTitle: { color: Colors.white, fontFamily: 'Poppins_700Bold', marginTop: 2 },
-  header: { backgroundColor: Colors.primary },
-  heroSub: { color: Colors.navbarMuted, fontFamily: 'Inter_400Regular', lineHeight: 19 },
+  heroTitle: { color: Colors.primary, fontFamily: 'Poppins_700Bold', textAlign: 'center' },
+  heroSub: { color: Colors.mutedForeground, fontFamily: 'Inter_400Regular', lineHeight: 19, textAlign: 'center' },
   h2: { color: Colors.primary, fontFamily: 'Poppins_600SemiBold', marginBottom: 6 },
   steps: { flexDirection: 'row', alignItems: 'center' },
   stepItem: { alignItems: 'center', gap: 4 },
@@ -638,6 +734,43 @@ const styles = StyleSheet.create({
   backLink: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   backText: { flexShrink: 1, color: Colors.mutedForeground, fontFamily: 'Poppins_600SemiBold' },
   balanceCard: { backgroundColor: Colors.primary },
+  balanceTop: { flexDirection: 'row', alignItems: 'center' },
+  balanceAvatar: { backgroundColor: Colors.orange, alignItems: 'center', justifyContent: 'center' },
+  balanceAvatarText: { color: Colors.primary, fontFamily: 'Poppins_700Bold' },
+  balanceName: { color: Colors.white, fontFamily: 'Poppins_600SemiBold' },
+  balanceDivider: { height: 1, backgroundColor: 'rgba(255,255,255,0.14)' },
+  yearRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  yearValue: { color: Colors.white, fontFamily: 'Inter_600SemiBold' },
+  card: { backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border, overflow: 'hidden' },
+  cardHead: { gap: 2 },
+  cardTitle: { color: Colors.primary, fontFamily: 'Poppins_600SemiBold' },
+  cardHint: { color: Colors.mutedForeground, fontFamily: 'Inter_400Regular' },
+  vhRow: { flexDirection: 'row', alignItems: 'center' },
+  vhDivider: { borderTopWidth: 1, borderTopColor: Colors.border },
+  vhDot: { backgroundColor: Colors.orange },
+  vhName: { flex: 1, color: Colors.ink, fontFamily: 'Inter_400Regular' },
+  vhAmount: { color: Colors.ink, fontFamily: 'Inter_600SemiBold', fontVariant: ['tabular-nums'] },
+  vhTotal: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    backgroundColor: Colors.background,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  vhTotalLabel: { flex: 1, color: Colors.mutedForeground, fontFamily: 'Inter_600SemiBold' },
+  vhTotalValue: { color: Colors.primary, fontFamily: 'Poppins_700Bold', fontVariant: ['tabular-nums'] },
+  totalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    backgroundColor: Colors.background,
+  },
+  totalLabel: { flex: 1, color: Colors.primary, fontFamily: 'Inter_600SemiBold' },
+  totalValue: { color: Colors.primary, fontFamily: 'Poppins_700Bold', fontVariant: ['tabular-nums'] },
+  linkText: { color: Colors.brandGreenMid, fontFamily: 'Poppins_600SemiBold' },
   balanceLabel: { color: Colors.orange, fontFamily: 'Inter_600SemiBold', letterSpacing: 0.8 },
   balanceValue: { color: Colors.white, fontFamily: 'Poppins_700Bold', marginTop: 2 },
   balanceWho: { color: Colors.navbarMuted, fontFamily: 'Inter_400Regular', marginTop: 2 },
@@ -645,7 +778,7 @@ const styles = StyleSheet.create({
   summary: { borderTopWidth: 1, borderTopColor: Colors.border },
   sumLine: { flexDirection: 'row', justifyContent: 'space-between', gap: 12, paddingVertical: 4 },
   sumLabel: { color: Colors.mutedForeground, fontFamily: 'Inter_400Regular', flexShrink: 1 },
-  sumValue: { color: Colors.ink, fontFamily: 'Inter_600SemiBold', flexShrink: 1, textAlign: 'right' },
+  sumValue: { color: Colors.ink, fontFamily: 'Inter_600SemiBold', flexShrink: 1, textAlign: 'right', fontVariant: ['tabular-nums'] },
   sumStrong: { color: Colors.primary, fontFamily: 'Poppins_700Bold', flexShrink: 1 },
   note: { color: Colors.mutedForeground, fontFamily: 'Inter_400Regular' },
   result: { alignItems: 'center' },

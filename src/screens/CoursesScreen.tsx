@@ -8,6 +8,7 @@ import {
   Image,
   Pressable,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -29,7 +30,6 @@ import type { CoursesStackParamList } from '../navigation/CoursesStack';
 import { useAppTheme } from '../context/AppThemeContext';
 import { CARD, CARD_SURFACE, INK, ThemedBackdrop, rgba } from '../components/theme/ThemedPage';
 import {
-  COURSE_ROW_HEIGHT,
   CourseTableFooter,
   CourseTableHeader,
   CourseTableRow,
@@ -84,6 +84,7 @@ type CatalogCourse = {
   course_code?: string | null;
   level?: string | null;
   duration?: string | number | null;
+  organization_id?: string | null;
 };
 
 type OrgBrand = {
@@ -101,14 +102,60 @@ type CertifierEntry = {
   is_default?: boolean;
 };
 
-type FilterKey = 'all' | 'featured' | 'free' | 'certified';
+type FilterKey = 'all' | 'enrolled' | 'featured' | 'free' | 'paid' | 'certified';
 
 const FILTERS: { key: FilterKey; label: string }[] = [
   { key: 'all', label: 'All' },
+  { key: 'enrolled', label: 'My courses' },
   { key: 'featured', label: 'Featured' },
   { key: 'free', label: 'Free' },
+  { key: 'paid', label: 'Paid' },
   { key: 'certified', label: 'Certified' },
 ];
+
+/** "digital-skills" → "Digital skills"; keeps "CBC Primary" / "8-4-4 Secondary" as they are. */
+function prettyLabel(raw: string): string {
+  const t = raw.trim();
+  if (/[A-Z]/.test(t)) return t;
+  const words = t.replace(/[-_]+/g, ' ');
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** Catalogue levels grouped into a few tags (PP1 → Pre-primary, Grade 5 → Grades 4–6, Form 3 → Form 1–4). */
+const LEVEL_BANDS = [
+  'Pre-primary',
+  'Grades 1–3',
+  'Grades 4–6',
+  'Grades 7–9',
+  'Grades 10–12',
+  'Form 1–4',
+  'Beginner',
+  'Intermediate',
+  'Advanced',
+];
+
+function levelBand(level?: string | null): string | null {
+  const l = String(level ?? '').trim().toLowerCase();
+  if (!l) return null;
+  if (/^pp\s*\d/.test(l) || l.includes('pre-primary') || l.includes('pre primary')) return 'Pre-primary';
+  const grade = l.match(/^grade\s*(\d+)/);
+  if (grade) {
+    const g = Number(grade[1]);
+    if (g <= 3) return 'Grades 1–3';
+    if (g <= 6) return 'Grades 4–6';
+    if (g <= 9) return 'Grades 7–9';
+    return 'Grades 10–12';
+  }
+  if (/^form\s*\d/.test(l)) return 'Form 1–4';
+  if (l.startsWith('beginner')) return 'Beginner';
+  if (l.startsWith('intermediate')) return 'Intermediate';
+  if (l.startsWith('advanced')) return 'Advanced';
+  return prettyLabel(String(level));
+}
+
+function isFreeCourse(c: CatalogCourse): boolean {
+  return Boolean(c.is_free) || Number(c.price || 0) <= 0;
+}
 
 function offeringLabel(c: {
   organization_name?: string | null;
@@ -222,6 +269,59 @@ type CatalogPage = {
   certifiers_by_course?: Record<string, CertifierEntry[]>;
 };
 
+/** One labelled, sideways-scrolling row of filter tags ("All" first). Tap a selected tag again to clear it. */
+function TagRow({
+  label,
+  icon,
+  tags,
+  value,
+  onChange,
+}: {
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  tags: { key: string; label: string }[];
+  value: string | null;
+  onChange: (v: string | null) => void;
+}) {
+  const { palette } = useAppTheme();
+  if (tags.length < 2 && !value) return null;
+  return (
+    <View style={styles.tagRow}>
+      <View style={styles.tagLabel}>
+        <Ionicons name={icon} size={13} color={Colors.mutedForeground} />
+        <Text style={styles.tagLabelText}>{label}</Text>
+      </View>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.tagScroll}
+        keyboardShouldPersistTaps="handled"
+      >
+        {[{ key: '', label: 'All' }, ...tags].map((t) => {
+          const on = t.key ? value === t.key : !value;
+          return (
+            <Pressable
+              key={t.key || '__all'}
+              onPress={() => onChange(t.key ? (value === t.key ? null : t.key) : null)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: on }}
+              accessibilityLabel={`${label}: ${t.label}`}
+              style={[
+                styles.tag,
+                on && { backgroundColor: rgba(palette.secondary, 0.22), borderColor: palette.secondary },
+              ]}
+            >
+              <Text style={[styles.tagText, on && { color: palette.primary }]} numberOfLines={1}>
+                {t.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
+}
+
 const SKELETON_ROWS = Array.from({ length: 8 }, (_, i) => ({ id: `__sk${i}` }) as CatalogCourse);
 
 export function CoursesScreen() {
@@ -242,7 +342,16 @@ export function CoursesScreen() {
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [filter, setFilter] = useState<FilterKey>('all');
-  const [headerHeight, setHeaderHeight] = useState(0);
+  /** Subject / category tag (client-side over the batches already in). */
+  const [category, setCategory] = useState<string | null>(null);
+  /** Level band tag (client-side). */
+  const [level, setLevel] = useState<string | null>(null);
+  /** Provider (university / academy): the server filters by organization_id. */
+  const [providerId, setProviderId] = useState<string | null>(null);
+  const [total, setTotal] = useState<number | null>(null);
+  // Tags seen so far; kept across searches so a chip never vanishes while it is selected.
+  const [categoriesSeen, setCategoriesSeen] = useState<string[]>([]);
+  const [providersSeen, setProvidersSeen] = useState<Record<string, string>>({});
 
   const listRef = useRef<FlatList<CatalogCourse>>(null);
   // Paging cursor + guards live in refs so onEndReached never sees stale values.
@@ -251,6 +360,7 @@ export function CoursesScreen() {
   const inFlightRef = useRef(false);
   const seenRef = useRef<Set<string>>(new Set());
   const queryRef = useRef('');
+  const providerRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   // Only the newest reset (search, pull-to-refresh) may write to the screen.
   const loadRun = useRef(0);
@@ -283,9 +393,11 @@ export function CoursesScreen() {
     setMoreError(false);
     const offset = offsetRef.current;
     const q = queryRef.current;
+    const org = providerRef.current;
     const path =
       `/platform/courses/catalog-page?limit=${PAGE_SIZE}&offset=${offset}&order=catalog` +
-      (q ? `&q=${encodeURIComponent(q)}` : '');
+      (q ? `&q=${encodeURIComponent(q)}` : '') +
+      (org ? `&organization_id=${encodeURIComponent(org)}` : '');
     try {
       const page = await nestAuthGet<CatalogPage>(path, ctrl.signal);
       if (run !== loadRun.current) return;
@@ -301,10 +413,35 @@ export function CoursesScreen() {
       setCatalog((prev) => (reset ? fresh : [...prev, ...fresh]));
       setOrgBrandByCourse((prev) => ({ ...(reset ? {} : prev), ...(page?.org_brand_by_course || {}) }));
       setCertifiersByCourse((prev) => ({ ...(reset ? {} : prev), ...(page?.certifiers_by_course || {}) }));
+      // Remember every subject and provider seen, for the filter tags.
+      const cats = items.map((c) => String(c.category ?? '').trim()).filter(Boolean);
+      if (cats.length) {
+        setCategoriesSeen((prev) => {
+          const next = [...prev];
+          for (const c of cats) if (!next.includes(c)) next.push(c);
+          return next.length === prev.length ? prev : next;
+        });
+      }
+      const brands = page?.org_brand_by_course || {};
+      setProvidersSeen((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const c of items) {
+          const id = String(c.organization_id ?? '').trim();
+          if (!id || next[id]) continue;
+          const name = brands[c.id]?.name?.trim() || offeringLabel(c);
+          if (name) {
+            next[id] = name;
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
       offsetRef.current = offset + items.length;
-      const total = Number(page?.total);
+      const pageTotal = Number(page?.total);
+      if (reset) setTotal(Number.isFinite(pageTotal) && pageTotal > 0 ? pageTotal : null);
       hasMoreRef.current =
-        items.length >= PAGE_SIZE && (!Number.isFinite(total) || total <= 0 || offsetRef.current < total);
+        items.length >= PAGE_SIZE && (!Number.isFinite(pageTotal) || pageTotal <= 0 || offsetRef.current < pageTotal);
       setHasMore(hasMoreRef.current);
       if (reset) setError(null);
     } catch (e) {
@@ -338,8 +475,9 @@ export function CoursesScreen() {
 
   useEffect(() => {
     queryRef.current = debouncedQuery;
+    providerRef.current = providerId;
     void fetchPage(true);
-  }, [debouncedQuery, fetchPage]);
+  }, [debouncedQuery, providerId, fetchPage]);
 
   const openCourse = (courseId: string, title?: string, tab?: string) => {
     const path = tab ? `/courses/${courseId}/${tab}` : `/courses/${courseId}`;
@@ -359,34 +497,78 @@ export function CoursesScreen() {
 
   const enrolledIds = useMemo(() => new Set(enrolled.map((e) => e.course_id)), [enrolled]);
 
-  // The server pages and searches (q); the Featured / Free / Certified chips filter the batches already in.
+  const showEnrolled = filter === 'enrolled';
+
+  // The server pages, searches (q) and filters by provider; the other tags filter the batches already in.
   const browse = useMemo(() => {
+    if (showEnrolled) return [];
     return catalog
       .filter((c) => c.id && !enrolledIds.has(c.id))
       .filter((c) => {
-        if (filter === 'free') return Boolean(c.is_free) || Number(c.price || 0) <= 0;
+        if (filter === 'free') return isFreeCourse(c);
+        if (filter === 'paid') return !isFreeCourse(c);
         if (filter === 'featured') return Boolean(c.is_featured);
         if (filter === 'certified') return Boolean(c.is_certified);
         return true;
-      });
-  }, [catalog, enrolledIds, filter]);
+      })
+      .filter((c) => !category || String(c.category ?? '').trim() === category)
+      .filter((c) => !level || levelBand(c.level) === level);
+  }, [catalog, enrolledIds, filter, category, level, showEnrolled]);
+
+  /** "My courses" tag: the enrolled courses as table rows (searched on the phone). */
+  const enrolledRows = useMemo<CatalogCourse[]>(() => {
+    if (!showEnrolled) return [];
+    const q = query.trim().toLowerCase();
+    return enrolled
+      .filter((e) => !q || String(e.title || '').toLowerCase().includes(q))
+      .map((e) => ({
+        id: e.course_id,
+        title: e.title,
+        thumbnail_url: e.thumbnail_url,
+        short_description: e.short_description,
+        organization_name: e.organization_name ?? e.school_name ?? e.org_name ?? null,
+      }));
+  }, [showEnrolled, enrolled, query]);
+
+  const progressByCourse = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const e of enrolled) m[e.course_id] = Number(e.progress_percent || 0);
+    return m;
+  }, [enrolled]);
 
   // A filter (or the enrolled courses) can leave a batch nearly empty: keep streaming until the screen has rows.
   useEffect(() => {
-    if (loading || loadingMore || !hasMore || moreError || error) return;
+    if (showEnrolled || loading || loadingMore || !hasMore || moreError || error) return;
     if (browse.length < MIN_VISIBLE) void fetchPage(false);
-  }, [browse.length, loading, loadingMore, hasMore, moreError, error, fetchPage]);
+  }, [showEnrolled, browse.length, loading, loadingMore, hasMore, moreError, error, fetchPage]);
 
   const headerPad = floatingHeaderInset(insets.top);
 
-  const getItemLayout = useCallback(
-    (_: ArrayLike<CatalogCourse> | null | undefined, index: number) => ({
-      length: COURSE_ROW_HEIGHT,
-      offset: headerPad + headerHeight + COURSE_ROW_HEIGHT * index,
-      index,
-    }),
-    [headerPad, headerHeight],
+  const categoryTags = useMemo(
+    () => [...categoriesSeen].sort((a, b) => a.localeCompare(b)),
+    [categoriesSeen],
   );
+  const levelTags = useMemo(() => {
+    const present = new Set(catalog.map((c) => levelBand(c.level)).filter((x): x is string => Boolean(x)));
+    if (level) present.add(level);
+    return [...present].sort((a, b) => {
+      const ia = LEVEL_BANDS.indexOf(a);
+      const ib = LEVEL_BANDS.indexOf(b);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.localeCompare(b);
+    });
+  }, [catalog, level]);
+  const providerTags = useMemo(
+    () => Object.entries(providersSeen).sort((a, b) => a[1].localeCompare(b[1])),
+    [providersSeen],
+  );
+  const activeTagCount =
+    (filter !== 'all' ? 1 : 0) + (category ? 1 : 0) + (level ? 1 : 0) + (providerId ? 1 : 0);
+  const clearTags = () => {
+    setFilter('all');
+    setCategory(null);
+    setLevel(null);
+    setProviderId(null);
+  };
 
   const renderItem = useCallback(
     ({ item }: { item: CatalogCourse }) => {
@@ -395,6 +577,7 @@ export function CoursesScreen() {
       const certifiers = certifiersByCourse[item.id] || [];
       const primary = certifiers.find((e) => e.is_default) || certifiers[0];
       const certifier = (primary?.short_name || primary?.name || '').trim() || null;
+      const enrolledRow = showEnrolled;
       return (
         <CourseTableRow
           title={item.title || 'Course'}
@@ -404,16 +587,21 @@ export function CoursesScreen() {
           certified={Boolean(item.is_certified)}
           featured={Boolean(item.is_featured)}
           certifier={certifier}
-          onPress={() => openCourse(item.id, item.title)}
+          progressPercent={enrolledRow ? progressByCourse[item.id] ?? 0 : null}
+          onPress={() => (enrolledRow ? openEnrolled(item.id, item.title) : openCourse(item.id, item.title))}
         />
       );
     },
-    // openCourse only uses navigation, which is stable.
+    // openCourse / openEnrolled only use navigation, which is stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [orgBrandByCourse, certifiersByCourse],
+    [orgBrandByCourse, certifiersByCourse, showEnrolled, progressByCourse],
   );
 
-  const footerState: 'loading' | 'more' | 'end' | 'empty' | 'error' | null = loading
+  const footerState: 'loading' | 'more' | 'end' | 'empty' | 'error' | null = showEnrolled
+    ? enrolledRows.length
+      ? 'end'
+      : 'empty'
+    : loading
     ? null
     : error && !catalog.length
       ? 'empty'
@@ -432,10 +620,9 @@ export function CoursesScreen() {
       <ThemedBackdrop />
       <FlatList
         ref={listRef}
-        data={loading ? SKELETON_ROWS : browse}
+        data={showEnrolled ? enrolledRows : loading ? SKELETON_ROWS : browse}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
-        getItemLayout={getItemLayout}
         initialNumToRender={10}
         maxToRenderPerBatch={10}
         updateCellsBatchingPeriod={40}
@@ -463,7 +650,7 @@ export function CoursesScreen() {
         }}
         onEndReachedThreshold={0.5}
         ListHeaderComponent={
-          <View onLayout={(e) => setHeaderHeight(Math.round(e.nativeEvent.layout.height))}>
+          <View>
             <View style={styles.titleRow}>
               <View style={[styles.titleMarker, { backgroundColor: palette.secondary }]} />
               <Text style={styles.h1}>Courses and eLearning</Text>
@@ -476,7 +663,7 @@ export function CoursesScreen() {
               </View>
             ) : null}
 
-            {enrolled.length > 0 ? (
+            {enrolled.length > 0 && !showEnrolled ? (
               <View style={{ marginBottom: 8 }}>
                 <SectionTitle label="Continue learning" accent={palette.secondary} />
                 {enrolled.map((item) => {
@@ -544,20 +731,69 @@ export function CoursesScreen() {
             <View style={styles.filters}>
               {FILTERS.map((f) => {
                 const on = filter === f.key;
+                const label = f.key === 'enrolled' && enrolled.length ? `${f.label} · ${enrolled.length}` : f.label;
                 return (
                   <Pressable
                     key={f.key}
                     onPress={() => setFilter(f.key)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: on }}
                     style={[styles.chip, on && { backgroundColor: palette.primary, borderColor: palette.primary }]}
                   >
-                    <Text style={[styles.chipText, on && { color: palette.secondary }]}>{f.label}</Text>
+                    <Text style={[styles.chipText, on && { color: palette.secondary }]}>{label}</Text>
                   </Pressable>
                 );
               })}
             </View>
 
-            <SectionTitle label="Browse" accent={palette.secondary} style={{ marginTop: 12 }} />
-            <CourseTableHeader />
+            {!showEnrolled ? (
+              <>
+                <TagRow
+                  label="Subject"
+                  icon="pricetags-outline"
+                  tags={categoryTags.map((c) => ({ key: c, label: prettyLabel(c) }))}
+                  value={category}
+                  onChange={setCategory}
+                />
+                <TagRow
+                  label="Level"
+                  icon="stats-chart-outline"
+                  tags={levelTags.map((l) => ({ key: l, label: l }))}
+                  value={level}
+                  onChange={setLevel}
+                />
+                <TagRow
+                  label="Provider"
+                  icon="business-outline"
+                  tags={providerTags.map(([id, name]) => ({ key: id, label: name }))}
+                  value={providerId}
+                  onChange={setProviderId}
+                />
+              </>
+            ) : null}
+
+            <View style={styles.browseRow}>
+              <SectionTitle
+                label={showEnrolled ? 'My courses' : 'Browse'}
+                accent={palette.secondary}
+                style={{ marginTop: 12, flex: 1 }}
+              />
+              {activeTagCount > 0 ? (
+                <Pressable onPress={clearTags} hitSlop={8} accessibilityRole="button" style={styles.clearBtn}>
+                  <Ionicons name="close-circle" size={14} color={palette.primary} />
+                  <Text style={[styles.clearText, { color: palette.primary }]}>Clear filters</Text>
+                </Pressable>
+              ) : null}
+            </View>
+            <CourseTableHeader
+              count={
+                showEnrolled
+                  ? `${enrolledRows.length}`
+                  : !loading && !category && !level && (filter === 'all' || filter === 'certified') && total
+                    ? `${total}`
+                    : null
+              }
+            />
           </View>
         }
         ListFooterComponent={
@@ -567,9 +803,13 @@ export function CoursesScreen() {
               message={
                 error && !catalog.length
                   ? 'Pull down to try again.'
-                  : query || filter !== 'all'
-                    ? 'No courses match your filters.'
-                    : 'No catalog courses right now.'
+                  : showEnrolled
+                    ? query
+                      ? 'None of your courses match that search.'
+                      : 'You have not enrolled in a course yet. Tap All to browse.'
+                    : query || activeTagCount > 0
+                      ? 'No courses match your filters.'
+                      : 'No catalog courses right now.'
               }
             />
           ) : loading ? (
@@ -624,6 +864,23 @@ const styles = StyleSheet.create({
     borderColor: CARD.border,
   },
   chipText: { fontSize: 13, fontFamily: 'Inter_600SemiBold', color: INK },
+  tagRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
+  tagLabel: { flexDirection: 'row', alignItems: 'center', gap: 4, width: 74 },
+  tagLabelText: { fontSize: 11.5, fontFamily: 'Inter_600SemiBold', color: Colors.mutedForeground },
+  tagScroll: { gap: 6, paddingRight: 8 },
+  tag: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.94)',
+    borderWidth: 1,
+    borderColor: CARD.border,
+    maxWidth: 220,
+  },
+  tagText: { fontSize: 12, fontFamily: 'Inter_600SemiBold', color: INK },
+  browseRow: { flexDirection: 'row', alignItems: 'center' },
+  clearBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 12, paddingVertical: 4 },
+  clearText: { fontSize: 12.5, fontFamily: 'Inter_600SemiBold' },
   cardLarge: {
     flexDirection: 'column',
     ...CARD_SURFACE,

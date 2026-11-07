@@ -54,6 +54,14 @@ import { useDialog } from '../context/DialogContext';
 import { captureUserLocation } from '../lib/location';
 import { saveDeskCredentials } from '../lib/deskApi';
 import { humanizeError } from '../lib/humanizeError';
+import { userMessageFromError, warnDev } from '../lib/apiHttp';
+
+/** Any failure → one clear sentence (never "undefined" or a stack); details to the dev console. */
+function registerFailMessage(err: unknown, fallback: string, scope = 'Register'): string {
+  warnDev(scope, err);
+  const clean = userMessageFromError(err, fallback);
+  return humanizeError(clean, fallback);
+}
 import { kenyaMobileError } from '../lib/phoneUtils';
 import { hideSystemStatusBar } from '../components/ImmersiveSystemBars';
 import { log } from '../lib/logger';
@@ -227,7 +235,7 @@ export function RegisterScreen({ navigation }: Props) {
         .catch((e) => {
           if (cancelled) return;
           setSchoolSearching(false);
-          setError(humanizeError(e instanceof Error ? e.message : String(e)));
+          setError(registerFailMessage(e, 'School search is not working right now. Try again, or skip.', 'Register.schoolSearch'));
         });
     }, 320);
     return () => {
@@ -354,7 +362,15 @@ export function RegisterScreen({ navigation }: Props) {
     if (!form) return;
     setPeaMessage('✓ Phone verified! Finishing setup…');
     setPeaStatus('completed');
-    const result = await finalizePeaAccount(form, checkoutId, attemptIdRef.current);
+    let result: Awaited<ReturnType<typeof finalizePeaAccount>>;
+    try {
+      result = await finalizePeaAccount(form, checkoutId, attemptIdRef.current);
+    } catch (e) {
+      setError(registerFailMessage(e, 'Your payment was received but we could not finish your account. Try signing in, or contact support.', 'Register.finalize'));
+      setPeaStatus('failed');
+      setLoading(false);
+      return;
+    }
     if (!result.ok || !result.userId) {
       setError(humanizeError(result.error ?? 'Could not create account'));
       setPeaStatus('failed');
@@ -397,8 +413,8 @@ export function RegisterScreen({ navigation }: Props) {
       } else {
         log.info('Register', 'PEA success — Nest session active');
       }
-    } catch (e: any) {
-      setError(humanizeError(e?.message || 'Account created — please sign in.'));
+    } catch (e: unknown) {
+      setError(registerFailMessage(e, 'Account created — please sign in.', 'Register.signInAfterPay'));
       showDialog({
         title: 'Account created',
         message: 'Sign in with your email and password to continue.',
@@ -414,10 +430,19 @@ export function RegisterScreen({ navigation }: Props) {
     if (!peaCheckoutId || peaStatus !== 'pending') return;
     let cancelled = false;
     void (async () => {
-      const poll = await pollPeaPayment(peaCheckoutId, 40, 3000, accessTokenRef.current);
+      let poll: Awaited<ReturnType<typeof pollPeaPayment>>;
+      try {
+        poll = await pollPeaPayment(peaCheckoutId, 40, 3000, accessTokenRef.current);
+      } catch (e) {
+        if (cancelled) return;
+        setPeaStatus('failed');
+        setPeaMessage(registerFailMessage(e, 'We could not confirm the payment. If you paid, tap Complete again.', 'Register.poll'));
+        setLoading(false);
+        return;
+      }
       if (cancelled) return;
       if (poll.status === 'completed') {
-        await logRegistrationAttempt(buildForm(), { status: 'paid' }, attemptIdRef.current);
+        await logRegistrationAttempt(buildForm(), { status: 'paid' }, attemptIdRef.current).catch((e) => warnDev('Register.attemptLog', e));
         await finalizeAfterPayment(peaCheckoutId);
         return;
       }
@@ -463,20 +488,24 @@ export function RegisterScreen({ navigation }: Props) {
     setLoading(true);
     setError('');
 
-    const blocked = await checkBlockedPhone(form.phone);
-    if (blocked) {
-      setLoading(false);
-      setError(
-        humanizeError(
-          'This phone number is not allowed to register. Contact support if this is a mistake.',
-        ),
-      );
-      return;
-    }
-
-    attemptIdRef.current = await logRegistrationAttempt(form, { status: 'initiated' });
-
     try {
+      const blocked = await checkBlockedPhone(form.phone);
+      if (blocked) {
+        setLoading(false);
+        setError(
+          humanizeError(
+            'This phone number is not allowed to register. Contact support if this is a mistake.',
+          ),
+        );
+        return;
+      }
+
+      try {
+        attemptIdRef.current = await logRegistrationAttempt(form, { status: 'initiated' });
+      } catch (e) {
+        warnDev('Register.attemptLog', e); // bookkeeping only — never blocks sign-up
+      }
+
       if (!deferredOkRef.current) {
         const { registerDeferredAccount } = await import('../lib/peaRegistrationFlow');
         const reg = await registerDeferredAccount(form);
@@ -529,9 +558,9 @@ export function RegisterScreen({ navigation }: Props) {
         await finalizeAfterPayment(stk.checkoutId);
         return;
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       setPeaStatus('failed');
-      setError(humanizeError(err.message ?? 'Registration failed'));
+      setError(registerFailMessage(err, 'Could not finish registration. Check your connection and try again.'));
       setLoading(false);
     }
   };

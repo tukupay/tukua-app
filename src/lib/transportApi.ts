@@ -408,3 +408,16 @@ export async function listLiveTrips() {
     count?: number;
   }>('/transport/live');
 }
+
+/**
+ * The daily register session for a date, without creating one (GET only). Past days are for review:
+ * opening them must not create empty sessions the way POST /registers/daily/ensure does.
+ */
+export async function findDailyRegisterSession(sessionDate: string): Promise<{ id: string; session_date?: string } | null> {
+  const params = new URLSearchParams({ session_type: 'daily_attendance', session_date: sessionDate });
+  const data = await deskFetch<{ sessions?: Array<{ id: string; session_date?: string }> } | null>(
+    `/registers/sessions?${params}`,
+  );
+  const list = Array.isArray(data?.sessions) ? data!.sessions : [];
+  return list.find((s) => String(s.session_date ?? '').slice(0, 10) === sessionDate) ?? list[0] ?? null;
+}

@@ -30,6 +30,7 @@ import {
   fetchCalendarReminderSettings,
   updateMyCalendarReminders,
 } from '../../lib/parentPortalApi';
+import { cancelEventReminders, ensureEventReminderPermission, scheduleEventReminders } from '../../lib/eventReminders';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useDialog } from '../../context/DialogContext';
 import { GateDirectionToggle } from '../../components/dashboard/GateDirectionToggle';
@@ -139,6 +140,7 @@ export function EventsScreen({ navigation }: Props) {
   const [myReminders, setMyReminders] = useState(false);
   const [schoolReminders, setSchoolReminders] = useState(false);
   const [remindersSaving, setRemindersSaving] = useState(false);
+  const [reminderLeadHours, setReminderLeadHours] = useState(24);
 
   const fetchRegisterStatus = useCallback(async () => {
     const data = await fetchRegisterScanTodayStatus();
@@ -164,13 +166,20 @@ export function EventsScreen({ navigation }: Props) {
         const data = await fetchParentEvents({
           studentId: studentContextId,
         });
-        setItems(unwrapEvents(data));
+        const events = unwrapEvents(data);
+        setItems(events);
         try {
           const prefs = await fetchCalendarReminderSettings();
+          const on = Boolean(prefs?.my_reminders_enabled);
+          const lead = Number(prefs?.reminder_lead_hours) || 24;
           setSchoolReminders(Boolean(prefs?.school_reminders_enabled));
-          setMyReminders(Boolean(prefs?.my_reminders_enabled));
-        } catch {
-          /* reminders stay off */
+          setMyReminders(on);
+          setReminderLeadHours(lead);
+          // Keep this phone's scheduled reminders in step with the list (moved / new / cancelled events).
+          if (on) void scheduleEventReminders(events, lead);
+          else void cancelEventReminders();
+        } catch (e) {
+          log.info('Events', 'reminder settings unavailable', e instanceof Error ? e.message : String(e));
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -270,6 +279,53 @@ export function EventsScreen({ navigation }: Props) {
     [scanBusy, showDialog],
   );
 
+  const toggleReminders = async (next: boolean) => {
+    if (remindersSaving) return;
+    const previous = myReminders;
+    setMyReminders(next);
+    setRemindersSaving(true);
+    try {
+      if (next) {
+        const allowed = await ensureEventReminderPermission(true);
+        if (!allowed) {
+          setMyReminders(previous);
+          showDialog({
+            title: 'Notifications are off',
+            message: 'Allow notifications for Tukua in your phone settings, then switch reminders on again.',
+            variant: 'danger',
+          });
+          return;
+        }
+      }
+      const res = await updateMyCalendarReminders(next);
+      const lead = Number((res as { reminder_lead_hours?: number } | null)?.reminder_lead_hours) || reminderLeadHours;
+      setReminderLeadHours(lead);
+      if (next) {
+        const count = await scheduleEventReminders(items, lead);
+        showDialog({
+          title: 'Reminders on',
+          message:
+            count > 0
+              ? `We will remind you ${lead} hour${lead === 1 ? '' : 's'} before ${count === 1 ? 'the upcoming event' : `each of the ${count} upcoming events`}.`
+              : `We will remind you ${lead} hour${lead === 1 ? '' : 's'} before new events as they are added.`,
+          variant: 'success',
+        });
+      } else {
+        await cancelEventReminders();
+      }
+    } catch (e) {
+      setMyReminders(previous);
+      log.warn('Events', 'reminders save failed', String(e));
+      showDialog({
+        title: 'Could not save reminders',
+        message: e instanceof Error ? e.message : String(e),
+        variant: 'danger',
+      });
+    } finally {
+      setRemindersSaving(false);
+    }
+  };
+
   const pay = async (ev: SchoolEvent) => {
     if (!ev.id) return;
     setPayingEvent(ev);
@@ -315,21 +371,18 @@ export function EventsScreen({ navigation }: Props) {
             <View style={styles.remindCopy}>
               <Text style={styles.cardTitle}>Remind me before events</Text>
               <Text style={styles.meta}>
-                {schoolReminders
-                  ? 'Off until you switch it on.'
-                  : 'This school has calendar reminders deactivated.'}
+                {!schoolReminders
+                  ? 'This school has calendar reminders deactivated.'
+                  : myReminders
+                    ? `On · ${reminderLeadHours} hour${reminderLeadHours === 1 ? '' : 's'} before each event.`
+                    : 'Off until you switch it on.'}
               </Text>
             </View>
             <Switch
               value={myReminders}
               disabled={remindersSaving || !schoolReminders}
               onValueChange={(v) => {
-                const previous = myReminders;
-                setMyReminders(v);
-                setRemindersSaving(true);
-                void updateMyCalendarReminders(v)
-                  .catch(() => setMyReminders(previous))
-                  .finally(() => setRemindersSaving(false));
+                void toggleReminders(v);
               }}
               trackColor={{ false: 'rgba(10,61,46,0.18)', true: Colors.brandGreenMid }}
               thumbColor={Colors.white}

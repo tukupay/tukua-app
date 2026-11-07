@@ -37,7 +37,11 @@ function getEasProjectId(): string | undefined {
   return extra?.eas?.projectId;
 }
 
-export async function registerForPushNotifications(): Promise<string | null> {
+/**
+ * Push token for this phone. By default it never pops the system dialog (it runs in the background after
+ * sign-in): without permission it returns null. Pass { ask: true } only from a user action.
+ */
+export async function registerForPushNotifications(opts: { ask?: boolean } = {}): Promise<string | null> {
   if (Platform.OS === 'web') return null;
   if (isExpoGo) {
     log.info('Notifications', 'skipped in Expo Go — use a development build for push');
@@ -52,6 +56,20 @@ export async function registerForPushNotifications(): Promise<string | null> {
 
     await ensureNotificationHandler(Notifications);
 
+    const { status: existing } = await Notifications.getPermissionsAsync();
+    let finalStatus = existing;
+
+    if (existing !== 'granted' && opts.ask) {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+
+    if (finalStatus !== 'granted') {
+      log.info('Notifications', opts.ask ? 'permission denied' : 'not allowed yet — not asking in the background');
+      return null;
+    }
+
+    // Channel after permission: on some Android versions creating the first channel shows the dialog.
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync('default', {
         name: 'Tukua',
@@ -59,19 +77,6 @@ export async function registerForPushNotifications(): Promise<string | null> {
         vibrationPattern: [0, 250, 250, 250],
         lightColor: '#1F8B4C',
       });
-    }
-
-    const { status: existing } = await Notifications.getPermissionsAsync();
-    let finalStatus = existing;
-
-    if (existing !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
-    }
-
-    if (finalStatus !== 'granted') {
-      log.info('Notifications', 'permission denied');
-      return null;
     }
 
     const projectId = getEasProjectId();

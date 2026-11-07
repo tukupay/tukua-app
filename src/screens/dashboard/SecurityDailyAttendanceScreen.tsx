@@ -14,11 +14,21 @@ import {
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { ThemedBackdrop } from '../../components/theme/ThemedPage';
-import { ModuleBackBar, ModuleGlassCard, ModuleKicker, ModuleScreenHeader } from './ModuleChrome';
-import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
+import { ThemedPage, rgba } from '../../components/theme/ThemedPage';
+import { useAppTheme } from '../../context/AppThemeContext';
+import {
+  ErrorState,
+  ListSkeleton,
+  MUTED_INK,
+  ModuleHeading,
+  SectionLabel,
+  ShowMoreButton,
+  StatusPill,
+  SurfaceCard,
+  fmtTime,
+  useModulePadding,
+} from '../../components/ui/ModuleKit';
 import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
 import { useDialog } from '../../context/DialogContext';
@@ -28,6 +38,7 @@ import {
   ensureDailyRegister,
   FACE_MATCH_THRESHOLD,
   fetchRegisterEntries,
+  findDailyRegisterSession,
   searchTransportPeople,
   searchTransportStudents,
   securityGateCheck,
@@ -64,14 +75,47 @@ type FaceMatch = {
 
 const PAGE = 40;
 
+/** One register mark: compact row (fits a phone; no wide table). */
+const CARD_ROW = {
+  flexDirection: 'row' as const,
+  alignItems: 'center' as const,
+  gap: 12,
+  backgroundColor: 'rgba(255,255,255,0.96)',
+  borderRadius: 14,
+  borderWidth: 1,
+  borderColor: '#E6ECE9',
+  paddingVertical: 10,
+  paddingHorizontal: 12,
+  marginBottom: 8,
+};
+
+/** YYYY-MM-DD of a Date in the phone's own time zone (toISOString is UTC: wrong day before 03:00 in Kenya). */
+function localIso(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  return localIso(new Date());
 }
 
 function shiftDate(iso: string, delta: number): string {
   const d = new Date(`${iso}T12:00:00`);
   d.setDate(d.getDate() + delta);
-  return d.toISOString().slice(0, 10);
+  return localIso(d);
+}
+
+function directionTone(dir?: string | null): { label: string; tone: 'success' | 'warning' | 'neutral'; icon: 'log-in-outline' | 'log-out-outline' | 'remove-outline' } {
+  const d = String(dir ?? '').toLowerCase();
+  if (d === 'in') return { label: 'In', tone: 'success', icon: 'log-in-outline' };
+  if (d === 'out') return { label: 'Out', tone: 'warning', icon: 'log-out-outline' };
+  return { label: d || '—', tone: 'neutral', icon: 'remove-outline' };
+}
+
+function personTypeLabel(t?: string | null): string {
+  const v = String(t ?? '').toLowerCase();
+  if (!v) return '';
+  return v.charAt(0).toUpperCase() + v.slice(1);
 }
 
 /** e.g. 1st Dec 2026 */
@@ -111,7 +155,8 @@ function scorePct(score?: number | null): string | null {
 }
 
 export function SecurityDailyAttendanceScreen({ navigation }: Props) {
-  const insets = useSafeAreaInsets();
+  const pad = useModulePadding();
+  const { palette } = useAppTheme();
   const { showDialog } = useDialog();
   const [sessionDate, setSessionDate] = useState(todayIso());
   const [personTab, setPersonTab] = useState<PersonTab>('student');
@@ -134,6 +179,7 @@ export function SecurityDailyAttendanceScreen({ navigation }: Props) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [loadingList, setLoadingList] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [listError, setListError] = useState<string | null>(null);
   const cameraRef = useRef<CameraView>(null);
   const coolDownRef = useRef(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -141,10 +187,17 @@ export function SecurityDailyAttendanceScreen({ navigation }: Props) {
   const loadRows = useCallback(
     async (p = 1, append = false) => {
       if (append) setLoadingMore(true);
-      else setLoadingList(true);
+      else {
+        setLoadingList(true);
+        setRows([]);
+      }
+      setListError(null);
       try {
-        const ensured = await ensureDailyRegister(sessionDate);
-        const sid = ensured?.session?.id ?? null;
+        // Today: make sure the register exists (marking needs it). Past days: look it up only.
+        const sid =
+          sessionDate === todayIso()
+            ? ((await ensureDailyRegister(sessionDate))?.session?.id ?? null)
+            : ((await findDailyRegisterSession(sessionDate))?.id ?? null);
         setSessionId(sid);
         if (!sid) {
           setRows([]);
@@ -157,8 +210,12 @@ export function SecurityDailyAttendanceScreen({ navigation }: Props) {
           page: p,
           limit: PAGE,
         });
-        const list = res?.entries ?? [];
-        setRows((prev) => (append ? [...prev, ...list] : list));
+        const list = Array.isArray(res?.entries) ? res!.entries! : [];
+        setRows((prev) => {
+          if (!append) return list;
+          const seen = new Set(prev.map((r) => r.id));
+          return [...prev, ...list.filter((r) => !seen.has(r.id))];
+        });
         setTotal(Number(res?.total ?? list.length));
         setPage(p);
       } catch (e) {
@@ -166,17 +223,13 @@ export function SecurityDailyAttendanceScreen({ navigation }: Props) {
           setRows([]);
           setTotal(0);
         }
-        showDialog({
-          title: 'Could not load',
-          message: e instanceof Error ? e.message : String(e),
-          variant: 'danger',
-        });
+        setListError(e instanceof Error ? e.message : String(e));
       } finally {
         setLoadingList(false);
         setLoadingMore(false);
       }
     },
-    [sessionDate, personTab, showDialog],
+    [sessionDate, personTab],
   );
 
   useEffect(() => {
@@ -468,29 +521,19 @@ export function SecurityDailyAttendanceScreen({ navigation }: Props) {
   };
 
   return (
-    <View style={styles.root}>
-      <ThemedBackdrop />
-      <ModuleBackBar label="Daily attendance" onBack={() => navigation.goBack()} />
+    <ThemedPage>
       <FlatList
-        data={rows}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={[
-          styles.scroll,
-          { paddingTop: floatingHeaderInset(insets.top), paddingBottom: moduleScrollBottomPad(insets.bottom) },
-        ]}
-        onEndReached={() => {
-          if (loadingMore || loadingList) return;
-          if (rows.length >= total) return;
-          void loadRows(page + 1, true);
-        }}
-        onEndReachedThreshold={0.35}
+        data={loadingList || listError ? [] : rows}
+        keyExtractor={(item, i) => item.id || String(i)}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={[styles.scroll, { paddingTop: pad.top, paddingBottom: pad.bottom }]}
         ListHeaderComponent={
           <View style={{ gap: 12 }}>
-        <ModuleKicker>Security</ModuleKicker>
-        <ModuleScreenHeader
-          title="Daily attendance"
-          description="Mark students · teachers · staff (face · QR · search)."
-        />
+            <ModuleHeading
+              title="Daily attendance"
+              description="Mark students · teachers · staff (face · QR · search)."
+              onBack={() => navigation.goBack()}
+            />
 
             <View style={styles.dateRow}>
               <Pressable style={styles.dateBtn} onPress={() => setSessionDate((d) => shiftDate(d, -1))}>
@@ -515,7 +558,7 @@ export function SecurityDailyAttendanceScreen({ navigation }: Props) {
               {(['student', 'teacher', 'parent'] as const).map((t) => (
                 <Pressable
                   key={t}
-                  style={[styles.tab, personTab === t && styles.tabOn]}
+                  style={[styles.tab, personTab === t && { backgroundColor: palette.primary }]}
                   onPress={() => {
                     setPersonTab(t);
                     setQuery('');
@@ -539,7 +582,7 @@ export function SecurityDailyAttendanceScreen({ navigation }: Props) {
               {(['face', 'search', 'qr'] as const).map((m) => (
                 <Pressable
                   key={m}
-                  style={[styles.tab, mode === m && styles.tabOn]}
+                  style={[styles.tab, mode === m && { backgroundColor: palette.primary }]}
                   onPress={() => {
                     setMode(m);
                     resetScanUi();
@@ -555,7 +598,7 @@ export function SecurityDailyAttendanceScreen({ navigation }: Props) {
             )}
 
             {isToday ? (
-            <ModuleGlassCard>
+            <SurfaceCard>
               {mode === 'face' ? (
                 matched ? (
                   <View style={{ gap: 8 }}>
@@ -566,7 +609,7 @@ export function SecurityDailyAttendanceScreen({ navigation }: Props) {
                         .filter(Boolean)
                         .join(' · ')}
                     </Text>
-                    <Pressable style={styles.btn} disabled={busy} onPress={() => void confirmMatch()}>
+                    <Pressable style={[styles.btn, { backgroundColor: palette.primary }]} disabled={busy} onPress={() => void confirmMatch()}>
                       <Text style={styles.btnText}>{busy ? '…' : `Confirm ${direction}`}</Text>
                     </Pressable>
                     <Pressable
@@ -613,7 +656,7 @@ export function SecurityDailyAttendanceScreen({ navigation }: Props) {
                     </Pressable>
                   </View>
                 ) : !cameraOpen ? (
-                  <Pressable style={styles.btn} onPress={() => void openCamera()}>
+                  <Pressable style={[styles.btn, { backgroundColor: palette.primary }]} onPress={() => void openCamera()}>
                     <Text style={styles.btnText}>Open face scan</Text>
                   </Pressable>
                 ) : (
@@ -640,7 +683,7 @@ export function SecurityDailyAttendanceScreen({ navigation }: Props) {
                         <Text style={styles.secondaryText}>Flip</Text>
                       </Pressable>
                       <Pressable
-                        style={styles.btn}
+                        style={[styles.btn, { backgroundColor: palette.primary }]}
                         disabled={busy || identifying}
                         onPress={() => void runFaceIdentify()}>
                         <Text style={styles.btnText}>{identifying ? '…' : 'Scan now'}</Text>
@@ -661,10 +704,10 @@ export function SecurityDailyAttendanceScreen({ navigation }: Props) {
                           ? 'Teacher name or employee no.'
                           : 'Parent / staff name'
                     }
-                    placeholderTextColor="#94a3b8"
+                    placeholderTextColor="#9AA19A"
                     autoCapitalize="none"
                   />
-                  {searching ? <ActivityIndicator color={Colors.brandGreenDark} /> : null}
+                  {searching ? <ActivityIndicator color={palette.primary} /> : null}
                   {hits.map((h) => {
                     const hitType =
                       (h.person_type as 'student' | 'teacher' | 'staff' | 'parent' | undefined) ||
@@ -703,7 +746,7 @@ export function SecurityDailyAttendanceScreen({ navigation }: Props) {
                   })}
                 </View>
               ) : !permission?.granted ? (
-                <Pressable style={styles.btn} onPress={() => void requestPermission()}>
+                <Pressable style={[styles.btn, { backgroundColor: palette.primary }]} onPress={() => void requestPermission()}>
                   <Text style={styles.btnText}>Allow camera for QR</Text>
                 </Pressable>
               ) : (
@@ -716,78 +759,68 @@ export function SecurityDailyAttendanceScreen({ navigation }: Props) {
                   />
                 </View>
               )}
-            </ModuleGlassCard>
+            </SurfaceCard>
             ) : null}
 
-            <View style={styles.sectionRow}>
-              <Text style={styles.section}>
-                {sessionDate === todayIso() ? 'Today' : formatSessionDateLabel(sessionDate)}&apos;s marks ({total})
-              </Text>
-              <Pressable onPress={() => void loadRows(1, false)} hitSlop={8}>
-                <Text style={styles.refresh}>Refresh</Text>
-              </Pressable>
-            </View>
-            {loadingList && rows.length === 0 ? (
-              <ActivityIndicator color={Colors.brandGreenDark} />
-            ) : null}
-            {rows.length > 0 ? (
-              <View style={styles.tableHead}>
-                <Text style={[styles.th, styles.thName]}>Name</Text>
-                <Text style={[styles.th, styles.thType]}>Type</Text>
-                <Text style={[styles.th, styles.thDir]}>In/Out</Text>
-                <Text style={[styles.th, styles.thTime]}>Time</Text>
-              </View>
+            <SectionLabel
+              right={
+                <Pressable onPress={() => void loadRows(1, false)} hitSlop={8} accessibilityRole="button">
+                  <Text style={[styles.refresh, { color: palette.primary }]}>Refresh</Text>
+                </Pressable>
+              }>
+              {`${isToday ? 'Today' : formatSessionDateLabel(sessionDate)} · ${total} mark${total === 1 ? '' : 's'}`}
+            </SectionLabel>
+            {loadingList ? <ListSkeleton rows={3} height={56} /> : null}
+            {!loadingList && listError ? (
+              <ErrorState title="Couldn’t load the register" message={listError} onRetry={() => void loadRows(1, false)} />
             ) : null}
           </View>
         }
         ListEmptyComponent={
-          !loadingList ? <Text style={styles.hint}>No register marks for this day yet.</Text> : null
+          !loadingList && !listError ? (
+            <Text style={[styles.hint, { textAlign: 'center', paddingVertical: 12 }]}>
+              {isToday ? 'No marks yet today.' : 'No register marks for this day.'}
+            </Text>
+          ) : null
         }
         ListFooterComponent={
-          <View style={{ gap: 8, marginVertical: 12 }}>
-            {loadingMore ? <ActivityIndicator color={Colors.brandGreenDark} /> : null}
-            {total > 0 ? (
-              <View style={styles.pager}>
-                <Pressable
-                  style={[styles.pageBtn, page <= 1 && styles.pageBtnDisabled]}
-                  disabled={page <= 1 || loadingList}
-                  onPress={() => void loadRows(Math.max(1, page - 1), false)}>
-                  <Text style={styles.pageBtnText}>Prev</Text>
-                </Pressable>
-                <Text style={styles.pageLabel}>
-                  Page {page} · {rows.length}/{total}
-                </Text>
-                <Pressable
-                  style={[styles.pageBtn, rows.length >= total && styles.pageBtnDisabled]}
-                  disabled={rows.length >= total || loadingList || loadingMore}
-                  onPress={() => void loadRows(page + 1, true)}>
-                  <Text style={styles.pageBtnText}>More</Text>
-                </Pressable>
-              </View>
-            ) : null}
-          </View>
+          !loadingList && !listError && rows.length > 0 && rows.length < total ? (
+            <ShowMoreButton
+              shown={rows.length}
+              total={total}
+              loading={loadingMore}
+              onPress={() => void loadRows(page + 1, true)}
+            />
+          ) : null
         }
-        renderItem={({ item }) => (
-          <View style={styles.tableRow}>
-            <View style={styles.tdName}>
-              <Text style={styles.hitName} numberOfLines={1}>
-                {item.full_name || '—'}
-              </Text>
-              {item.id_number || item.method ? (
-                <Text style={styles.hint} numberOfLines={1}>
-                  {[item.id_number, item.method].filter(Boolean).join(' · ')}
+        renderItem={({ item }) => {
+          const dir = directionTone(item.direction);
+          const time = fmtTime(item.marked_at);
+          const sub = [personTypeLabel(item.person_type), item.id_number, item.method].filter(Boolean).join(' · ');
+          return (
+            <View style={styles.markRow}>
+              <View style={[styles.markIcon, { backgroundColor: rgba(palette.primary, 0.07) }]}>
+                <Ionicons name={dir.icon} size={18} color={palette.primary} />
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.hitName} numberOfLines={1}>
+                  {item.full_name || '—'}
                 </Text>
-              ) : null}
+                {sub ? (
+                  <Text style={styles.hint} numberOfLines={1}>
+                    {sub}
+                  </Text>
+                ) : null}
+              </View>
+              <View style={styles.markRight}>
+                <StatusPill label={dir.label} tone={dir.tone} />
+                {time ? <Text style={styles.markTime}>{time}</Text> : null}
+              </View>
             </View>
-            <Text style={styles.tdType}>{item.person_type || '—'}</Text>
-            <Text style={styles.tdDir}>{item.direction || '—'}</Text>
-            <Text style={styles.tdTime}>
-              {item.marked_at ? String(item.marked_at).slice(11, 16) : '—'}
-            </Text>
-          </View>
-        )}
+          );
+        }}
       />
-    </View>
+    </ThemedPage>
   );
 }
 
@@ -795,12 +828,13 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   scroll: { paddingHorizontal: 16, gap: 8 },
   h1: { fontSize: 22, fontWeight: '800', color: Colors.ink },
-  sub: { fontSize: 13, color: '#64748b', marginBottom: 4 },
+  sub: { fontSize: 13, color: MUTED_INK, marginBottom: 4 },
   section: { fontSize: 15, fontWeight: '800', color: Colors.ink },
   sectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 },
   refresh: { fontSize: 13, fontWeight: '700', color: Colors.brandGreenDark },
   dateRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   dateBtn: {
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: Colors.border,
     borderRadius: 10,
@@ -808,6 +842,7 @@ const styles = StyleSheet.create({
   },
   dateInput: {
     flex: 1,
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: Colors.border,
     borderRadius: 12,
@@ -846,6 +881,7 @@ const styles = StyleSheet.create({
   },
   btnText: { color: '#fff', fontWeight: '700' },
   secondary: {
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: Colors.border,
     borderRadius: 12,
@@ -861,7 +897,7 @@ const styles = StyleSheet.create({
     minHeight: 360,
     borderRadius: 18,
     overflow: 'hidden',
-    backgroundColor: '#0f172a',
+    backgroundColor: '#0B140D',
     position: 'relative',
   },
   cameraFill: { minHeight: 360, width: '100%' },
@@ -883,7 +919,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   scanOverlayText: { color: '#fff', fontWeight: '700' },
-  hint: { fontSize: 12, color: '#64748b' },
+  hint: { fontSize: 12, color: MUTED_INK },
   matchLabel: { fontSize: 12, fontWeight: '700', color: Colors.brandGreenDark, textTransform: 'uppercase' },
   candidateRow: {
     flexDirection: 'row',
@@ -895,6 +931,7 @@ const styles = StyleSheet.create({
   },
   candidateScore: { fontSize: 16, fontWeight: '800', color: Colors.brandGreenDark },
   input: {
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: Colors.border,
     borderRadius: 12,
@@ -905,47 +942,10 @@ const styles = StyleSheet.create({
   },
   hit: { paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(0,0,0,0.08)' },
   hitName: { fontSize: 15, fontWeight: '700', color: Colors.ink },
-  record: {
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(0,0,0,0.08)',
+  markRow: {
+    ...StyleSheet.flatten(CARD_ROW),
   },
-  tableHead: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(0,0,0,0.12)',
-    gap: 4,
-  },
-  th: { fontSize: 11, fontWeight: '800', color: '#64748b', textTransform: 'uppercase' },
-  thName: { flex: 1.6 },
-  thType: { width: 64, textAlign: 'center' },
-  thDir: { width: 52, textAlign: 'center' },
-  thTime: { width: 44, textAlign: 'right' },
-  tableRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 4,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(0,0,0,0.08)',
-    gap: 4,
-  },
-  tdName: { flex: 1.6 },
-  tdType: { width: 64, textAlign: 'center', fontSize: 12, color: '#475569', fontWeight: '600' },
-  tdDir: { width: 52, textAlign: 'center', fontSize: 12, color: Colors.ink, fontWeight: '700' },
-  tdTime: { width: 44, textAlign: 'right', fontSize: 12, color: '#64748b', fontWeight: '600' },
-  pager: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  pageBtn: {
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  pageBtnDisabled: { opacity: 0.4 },
-  pageBtnText: { fontWeight: '700', color: Colors.ink, fontSize: 13 },
-  pageLabel: { fontSize: 12, fontWeight: '700', color: '#64748b' },
+  markIcon: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  markRight: { alignItems: 'flex-end', gap: 4 },
+  markTime: { fontSize: 12, fontWeight: '700', color: MUTED_INK },
 });

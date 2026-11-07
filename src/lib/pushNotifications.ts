@@ -28,19 +28,27 @@ function getEasProjectId(): string | undefined {
   );
 }
 
-export async function ensurePushPermissions(): Promise<boolean> {
-  if (isExpoGo && Platform.OS === 'android') {
-    log.info('Push', 'skipped — remote push unavailable in Expo Go on Android (use a dev build)');
+/** Whether notifications are allowed, asking (system dialog) only when `ask` is true. Never throws. */
+export async function ensurePushPermissions(opts: { ask?: boolean } = { ask: true }): Promise<boolean> {
+  if (Platform.OS === 'web') return false;
+  try {
+    const Notifications = await getNotifications();
+    const current = await Notifications.getPermissionsAsync();
+    if (current.granted) return true;
+    if (!opts.ask) return false;
+    const asked = await Notifications.requestPermissionsAsync();
+    return Boolean(asked.granted);
+  } catch (e) {
+    log.info('Push', 'permission check unavailable', e instanceof Error ? e.message : String(e));
     return false;
   }
-  const Notifications = await getNotifications();
-  const current = await Notifications.getPermissionsAsync();
-  if (current.granted) return true;
-  const asked = await Notifications.requestPermissionsAsync();
-  return Boolean(asked.granted);
 }
 
-export async function registerMobilePushToken(): Promise<string | null> {
+/**
+ * Register this phone's push token with Nest. Runs in the background after sign-in, so by default it does NOT
+ * ask for permission — the first-run wizard (or a notifications setting) asks; this only registers once allowed.
+ */
+export async function registerMobilePushToken(opts: { ask?: boolean } = {}): Promise<string | null> {
   try {
     if (isExpoGo && Platform.OS === 'android') {
       log.info('Push', 'Expo Go Android: remote notifications removed — use eas build / expo run:android');
@@ -60,7 +68,8 @@ export async function registerMobilePushToken(): Promise<string | null> {
       handlerConfigured = true;
     }
 
-    const ok = await ensurePushPermissions();
+    if (isExpoGo && Platform.OS === 'android') return null;
+    const ok = await ensurePushPermissions({ ask: Boolean(opts.ask) });
     if (!ok) return null;
 
     if (Platform.OS === 'android') {

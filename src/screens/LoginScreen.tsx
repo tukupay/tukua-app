@@ -1,6 +1,7 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 
 import {
+  AppState,
   Image,
   StyleSheet,
   Text,
@@ -31,15 +32,13 @@ import { useDeskAuth } from '../context/DeskAuthContext';
 import { useDialog } from '../context/DialogContext';
 
 import {
+  applyBiometricPreferenceAfterLogin,
   authenticateDevice,
-  checkBiometricSupport,
-  isBiometricLoginAvailable,
+  loadSignInBiometrics,
   unlockBiometricCredentials,
 } from '../lib/biometrics';
 import { hideSystemStatusBar } from '../components/ImmersiveSystemBars';
-import { captureUserLocation } from '../lib/location';
-
-import { registerForPushNotifications } from '../lib/notifications';
+import { userMessageFromError, warnDev } from '../lib/apiHttp';
 
 import { log } from '../lib/logger';
 import { getDeskApiDebugInfo, saveDeskCredentials } from '../lib/deskApi';
@@ -95,23 +94,42 @@ export function LoginScreen({ embedded = false, bottomSpace = 0, onCreateAccount
   const [loading, setLoading] = useState(false);
 
   const [bioAvailable, setBioAvailable] = useState(false);
+  const [bioHardware, setBioHardware] = useState(false);
+
+  /**
+   * What the page can offer: stored fingerprint sign-in, and whether the phone can confirm its owner (fingerprint,
+   * face, or screen-lock PIN) for "Continue as". Each check stands alone: before, one Promise.all with no catch
+   * meant a single keystore/native error left BOTH false, so the biometric button and card icon never appeared.
+   */
+  const refreshBiometrics = useCallback(async () => {
+    try {
+      const r = await loadSignInBiometrics();
+      setBioAvailable(r.storedLogin);
+      setDeviceAuth(r.deviceUnlock);
+      setBioHardware(r.hardware);
+    } catch (e) {
+      warnDev('Login.biometrics', e);
+    }
+  }, []);
 
   // No auto prompt (owner: "dont auto login. let them click the biometrics or the form fill").
   useFocusEffect(
     useCallback(() => {
       hideSystemStatusBar();
-      let cancelled = false;
-      (async () => {
-        const [ok, device] = await Promise.all([isBiometricLoginAvailable(), checkBiometricSupport()]);
-        if (cancelled) return;
-        setBioAvailable(ok);
-        setDeviceAuth(device);
-      })();
-      return () => {
-        cancelled = true;
-      };
-    }, []),
+      void refreshBiometrics();
+    }, [refreshBiometrics]),
   );
+
+  // Again when the stored session appears/changes and when the app returns (fingerprint added in Settings).
+  useEffect(() => {
+    void refreshBiometrics();
+  }, [storedUser?.id, refreshBiometrics]);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (st) => {
+      if (st === 'active') void refreshBiometrics();
+    });
+    return () => sub.remove();
+  }, [refreshBiometrics]);
 
   const canLogin =
 
@@ -125,13 +143,6 @@ export function LoginScreen({ embedded = false, bottomSpace = 0, onCreateAccount
       await saveDeskCredentials(loginEmail.trim(), loginPass);
     } catch {
       // ignore SecureStore failures
-    }
-    // Warm Nest identity JWT for chat/courses WebView (api-host), not GoTrue.
-    try {
-      const { resolveNestAccessTokenForWebView } = await import('../lib/platformNestAuth');
-      await resolveNestAccessTokenForWebView();
-    } catch {
-      /* nest api-host may be down — inject falls back later */
     }
     log.info('DeskConnection', 'Nest desk login starting', {
       email: loginEmail.trim(),
@@ -169,11 +180,18 @@ export function LoginScreen({ embedded = false, bottomSpace = 0, onCreateAccount
       return;
     }
 
-    await fetchProfile(userId);
-    await refreshProfile();
+    // Profile refresh is a nice-to-have: the sign-in already worked, so a slow profile call must not fail it.
+    try {
+      await fetchProfile(userId);
+      await refreshProfile();
+    } catch (e) {
+      warnDev('Login.profile', e);
+    }
 
-    captureUserLocation().catch(() => {});
-    registerForPushNotifications().catch(() => {});
+    // Said yes to fingerprint sign-in in the first-run wizard: turn it on with this password (no extra prompt).
+    // No location / notification requests here any more: the wizard (or the feature itself) asks.
+    await applyBiometricPreferenceAfterLogin(loginEmail.trim(), loginPass);
+    void refreshBiometrics();
   };
 
   const handleLogin = async () => {
@@ -202,20 +220,17 @@ export function LoginScreen({ embedded = false, bottomSpace = 0, onCreateAccount
 
       await finishLogin(email, password);
 
-    } catch (err: any) {
-
+    } catch (err: unknown) {
+      warnDev('Login', err);
       showDialog({
-
-        title: 'Login failed',
-
-        message: err.message ?? 'Could not sign in. Check your email, phone or username, and your password.',
-
+        title: 'Could not sign in',
+        message: userMessageFromError(
+          err,
+          'Could not sign in. Check your email, phone or username, and your password.',
+        ),
         variant: 'danger',
-
         icon: 'lock-closed-outline',
-
       });
-
     } finally {
 
       setLoading(false);
@@ -229,8 +244,13 @@ export function LoginScreen({ embedded = false, bottomSpace = 0, onCreateAccount
     const ok = await authenticateDevice(`Continue as ${storedFirstName}`);
     hideSystemStatusBar();
     if (!ok) return false;
-    const next = await unlockSession();
-    return next ? true : null;
+    try {
+      const next = await unlockSession();
+      return next ? true : null;
+    } catch (e) {
+      warnDev('Login.unlock', e);
+      return null;
+    }
   };
 
   const handleContinueAs = async () => {
@@ -249,6 +269,9 @@ export function LoginScreen({ embedded = false, bottomSpace = 0, onCreateAccount
     try {
       setLoading(true);
       res = await unlockStored();
+    } catch (e) {
+      warnDev('Login.continueAs', e);
+      res = null;
     } finally {
       setLoading(false);
       hideSystemStatusBar();
@@ -256,7 +279,15 @@ export function LoginScreen({ embedded = false, bottomSpace = 0, onCreateAccount
     if (res === null) {
       // The stored session ended (e.g. refresh rejected): fall back to a sign-in.
       if (bioAvailable) await handleBiometric(true);
-      else setEmail(storedEmail);
+      else {
+        setEmail(storedEmail);
+        showDialog({
+          title: 'Please sign in again',
+          message: 'Your last session has ended. Enter your password to continue.',
+          variant: 'info',
+          icon: 'lock-closed-outline',
+        });
+      }
     }
   };
 
@@ -280,11 +311,12 @@ export function LoginScreen({ embedded = false, bottomSpace = 0, onCreateAccount
       }
       // Same Nest REST login path as password login
       await finishLogin(unlocked.email, unlocked.password);
-    } catch (err: any) {
+    } catch (err: unknown) {
       hideSystemStatusBar();
+      warnDev('Login.biometric', err);
       showDialog({
-        title: 'Login failed',
-        message: err.message ?? 'Could not sign in.',
+        title: 'Could not sign in',
+        message: userMessageFromError(err, 'Could not sign in with your fingerprint. Use your password instead.'),
         variant: 'danger',
         icon: 'finger-print-outline',
       });
@@ -316,10 +348,11 @@ export function LoginScreen({ embedded = false, bottomSpace = 0, onCreateAccount
         variant: 'success',
         icon: 'mail-open-outline',
       });
-    } catch {
+    } catch (err: unknown) {
+      warnDev('Login.forgot', err);
       showDialog({
         title: 'Could not send reset link',
-        message: 'Please try again in a moment.',
+        message: userMessageFromError(err, 'Please try again in a moment.'),
         variant: 'danger',
       });
     }
@@ -380,14 +413,22 @@ export function LoginScreen({ embedded = false, bottomSpace = 0, onCreateAccount
                   accessibilityRole="button"
                   accessibilityLabel={`Continue as ${storedName || storedFirstName}`}>
                   <View style={[styles.continueIcon, { width: s(40), height: s(40), borderRadius: s(20) }]}>
-                    <Ionicons name={deviceAuth ? 'finger-print' : 'person'} size={s(22)} color={Colors.white} />
+                    <Ionicons
+                      name={deviceAuth ? (bioHardware ? 'finger-print' : 'lock-closed') : 'person'}
+                      size={s(22)}
+                      color={Colors.white}
+                    />
                   </View>
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <Text style={[styles.continueTitle, { fontSize: font(15) }]} numberOfLines={1}>
                       Continue as {storedFirstName}
                     </Text>
                     <Text style={[styles.continueSub, { fontSize: font(12) }]} numberOfLines={1}>
-                      {deviceAuth ? 'Unlock with fingerprint, face or PIN' : storedEmail || 'Enter your password below'}
+                      {deviceAuth
+                        ? bioHardware
+                          ? 'Unlock with fingerprint, face or PIN'
+                          : 'Unlock with your phone PIN or pattern'
+                        : storedEmail || 'Enter your password below'}
                     </Text>
                   </View>
                   <Ionicons name="chevron-forward" size={s(20)} color={Colors.primary} />
@@ -462,7 +503,7 @@ export function LoginScreen({ embedded = false, bottomSpace = 0, onCreateAccount
                     onPress={() => void handleBiometric()}
                     accessibilityRole="button"
                     accessibilityLabel="Sign in with biometrics">
-                    <Ionicons name="finger-print" size={s(26)} color={Colors.primary} />
+                    <Ionicons name={bioAvailable || bioHardware ? 'finger-print' : 'lock-closed'} size={s(26)} color={Colors.primary} />
                   </TouchableOpacity>
                 ) : null}
               </View>

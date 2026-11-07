@@ -13,11 +13,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useDeskAuth } from '../context/DeskAuthContext';
 import { LinkedStudent, UserSchool } from '../lib/orgRoles';
-import { deskRoleLabel } from '../lib/deskRoles';
+import { deskRoleLabel, mapRoleToMobileHat } from '../lib/deskRoles';
 import { Colors } from '../theme/yana';
-import { LiquidGlassBackdrop } from '../components/dashboard/LiquidGlassBackdrop';
-import { GlassPanel } from '../components/dashboard/Glass';
-import { floatingHeaderInset, TAB_BAR_BODY_HEIGHT } from '../constants/layout';
+import { ThemedBackdrop, CARD, CARD_SURFACE, rgba } from '../components/theme/ThemedPage';
+import { useAppTheme } from '../context/AppThemeContext';
+import { useBottomBarSpace } from '../components/navigation/useBottomBarSpace';
+import { floatingHeaderInset } from '../constants/layout';
 import { ProfileAvatar } from '../components/navigation/ProfileAvatar';
 import { deskFetch, ensureNestDeskSession } from '../lib/deskApi';
 import { log } from '../lib/logger';
@@ -77,6 +78,69 @@ function roleIcon(role: string): keyof typeof Ionicons.glyphMap {
   if (r === 'security') return 'shield-checkmark';
   if (r === 'finance_officer' || r === 'accountant' || r === 'bursar') return 'wallet';
   return 'briefcase';
+}
+
+/** "a parent", "an accountant", "the principal", "security" — the role as a person, in plain words. */
+function rolePhrase(role: string): string {
+  const r = role.toLowerCase().trim().replace(/\s+/g, '_');
+  const hat = mapRoleToMobileHat(r);
+  if (hat === 'security' || r === 'security') return 'security';
+  if (r === 'principal' || r === 'deputy_principal' || r === 'deputy') {
+    return `the ${r === 'principal' ? 'principal' : 'deputy principal'}`;
+  }
+  if (r === 'school_admin' || r === 'org_admin' || r === 'admin') return 'a school admin';
+  const label = deskRoleLabel(r).toLowerCase();
+  return /^[aeiou]/.test(label) ? `an ${label}` : `a ${label}`;
+}
+
+/** "You are a parent in this school" · "You are a teacher and a parent in this school". */
+export function schoolRoleSentence(roles: string[] | null | undefined): string | null {
+  const phrases: string[] = [];
+  for (const role of roles ?? []) {
+    if (!role || role.toLowerCase() === 'individual') continue;
+    const p = rolePhrase(role);
+    if (!phrases.includes(p)) phrases.push(p);
+  }
+  if (!phrases.length) return null;
+  const list =
+    phrases.length === 1
+      ? phrases[0]
+      : `${phrases.slice(0, -1).join(', ')} and ${phrases[phrases.length - 1]}`;
+  return `You are ${list} in this school`;
+}
+
+/** What opening the school as this role gives you (role step). */
+function roleBlurb(role: string): string {
+  const hat = mapRoleToMobileHat(role.toLowerCase());
+  if (hat === 'parent') return 'Fees, results, attendance and transport for your child';
+  if (hat === 'student') return 'Assignments, timetable, grades and courses';
+  if (hat === 'teacher') return 'Timetable, marks, class lists and reports';
+  if (hat === 'security') return 'Gate attendance, trips and boarding';
+  if (hat === 'school_admin') return 'Approvals, students, staff and accounts';
+  return 'Open the school with this role';
+}
+
+/** White card in the dashboard style; the selected one gets the theme's yellow edge. */
+function PickCard({
+  selected = false,
+  style,
+  children,
+}: {
+  selected?: boolean;
+  style?: object;
+  children?: React.ReactNode;
+}) {
+  const { palette } = useAppTheme();
+  return (
+    <View
+      style={[
+        CARD_SURFACE,
+        style,
+        selected ? { borderColor: palette.secondary, borderWidth: 1.5 } : null,
+      ]}>
+      {children}
+    </View>
+  );
 }
 
 function densityForCount(count: number): CardDensity {
@@ -168,11 +232,11 @@ function mergePickerStudents(
 
 /** Full-screen loader — never flash Chat or a half-ready picker underneath. */
 export function ContextPickLoader({ message = 'Preparing your school…' }: { message?: string }) {
-  const insets = useSafeAreaInsets();
-  const tabReserve = TAB_BAR_BODY_HEIGHT + insets.bottom;
+  // Stop above the floating tab bar so the tabs stay usable and nothing hides under them.
+  const tabReserve = useBottomBarSpace();
   return (
     <View style={[styles.root, { bottom: tabReserve }]}>
-      <LiquidGlassBackdrop />
+      <ThemedBackdrop />
       <View style={styles.loaderWrap}>
         <Loader />
         <Text style={styles.loaderText}>{message}</Text>
@@ -190,11 +254,11 @@ function PickerLoadError({
   message: string;
   onRetry?: () => void;
 }) {
-  const insets = useSafeAreaInsets();
-  const tabReserve = TAB_BAR_BODY_HEIGHT + insets.bottom;
+  // Stop above the floating tab bar so the tabs stay usable and nothing hides under them.
+  const tabReserve = useBottomBarSpace();
   return (
     <View style={[styles.root, { bottom: tabReserve }]}>
-      <LiquidGlassBackdrop />
+      <ThemedBackdrop />
       <View style={[styles.loaderWrap, styles.errorWrap]}>
         <Ionicons name="cloud-offline-outline" size={36} color={HERO_GREEN} />
         <Text style={styles.title}>{title}</Text>
@@ -233,6 +297,9 @@ export function SchoolPickerScreen() {
   const [deskChildren, setDeskChildren] = useState<DeskChild[]>([]);
   const [deskKidsFetched, setDeskKidsFetched] = useState(false);
   const { showDialog } = useDialog();
+  const { palette } = useAppTheme();
+  // The picker overlays the tabs; stop above the floating tab bar (it overlapped the list footer).
+  const tabReserve = useBottomBarSpace();
 
   /** Inline “Add role / school” — school first, then role at that school. */
   const [addOpen, setAddOpen] = useState(false);
@@ -621,7 +688,6 @@ export function SchoolPickerScreen() {
   );
 
   const bottomPad = 16;
-  const tabReserve = TAB_BAR_BODY_HEIGHT + insets.bottom;
   const avatarSize = density === 'tight' ? 40 : density === 'normal' ? 44 : 48;
   const listGap = density === 'tight' ? 8 : density === 'normal' ? 10 : 12;
 
@@ -655,12 +721,24 @@ export function SchoolPickerScreen() {
 
   const addRoleBtn = (
     <Pressable
-      style={styles.addStudentBtn}
+      style={({ pressed }) => [
+        styles.addCta,
+        { borderColor: rgba(palette.primary, 0.22) },
+        pressed && styles.cardPressed,
+      ]}
       onPress={openAddRole}
       accessibilityRole="button"
-      accessibilityLabel="Add role or school">
-      <Ionicons name="add-circle-outline" size={14} color={HERO_GREEN} />
-      <Text style={styles.addStudentBtnText}>Add role / school</Text>
+      accessibilityLabel="Add a role or join a school">
+      <View style={[styles.addCtaIcon, { backgroundColor: palette.secondary }]}>
+        <Ionicons name="add" size={22} color={palette.primary} />
+      </View>
+      <View style={styles.rowText}>
+        <Text style={[styles.addCtaTitle, { color: palette.primary }]}>Add a role / join a school</Text>
+        <Text style={styles.cardMeta} numberOfLines={2}>
+          Parent, student, teacher, security or staff, at this or another school
+        </Text>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={palette.primary} />
     </Pressable>
   );
 
@@ -675,7 +753,7 @@ export function SchoolPickerScreen() {
         <Text style={styles.skipBtnText}>Skip for now</Text>
       </Pressable>
       <Text style={styles.skipHint}>
-        Continue as individual. You can add parent, student, security, or another role at any school later.
+        Continue on your own. You can add a role at any school later from the dashboard.
       </Text>
     </View>
   );
@@ -683,7 +761,7 @@ export function SchoolPickerScreen() {
   if (addOpen) {
     return (
       <View style={[styles.root, { bottom: tabReserve }]}>
-        <LiquidGlassBackdrop />
+        <ThemedBackdrop />
         <View style={styles.page}>
           <FlatList<AddListItem>
             data={
@@ -723,9 +801,12 @@ export function SchoolPickerScreen() {
                   <Ionicons name="chevron-back" size={22} color={HERO_GREEN} />
                   <Text style={styles.backText}>Back</Text>
                 </Pressable>
+                <Text style={[styles.stepText, { color: palette.tertiary }]}>
+                  {`Add a role · step ${addStep + 1}`}
+                </Text>
                 <Text style={styles.title}>
                   {addStep === 0
-                    ? 'Add a school'
+                    ? 'Find the school'
                     : addStep === 1
                       ? `What's your role in ${joinedSchool?.name ?? 'this school'}?`
                       : addRole === 'student'
@@ -734,9 +815,9 @@ export function SchoolPickerScreen() {
                 </Text>
                 <Text style={styles.subtitle}>
                   {addStep === 0
-                    ? 'Search and tap one school. You can add another school later.'
+                    ? 'Search by name or code and tap your school. You can add more schools later.'
                     : addStep === 1
-                      ? 'Pick one role at this school. Parent, student, teacher, security, or staff.'
+                      ? 'Pick your role. The school approves it before it opens (some schools approve at once).'
                       : addRole === 'student'
                         ? `Optional — e.g. Computer Science 2022. You can skip and set it later in Desk.`
                         : `At ${joinedSchool?.name ?? 'school'} — search by name or admission. Second name is partially hidden until approved.`}
@@ -752,7 +833,7 @@ export function SchoolPickerScreen() {
                     autoCapitalize="none"
                   />
                 ) : addStep === 1 && joinedSchool ? (
-                  <GlassPanel tone="frost" radius={14} shine={false} style={styles.joinedCard}>
+                  <PickCard style={styles.joinedCard}>
                     <View style={styles.cardInner}>
                       <View style={[styles.logoWrap, { width: 40, height: 40 }]}>
                         <SafeRemoteImage
@@ -772,11 +853,11 @@ export function SchoolPickerScreen() {
                         </Text>
                       </View>
                     </View>
-                  </GlassPanel>
+                  </PickCard>
                 ) : addStep === 2 && addRole === 'student' ? (
                   <>
                     {joinedSchool ? (
-                      <GlassPanel tone="frost" radius={14} shine={false} style={styles.joinedCard}>
+                      <PickCard style={styles.joinedCard}>
                         <View style={styles.cardInner}>
                           <View style={[styles.logoWrap, { width: 40, height: 40 }]}>
                             <SafeRemoteImage
@@ -796,7 +877,7 @@ export function SchoolPickerScreen() {
                             </Text>
                           </View>
                         </View>
-                      </GlassPanel>
+                      </PickCard>
                     ) : null}
                     <TextInput
                       style={styles.searchInput}
@@ -823,7 +904,7 @@ export function SchoolPickerScreen() {
                 ) : addStep === 2 ? (
                   <>
                     {joinedSchool ? (
-                      <GlassPanel tone="frost" radius={14} shine={false} style={styles.joinedCard}>
+                      <PickCard style={styles.joinedCard}>
                         <View style={styles.cardInner}>
                           <View style={[styles.logoWrap, { width: 40, height: 40 }]}>
                             <SafeRemoteImage
@@ -843,7 +924,7 @@ export function SchoolPickerScreen() {
                             </Text>
                           </View>
                         </View>
-                      </GlassPanel>
+                      </PickCard>
                     ) : null}
                     <TextInput
                       style={styles.searchInput}
@@ -881,12 +962,7 @@ export function SchoolPickerScreen() {
                     accessibilityRole="button"
                     accessibilityLabel={`Select ${school.name}`}
                     accessibilityState={{ selected }}>
-                    <GlassPanel
-                      tone="frost"
-                      radius={16}
-                      shine={false}
-                      accentBorder={selected ? 'rgba(238,125,19,0.7)' : null}
-                      style={styles.card}>
+                    <PickCard selected={selected} style={styles.card}>
                       <View style={styles.cardInner}>
                         <View style={[styles.logoWrap, { width: avatarSize, height: avatarSize }]}>
                           <SafeRemoteImage
@@ -920,7 +996,7 @@ export function SchoolPickerScreen() {
                           />
                         )}
                       </View>
-                    </GlassPanel>
+                    </PickCard>
                   </Pressable>
                 );
               }
@@ -949,7 +1025,7 @@ export function SchoolPickerScreen() {
                     }}
                     accessibilityRole="button"
                     accessibilityLabel={opt.title}>
-                    <GlassPanel tone="frost" radius={16} shine={false} style={styles.card}>
+                    <PickCard style={styles.card}>
                       <View style={styles.cardInner}>
                         <View style={[styles.logoWrap, { width: avatarSize, height: avatarSize }]}>
                           <Ionicons name={opt.icon} size={22} color={HERO_GREEN} />
@@ -970,7 +1046,7 @@ export function SchoolPickerScreen() {
                           <Ionicons name="chevron-forward" size={18} color={Colors.mutedForeground} />
                         )}
                       </View>
-                    </GlassPanel>
+                    </PickCard>
                   </Pressable>
                 );
               }
@@ -979,7 +1055,7 @@ export function SchoolPickerScreen() {
               const meta = [student.class_name, adm ? `Adm ${adm}` : null].filter(Boolean).join(' · ');
               const rowBusy = pendingJoinKey === `student:${student.id}`;
               return (
-                <GlassPanel tone="frost" radius={16} shine={false} style={styles.card}>
+                <PickCard style={styles.card}>
                   <View style={styles.cardInner}>
                     <ProfileAvatar name={student.name} uri={null} size={avatarSize} />
                     <View style={styles.rowText}>
@@ -1005,7 +1081,7 @@ export function SchoolPickerScreen() {
                       )}
                     </Pressable>
                   </View>
-                </GlassPanel>
+                </PickCard>
               );
             }}
           />
@@ -1016,7 +1092,7 @@ export function SchoolPickerScreen() {
 
   return (
     <View style={[styles.root, { bottom: tabReserve }]}>
-      <LiquidGlassBackdrop />
+      <ThemedBackdrop />
       <View style={styles.page}>
         {roleMode ? (
           <FlatList
@@ -1029,11 +1105,36 @@ export function SchoolPickerScreen() {
             ListHeaderComponent={
               <View style={[styles.headerChrome, { paddingTop: floatingHeaderInset(insets.top) }]}>
                 {headerBack}
-                <Text style={styles.title}>Select school and role</Text>
-                <Text style={styles.subtitle}>
-                  Choose your role at {selectedSchool?.name ?? 'this school'}. Add another role below
-                  if you are also a parent, student, or security — including at a different school.
+                <Text style={[styles.stepText, { color: palette.tertiary }]}>
+                  {schools.length > 1 ? 'Step 2 of 2 · Role' : 'Choose a role'}
                 </Text>
+                <Text style={styles.title}>How do you want to open it?</Text>
+                <Text style={styles.subtitle}>
+                  You have more than one role here. Pick one; you can switch anytime from the dashboard.
+                </Text>
+                {selectedSchool ? (
+                  <PickCard style={styles.joinedCard}>
+                    <View style={styles.cardInner}>
+                      <View style={[styles.logoWrap, { width: 40, height: 40 }]}>
+                        <SafeRemoteImage
+                          uri={selectedSchool.logoUrl}
+                          style={{ width: 40, height: 40, borderRadius: 10 }}
+                          containerStyle={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center' }}
+                          fallback={<Ionicons name="school" size={20} color={palette.primary} />}
+                          accessibilityLabel={`${selectedSchool.name} logo`}
+                        />
+                      </View>
+                      <View style={styles.rowText}>
+                        <Text style={styles.cardTitle} numberOfLines={2}>
+                          {selectedSchool.name}
+                        </Text>
+                        <Text style={[styles.roleLineText, { color: palette.primary, marginTop: 2 }]} numberOfLines={2}>
+                          {schoolRoleSentence(schoolRoleOptions) ?? 'Your school'}
+                        </Text>
+                      </View>
+                    </View>
+                  </PickCard>
+                ) : null}
               </View>
             }
             renderItem={({ item }) => {
@@ -1043,28 +1144,34 @@ export function SchoolPickerScreen() {
                   style={({ pressed }) => [pressed && styles.cardPressed]}
                   onPress={() => void onSelectRole(item)}
                   accessibilityRole="button"
-                  accessibilityLabel={`Open as ${deskRoleLabel(item)}`}>
-                  <GlassPanel
-                    tone="frost"
-                    radius={16}
-                    shine={false}
-                    accentBorder={selected ? 'rgba(238,125,19,0.7)' : null}
-                    style={styles.card}>
+                  accessibilityLabel={`Open as ${deskRoleLabel(item)}`}
+                  accessibilityHint={roleBlurb(item)}>
+                  <PickCard selected={selected} style={styles.card}>
                     <View style={styles.cardInner}>
-                      <View style={[styles.logoWrap, { width: avatarSize, height: avatarSize }]}>
-                        <Ionicons name={roleIcon(item)} size={22} color={HERO_GREEN} />
+                      <View
+                        style={[
+                          styles.roleIconCircle,
+                          { width: avatarSize, height: avatarSize, backgroundColor: selected ? palette.primary : rgba(palette.primary, 0.08) },
+                        ]}>
+                        <Ionicons name={roleIcon(item)} size={22} color={selected ? palette.secondary : palette.primary} />
                       </View>
                       <View style={styles.rowText}>
                         <Text style={styles.cardTitle} numberOfLines={1}>
                           {deskRoleLabel(item)}
                         </Text>
-                        <Text style={styles.cardMeta} numberOfLines={1}>
-                          {selectedSchool?.name ?? 'School workspace'}
+                        <Text style={styles.cardMeta} numberOfLines={2}>
+                          {roleBlurb(item)}
                         </Text>
                       </View>
-                      <Ionicons name="chevron-forward" size={18} color={Colors.mutedForeground} />
+                      {selected ? (
+                        <View style={[styles.currentBadge, { backgroundColor: rgba(palette.secondary, 0.22) }]}>
+                          <Text style={[styles.currentBadgeText, { color: palette.primary }]}>Current</Text>
+                        </View>
+                      ) : (
+                        <Ionicons name="chevron-forward" size={18} color={Colors.mutedForeground} />
+                      )}
                     </View>
-                  </GlassPanel>
+                  </PickCard>
                 </Pressable>
               );
             }}
@@ -1126,12 +1233,7 @@ export function SchoolPickerScreen() {
                   onPress={() => void onSelectStudent(item)}
                   accessibilityRole="button"
                   accessibilityLabel={`Open ${item.name}`}>
-                  <GlassPanel
-                    tone="frost"
-                    radius={16}
-                    shine={false}
-                    accentBorder={selected ? 'rgba(238,125,19,0.7)' : null}
-                    style={styles.card}>
+                  <PickCard selected={selected} style={styles.card}>
                     <View
                       style={[
                         styles.cardInner,
@@ -1156,7 +1258,7 @@ export function SchoolPickerScreen() {
                       </View>
                       <Ionicons name="chevron-forward" size={18} color={Colors.mutedForeground} />
                     </View>
-                  </GlassPanel>
+                  </PickCard>
                 </Pressable>
               );
             }}
@@ -1172,10 +1274,14 @@ export function SchoolPickerScreen() {
             ItemSeparatorComponent={() => <View style={{ height: listGap }} />}
             ListHeaderComponent={
               <View style={[styles.headerChrome, { paddingTop: floatingHeaderInset(insets.top) }]}>
-                <Text style={styles.title}>Select school and role</Text>
+                <Text style={[styles.stepText, { color: palette.tertiary }]}>
+                  {schools.length > 0 ? 'Step 1 of 2 · School' : 'Get started'}
+                </Text>
+                <Text style={styles.title}>{schools.length > 0 ? 'Choose a school' : 'Join your school'}</Text>
                 <Text style={styles.subtitle}>
-                  Choose the school (and role next if you have more than one). Skipped automatically
-                  when you belong to only one school with one role.
+                  {schools.length > 0
+                    ? 'Tap the school to open. If you have more than one role there, you pick it next.'
+                    : 'Find your school and tell us your role. The school approves new members.'}
                 </Text>
                 {schools.length > 0 ? (
                   <TextInput
@@ -1196,26 +1302,12 @@ export function SchoolPickerScreen() {
               ) : null
             }
             ListFooterComponent={
-              schools.length === 0 ? (
-                <View style={styles.addStudentFooter}>
-                  <Text style={styles.waitHint}>
-                    No schools linked yet. Add role / school to request access.
-                  </Text>
-                  {addRoleBtn}
-                  <Pressable
-                    style={styles.skipBtn}
-                    onPress={() => void skipSchoolPick()}
-                    accessibilityRole="button"
-                    accessibilityLabel="Skip school and role selection">
-                    <Text style={styles.skipBtnText}>Skip for now</Text>
-                  </Pressable>
-                  <Text style={styles.skipHint}>
-                    Continue as individual. You can add parent, student, security, or another role at any school later.
-                  </Text>
-                </View>
-              ) : (
-                addRoleFooter
-              )
+              <>
+                {schools.length === 0 ? (
+                  <Text style={[styles.waitHint, { marginTop: 8 }]}>No schools linked to your account yet.</Text>
+                ) : null}
+                {addRoleFooter}
+              </>
             }
             renderItem={({ item }) => {
               const selected = item.id === selectedSchoolId;
@@ -1225,12 +1317,7 @@ export function SchoolPickerScreen() {
                   onPress={() => void onSelectSchool(item)}
                   accessibilityRole="button"
                   accessibilityLabel={`Open ${item.name}`}>
-                  <GlassPanel
-                    tone="frost"
-                    radius={16}
-                    shine={false}
-                    accentBorder={selected ? 'rgba(238,125,19,0.7)' : null}
-                    style={styles.card}>
+                  <PickCard selected={selected} style={styles.card}>
                     <View style={styles.cardInner}>
                       <View style={[styles.logoWrap, { width: avatarSize, height: avatarSize }]}>
                         <SafeRemoteImage
@@ -1250,10 +1337,17 @@ export function SchoolPickerScreen() {
                         <Text style={styles.cardTitle} numberOfLines={1}>
                           {item.name}
                         </Text>
-                        {(item.roles ?? []).length ? (
-                          <Text style={styles.cardMeta} numberOfLines={1}>
-                            {(item.roles ?? []).join(' · ')}
-                          </Text>
+                        {schoolRoleSentence(item.roles) ? (
+                          <View style={styles.roleLine}>
+                            <Ionicons
+                              name={roleIcon((item.roles ?? [])[0] ?? '')}
+                              size={13}
+                              color={palette.primary}
+                            />
+                            <Text style={[styles.roleLineText, { color: palette.primary }]} numberOfLines={2}>
+                              {schoolRoleSentence(item.roles)}
+                            </Text>
+                          </View>
                         ) : item.shortName ? (
                           <Text style={styles.cardMeta} numberOfLines={1}>
                             {item.shortName}
@@ -1262,7 +1356,7 @@ export function SchoolPickerScreen() {
                       </View>
                       <Ionicons name="chevron-forward" size={18} color={Colors.mutedForeground} />
                     </View>
-                  </GlassPanel>
+                  </PickCard>
                 </Pressable>
               );
             }}
@@ -1332,7 +1426,7 @@ const styles = StyleSheet.create({
   schoolLine: { marginTop: 2, fontSize: 12, fontWeight: '600', color: HERO_GREEN },
   logoWrap: {
     borderRadius: 10,
-    backgroundColor: '#EDF1FD',
+    backgroundColor: 'rgba(21,65,29,0.06)',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -1352,6 +1446,32 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   addStudentBtnText: { color: HERO_GREEN, fontWeight: '600', fontSize: 13 },
+  addCta: {
+    alignSelf: 'stretch',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderRadius: CARD.radius,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    backgroundColor: 'rgba(255,255,255,0.9)',
+  },
+  addCtaIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addCtaTitle: { fontSize: 15, fontWeight: '800' },
+  roleLine: { marginTop: 3, flexDirection: 'row', alignItems: 'center', gap: 5 },
+  roleLineText: { flex: 1, fontSize: 12.5, fontWeight: '600' },
+  stepText: { marginBottom: 4, fontSize: 11, fontWeight: '800', letterSpacing: 0.8, textTransform: 'uppercase' },
+  currentBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 },
+  currentBadgeText: { fontSize: 10.5, fontWeight: '800' },
+  roleIconCircle: { alignItems: 'center', justifyContent: 'center', borderRadius: 999 },
   addStudentFooter: {
     marginTop: 16,
     paddingBottom: 8,
@@ -1389,7 +1509,7 @@ const styles = StyleSheet.create({
   searchInput: {
     marginTop: 12,
     borderWidth: 1,
-    borderColor: '#cbd5e1',
+    borderColor: CARD.border,
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 11,

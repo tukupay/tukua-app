@@ -18,6 +18,7 @@ import * as SecureStore from './secureStore';
 import { getDeskCredentials, getDeskToken, hasNestDeskToken } from './deskApi';
 import { getNestApiBaseUrl } from './localHost';
 import { log } from './logger';
+import { fetchWithTimeout } from './apiHttp';
 
 const ACCESS_KEY = 'tukua_platform_nest_access';
 const REFRESH_KEY = 'tukua_platform_nest_refresh';
@@ -29,6 +30,8 @@ const REFRESH_LEAD_SEC = 24 * 3600;
 const MIN_VALID_SEC = 60;
 /** After a failed (network) refresh, do not retry the proactive refresh for this long. */
 const RETRY_AFTER_FAIL_MS = 60_000;
+/** Sign-in / refresh never hang the app: a stalled network counts as a network error (session kept). */
+const AUTH_TIMEOUT_MS = 20_000;
 
 type LoginPayload = {
   access_token?: string;
@@ -199,11 +202,15 @@ async function unwrapData<T>(json: unknown): Promise<T> {
 async function loginWithPassword(identifier: string, password: string): Promise<string | null> {
   const url = `${nestBase()}/platform/auth/login`;
   try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ identifier, password }),
-    });
+    const res = await fetchWithTimeout(
+      url,
+      {
+        method: 'POST',
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier, password }),
+      },
+      AUTH_TIMEOUT_MS,
+    );
     const json = await res.json().catch(() => null);
     if (!res.ok) {
       log.warn('PlatformNest', 'login failed', { status: res.status, message: json?.message || json?.error });
@@ -229,11 +236,15 @@ async function doRefresh(): Promise<RefreshOutcome> {
   if (!refresh) return { kind: 'none' };
   let res: Response;
   try {
-    res = await fetch(`${nestBase()}/platform/auth/refresh`, {
-      method: 'POST',
-      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refresh_token: refresh }),
-    });
+    res = await fetchWithTimeout(
+      `${nestBase()}/platform/auth/refresh`,
+      {
+        method: 'POST',
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refresh }),
+      },
+      AUTH_TIMEOUT_MS,
+    );
   } catch (e) {
     log.warn('PlatformNest', 'refresh network error — keeping session', String(e));
     return { kind: 'network' };

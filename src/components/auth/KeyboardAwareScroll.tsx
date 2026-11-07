@@ -64,10 +64,20 @@ export function useKeyboardState() {
   return state;
 }
 
-export const KeyboardAwareScroll = forwardRef<ScrollView, ScrollViewProps>(function KeyboardAwareScroll(
-  { contentContainerStyle, children, onScroll, onLayout, ...rest },
+type KeyboardAwareScrollProps = ScrollViewProps & {
+  /**
+   * Room kept between the bottom of the focused field and the keyboard (default 28). A form whose button sits
+   * right under its last field can pass more, so the button (and a total line) stay in view while typing.
+   */
+  revealMargin?: number;
+};
+
+export const KeyboardAwareScroll = forwardRef<ScrollView, KeyboardAwareScrollProps>(function KeyboardAwareScroll(
+  { contentContainerStyle, children, onScroll, onLayout, revealMargin = REVEAL_MARGIN, ...rest },
   ref,
 ) {
+  const marginRef = useRef(revealMargin);
+  marginRef.current = revealMargin;
   const scrollRef = useRef<ScrollView>(null);
   useImperativeHandle(ref, () => scrollRef.current as ScrollView);
 
@@ -97,7 +107,9 @@ export const KeyboardAwareScroll = forwardRef<ScrollView, ScrollViewProps>(funct
       const top = kbTopRef.current;
       if (!top || focusedRef.current !== node) return;
       node.measureInWindow((_x, y, _w, h) => {
-        const overflow = y + h + REVEAL_MARGIN - top;
+        // Never push the field itself above the top of the screen to make room for the extra margin.
+        const margin = Math.min(marginRef.current, Math.max(REVEAL_MARGIN, top - h - 80));
+        const overflow = y + h + margin - top;
         if (overflow > 4) {
           scrollRef.current?.scrollTo({ y: Math.max(0, scrollYRef.current + overflow), animated: true });
         }

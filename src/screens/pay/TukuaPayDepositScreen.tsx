@@ -65,7 +65,7 @@ export function TukuaPayDepositScreen({ navigation }: Props) {
     const kes = Number(amount);
     setError(null);
     if (!kycOk) {
-      setError('Complete identity verification before depositing.');
+      setError('Verify your ID in TukuPay and link it before depositing.');
       return;
     }
     if (!phone.trim()) {
@@ -127,9 +127,9 @@ export function TukuaPayDepositScreen({ navigation }: Props) {
         />
         {kycOk === false ? (
           <ModuleGlassCard>
-            <Text style={styles.err}>Verify your identity before depositing.</Text>
+            <Text style={styles.err}>Verify your ID in the TukuPay app and link it here before depositing.</Text>
             <Pressable style={styles.btn} onPress={() => navigation.navigate('TukuaPayKyc')}>
-              <Text style={styles.btnText}>Open KYC</Text>
+              <Text style={styles.btnText}>Set up TukuPay</Text>
             </Pressable>
           </ModuleGlassCard>
         ) : (

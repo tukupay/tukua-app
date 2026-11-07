@@ -14,6 +14,7 @@ import { useDeskAuth } from '../context/DeskAuthContext';
 import { useAppTheme } from '../context/AppThemeContext';
 import { MobileErrorBoundary } from '../components/MobileErrorBoundary';
 import { DashboardBackground } from '../components/dashboard/DashboardBackground';
+import { PermissionWizard } from '../components/onboarding/PermissionWizard';
 
 /** The signed-out front door (Sign in · Pay fees · Create account) is a root route too. */
 type AppStackParamList = RootStackParamList & { Guest: GuestTabsParams };
@@ -102,6 +103,8 @@ export function AppNavigator() {
           <RootNavigator />
         </MobileErrorBoundary>
       </NavigationContainer>
+      {/* First run only: one calm card per permission, over everything (nothing else asks at start-up). */}
+      <PermissionWizard />
     </View>
   );
 }

@@ -436,3 +436,81 @@ export async function scanMarksheetSave(body: {
   }>('/assessments/marks/scan-save', { method: 'POST', body });
 }
 
+
+// ─── Library (staff / librarian) ──────────────────────────────────────────────────────────────
+
+export type LibraryLoanRow = {
+  id?: string;
+  book_title?: string | null;
+  book_number?: string | null;
+  book_cover_url?: string | null;
+  status?: string | null;
+  issued_at?: string | null;
+  due_at?: string | null;
+  returned_at?: string | null;
+  borrower_name?: string | null;
+  student_name?: string | null;
+  student_number?: string | null;
+  admission_number?: string | null;
+  class_name?: string | null;
+  days_late?: number | null;
+};
+
+/**
+ * Library loans, one page at a time. A librarian or school leader gets the school's loans; anyone else
+ * (a teacher, a learner) only their own. `status`: active (open + overdue) | overdue | returned.
+ */
+export async function fetchLibraryLoansPage(opts: { status?: string; page?: number; limit?: number; q?: string }) {
+  const params = new URLSearchParams({ page: String(opts.page ?? 1), limit: String(opts.limit ?? 20) });
+  if (opts.status) params.set('status', opts.status);
+  if (opts.q?.trim()) params.set('q', opts.q.trim());
+  const data = await deskFetch<{ loans?: LibraryLoanRow[]; total?: number; page?: number; limit?: number } | null>(
+    `/library/loans?${params}`,
+  );
+  const loans = unwrapList<LibraryLoanRow>(data, ['loans', 'items']);
+  const total = Number((data as { total?: number } | null)?.total);
+  return { loans, total: Number.isFinite(total) ? total : loans.length };
+}
+
+/** Librarian dashboard counters (GET /library/dashboard); null when the account cannot see it. */
+export async function fetchLibraryDashboard(): Promise<Record<string, unknown> | null> {
+  try {
+    const data = await deskFetch<Record<string, unknown> | null>('/library/dashboard');
+    return data && typeof data === 'object' ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The exam a teacher most likely means: the current one, else the newest still open for marking, else the first. */
+export function pickDefaultExam<T extends { id: string; marking_status?: string; is_current?: unknown }>(exams: T[]): T | null {
+  return (
+    exams.find((e) => e.is_current === true || e.is_current === 1) ??
+    exams.find((e) => String(e.marking_status ?? '').toLowerCase() === 'open') ??
+    exams[0] ??
+    null
+  );
+}
+
+/** Mark entry status for one exam: every class × subject row (done ones too), for progress bars. */
+export async function fetchMarksEntryStatusAll(examId: string): Promise<MarksEntryStatusRow[]> {
+  const data = await deskFetch<{ exam_id?: string; classes?: Array<Record<string, unknown>> } | null>(
+    `/assessments/marks/entry-status?exam_id=${encodeURIComponent(examId)}`,
+  );
+  return unwrapList<Record<string, unknown>>(data, ['classes', 'rows', 'items']).map((c) => {
+    const total = Number(c.total_students ?? c.total_count ?? 0) || 0;
+    const entered = Number(c.entered_students ?? c.entered_count ?? 0) || 0;
+    const pending = Number(c.pending_students ?? c.pending_count ?? Math.max(0, total - entered)) || 0;
+    return {
+      exam_id: String(c.exam_id ?? examId),
+      class_id: c.class_id != null ? String(c.class_id) : undefined,
+      class_name: c.class_name != null ? String(c.class_name) : undefined,
+      subject_id: c.subject_id != null ? String(c.subject_id) : undefined,
+      subject_name: c.subject_name != null ? String(c.subject_name) : undefined,
+      teacher_name: c.teacher_name != null && c.teacher_name !== '—' ? String(c.teacher_name) : undefined,
+      pending_count: pending,
+      total_count: total,
+      entered_count: entered,
+    };
+  });
+}

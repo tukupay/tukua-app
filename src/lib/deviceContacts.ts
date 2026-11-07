@@ -1,5 +1,6 @@
 /**
- * Load device address-book phones for Tukua Connect matching.
+ * Load device address-book phones for Tukua Connect matching. Called only when the user opens contact matching
+ * (in context), never at start-up; the first-run permission wizard does not ask for contacts.
  */
 import * as Contacts from 'expo-contacts';
 import { log } from './logger';

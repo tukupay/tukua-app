@@ -39,6 +39,7 @@ export type ParentTeacher = {
   phone_masked?: string | null;
   email?: string | null;
   photo_url?: string | null;
+  avatar_url?: string | null;
   description?: string | null;
 };
 
@@ -379,12 +380,43 @@ export async function createParentPaymentSlip(body: {
   });
 }
 
+export type BursaryApplication = {
+  id?: string;
+  student_id?: string | null;
+  program_id?: string | null;
+  program_name?: string | null;
+  provider_name?: string | null;
+  funder_name?: string | null;
+  requested_amount?: number | string | null;
+  approved_amount?: number | string | null;
+  disbursed_amount?: number | string | null;
+  status?: string | null;
+  applied_on?: string | null;
+  created_at?: string | null;
+  notes?: string | null;
+  decision_notes?: string | null;
+};
+
 export async function fetchParentBursary() {
   return deskFetch<{
     programs?: ParentBursaryProgram[];
     contributions?: ParentBursaryContribution[];
     kitty_total?: number;
+    /** The parent's own children's applications (school programs). */
+    applications?: BursaryApplication[];
+    /** Their applications to outside funders. */
+    funder_applications?: BursaryApplication[];
   }>('/parents/me/bursary');
+}
+
+/** A parent applies to one of the school's open bursary programs for one of their own children. */
+export async function applyParentBursary(body: {
+  student_id: string;
+  program_id: string;
+  requested_amount: number;
+  notes?: string;
+}) {
+  return deskFetch<Record<string, unknown>>('/parents/me/bursary/apply', { method: 'POST', body });
 }
 
 export async function contributeParentBursary(body: {
@@ -455,4 +487,48 @@ export async function faceBoardParentTransport(body: {
       body: { ...body, student_id: sid },
     },
   );
+}
+
+/** One page of a parent's attendance records (newest first) plus per-child totals over every recorded day. */
+export type AttendancePage = {
+  records: Array<ParentAttendanceRecord & { check_in_at?: string | null; check_out_at?: string | null; method?: string | null; notes?: string | null }>;
+  summary: ParentAttendanceSummary[];
+  /** Total rows for the selection; null when the server does not report it (older API). */
+  total: number | null;
+  /** More rows after this page; null when the server does not say (older API, which ignores offset). */
+  hasMore: boolean | null;
+};
+
+export function toAttendancePage(data: unknown): AttendancePage {
+  const d = (data && typeof data === 'object' ? data : {}) as Record<string, unknown>;
+  const records = Array.isArray(d.records) ? (d.records as AttendancePage['records']) : [];
+  const summary = (Array.isArray(d.summary) ? d.summary : []).map((s) => {
+    const row = (s ?? {}) as Record<string, unknown>;
+    const n = (k: string) => (Number.isFinite(Number(row[k])) ? Number(row[k]) : 0);
+    return {
+      student_id: String(row.student_id ?? ''),
+      full_name: row.full_name != null ? String(row.full_name) : null,
+      present: n('present'),
+      absent: n('absent'),
+      late: n('late'),
+      total: n('total'),
+    };
+  });
+  const total = Number.isFinite(Number(d.total)) && d.total != null ? Number(d.total) : null;
+  const hasMore = typeof d.has_more === 'boolean' ? d.has_more : null;
+  return { records, summary, total, hasMore };
+}
+
+/** `GET /parents/me/attendance` with paging (limit/offset; the API caps limit at 200). */
+export async function fetchParentAttendancePage(
+  studentId: string | null | undefined,
+  opts: { limit?: number; offset?: number } = {},
+): Promise<AttendancePage> {
+  const params = new URLSearchParams();
+  const sid = resolveStudentId(studentId);
+  if (sid) params.set('student_id', sid);
+  params.set('limit', String(opts.limit ?? 30));
+  params.set('offset', String(opts.offset ?? 0));
+  const data = await deskFetch<unknown>(`/parents/me/attendance?${params}`);
+  return toAttendancePage(data);
 }

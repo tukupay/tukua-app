@@ -27,10 +27,38 @@ async function reverseGeocode(lat: number, lng: number) {
   }
 }
 
-export async function captureUserLocation(): Promise<UserLocation | null> {
+/**
+ * Ask for location now (shows the system dialog when not yet decided). For the first-run permission wizard and
+ * for features that need it, at the moment the user starts them. Never throws.
+ */
+export async function requestLocationPermission(): Promise<boolean> {
+  if (Platform.OS === 'web') return false;
+  try {
+    const { status } = await Location.requestForegroundPermissionsAsync();
+    return status === 'granted';
+  } catch {
+    return false;
+  }
+}
+
+export async function hasLocationPermission(): Promise<boolean> {
+  if (Platform.OS === 'web') return false;
+  try {
+    const { status } = await Location.getForegroundPermissionsAsync();
+    return status === 'granted';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Current position + city. By default it never pops a system dialog (sign-in / register call it in the
+ * background): it only reads location when the user already allowed it. Pass { ask: true } to ask first.
+ */
+export async function captureUserLocation(opts: { ask?: boolean } = {}): Promise<UserLocation | null> {
   if (Platform.OS === 'web') return null;
-  const { status } = await Location.requestForegroundPermissionsAsync();
-  if (status !== 'granted') return null;
+  const allowed = opts.ask ? await requestLocationPermission() : await hasLocationPermission();
+  if (!allowed) return null;
 
   const pos = await Location.getCurrentPositionAsync({
     accuracy: Location.Accuracy.High,

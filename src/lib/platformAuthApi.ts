@@ -5,7 +5,16 @@
 import { getNestApiBaseUrl } from './localHost';
 import { humanizeError } from './humanizeError';
 import { log } from './logger';
-import { fetchWithTimeout } from './apiHttp';
+import {
+  BAD_ANSWER_MESSAGE,
+  NETWORK_MESSAGE,
+  fetchWithTimeout,
+  messageForStatus,
+  readJsonSafe,
+  userMessageFromError,
+  warnDev,
+  type ApiError,
+} from './apiHttp';
 
 function nestBase(): string {
   return getNestApiBaseUrl().replace(/\/$/, '');
@@ -32,65 +41,96 @@ function nestRawMessage(json: any): string {
   return '';
 }
 
-function pickMessage(json: any, status: number): string | undefined {
+/** Auth routes (sign-in, OTP, reset): a 401 means wrong details, not "payment" — worded for that screen. */
+function authMessage(raw: string, status: number): string | undefined {
+  if (/invalid (login )?credentials|invalid_credentials|wrong password|incorrect password|user not found|no account/i.test(raw)) {
+    return 'That email, phone or username, or the password, is not right. Check them and try again.';
+  }
+  if (status === 429 || /too many|rate limit/i.test(raw)) {
+    return 'Too many tries. Wait a minute and try again.';
+  }
+  if (/locked|suspended|disabled|deactivated|banned/i.test(raw)) {
+    return 'This account is not active. Contact your school or Tukua support.';
+  }
+  if (/expired|already used/i.test(raw) && /token|link|code|otp/i.test(raw)) {
+    return 'This link or code has expired. Request a new one.';
+  }
+  if (raw && !/^(unauthorized|forbidden|bad request|internal server error|error)$/i.test(raw.trim())) {
+    const shown = userMessageFromError(raw, '');
+    if (shown) return shown;
+  }
+  if (status === 401) return 'That email, phone or username, or the password, is not right. Check them and try again.';
+  if (status === 403) return 'This account cannot sign in here yet. Contact your school or Tukua support.';
+  if (status === 404) return 'We could not find that account. Check the details, or create an account.';
+  if (status >= 500) return 'Tukua is having a problem right now. Please try again in a few minutes.';
+  if (status >= 400) return messageForStatus(status, null);
+  return undefined;
+}
+
+function pickMessage(json: any, status: number, path = ''): string | undefined {
   const raw = nestRawMessage(json);
+  if (path.startsWith('/platform/auth')) return authMessage(raw, status);
   if (raw) return humanizeError(raw);
   if (status === 401 || status === 403) return humanizeError('Authentication required');
+  if (status === 429) return 'Too many tries. Wait a minute and try again.';
   if (status >= 500) return humanizeError('service unavailable');
   return undefined;
 }
 
-async function nestPost<T>(
-  path: string,
-  body: unknown,
-  bearer?: string | null,
-): Promise<{ ok: boolean; data?: T; message?: string; error?: string; status: number }> {
+type NestResult<T> = { ok: boolean; data?: T; message?: string; error?: string; status: number };
+
+/** POST to Nest. Never throws: network, timeout, bad JSON and server errors come back as { ok: false, message }. */
+async function nestPost<T>(path: string, body: unknown, bearer?: string | null): Promise<NestResult<T>> {
   let res: Response;
-  const headers: Record<string, string> = {
-    Accept: 'application/json',
-    'Content-Type': 'application/json',
-  };
-  if (bearer) headers.Authorization = `Bearer ${bearer}`;
-  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-  const timeoutMs = 45000;
-  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
   try {
-    res = await fetch(`${nestBase()}${path}`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body ?? {}),
-      signal: controller?.signal,
-    });
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    };
+    if (bearer) headers.Authorization = `Bearer ${bearer}`;
+    res = await fetchWithTimeout(
+      `${nestBase()}${path}`,
+      { method: 'POST', headers, body: JSON.stringify(body ?? {}) },
+      45_000,
+    );
   } catch (e) {
-    const aborted =
-      (e instanceof Error && e.name === 'AbortError') ||
-      /aborted|timeout/i.test(String(e));
-    log.warn('NestAuth', `POST ${path} network`, String(e));
+    const timeout = Boolean((e as ApiError)?.timeout);
+    log.warn('NestAuth', `POST ${path} ${timeout ? 'timeout' : 'network'}`, String(e));
+    warnDev('NestAuth', e, { path });
     return {
       ok: false,
-      message: aborted
+      message: timeout
         ? 'The server took too long. Check your connection and try again.'
-        : humanizeError(e),
-      error: aborted ? 'timeout' : 'network_error',
+        : userMessageFromError(e, NETWORK_MESSAGE),
+      error: timeout ? 'timeout' : 'network_error',
       status: 0,
     };
-  } finally {
-    if (timer) clearTimeout(timer);
   }
-  const json = await res.json().catch(() => null);
-  const data =
-    json && typeof json === 'object' && 'data' in json ? (json as { data: T }).data : (json as T);
-  const ok = res.ok && (json?.success !== false);
-  if (!ok) {
-    log.warn('NestAuth', `POST ${path} ${res.status}`, JSON.stringify(json).slice(0, 220));
+  try {
+    const json = (await readJsonSafe(res)) as any;
+    const data =
+      json && typeof json === 'object' && 'data' in json ? (json as { data: T }).data : (json as T);
+    const ok = res.ok && json?.success !== false;
+    if (!ok) {
+      log.warn('NestAuth', `POST ${path} ${res.status}`, JSON.stringify(json).slice(0, 220));
+      warnDev('NestAuth', { message: nestRawMessage(json) || 'no JSON body', statusCode: res.status }, { path });
+    }
+    const message = ok
+      ? typeof json?.message === 'string'
+        ? json.message
+        : undefined
+      : pickMessage(json, res.status, path) || messageForStatus(res.status, null);
+    return {
+      ok,
+      data,
+      message,
+      error: typeof json?.error === 'string' ? json.error : json?.error?.code,
+      status: res.status,
+    };
+  } catch (e) {
+    warnDev('NestAuth', e, { path, status: res.status });
+    return { ok: false, message: BAD_ANSWER_MESSAGE, error: 'bad_response', status: res.status };
   }
-  return {
-    ok,
-    data,
-    message: pickMessage(json, res.status) || (ok ? json?.message : humanizeError('request failed')),
-    error: typeof json?.error === 'string' ? json.error : json?.error?.code,
-    status: res.status,
-  };
 }
 
 /** One security code → email and/or SMS. */

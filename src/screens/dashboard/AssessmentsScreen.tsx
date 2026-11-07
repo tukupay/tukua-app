@@ -1,25 +1,36 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  Modal,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
-import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+/**
+ * Parent → Exams & results: pick a year and exam, see each child's report summary, open the printable report
+ * form / class analysis.
+ *
+ * Fixed 2026-11-07: the report fields are `overall_mean`, `overall_grade`, `mean_grade_points`,
+ * `rank_in_class_by_marks` (the screen read `mean_mark` / `mean_grade` / `rank_in_class`, so Mean, Grade and
+ * Rank always showed "—"); year/exam pickers are chips; dashboard theme; requests that finish late no longer
+ * overwrite a newer pick.
+ */
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { ThemedBackdrop } from '../../components/theme/ThemedPage';
-import { ModuleBackBar, ModuleEmpty, ModuleGlassCard, ModuleKicker, ModuleScreenHeader } from './ModuleChrome';
-import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useDeskAuth } from '../../context/DeskAuthContext';
+import { useAppTheme } from '../../context/AppThemeContext';
 import { fetchParentAssessmentReports } from '../../lib/parentPortalApi';
 import { DashboardStackParamList } from '../../navigation/types';
-import { Colors } from '../../theme/yana';
 import { log } from '../../lib/logger';
-import { Loader } from '../../components/ui/Loader';
+import { INK, rgba } from '../../components/theme/ThemedPage';
+import {
+  ChipRow,
+  ErrorState,
+  ListSkeleton,
+  ModuleScrollPage,
+  MUTED_INK,
+  SectionLabel,
+  StateCard,
+  StatTile,
+  StatusPill,
+  SurfaceCard,
+  fmtNum,
+  num,
+} from '../../components/ui/ModuleKit';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'Assessments'>;
 
@@ -29,6 +40,7 @@ type ExamRow = {
   term?: string;
   academic_year?: string;
   marking_status?: string;
+  is_current?: number | boolean | null;
   created_at?: string;
 };
 
@@ -37,21 +49,7 @@ type ChildReport = {
   admission_number?: string | null;
   full_name?: string;
   class_name?: string | null;
-  report?: {
-    mean_mark?: number | string | null;
-    mean_grade?: string | null;
-    total_marks?: number | string | null;
-    position?: number | string | null;
-    class_position?: number | string | null;
-    rank_in_class?: number | string | null;
-    rank_in_level?: number | string | null;
-    rank_out_of_class?: number | string | null;
-    rank_out_of_level?: number | string | null;
-    class_mean_marks?: number | string | null;
-    level_mean_marks?: number | string | null;
-    principal_comment?: string | null;
-    class_teacher_comment?: string | null;
-  } | null;
+  report?: Record<string, unknown> | null;
 };
 
 type AssessmentPayload = {
@@ -63,34 +61,31 @@ type AssessmentPayload = {
 };
 
 function examLabel(e?: ExamRow | null): string {
-  if (!e) return 'Select exam';
-  return (
-    e.name ||
-    [e.term, e.academic_year].filter(Boolean).join(' · ') ||
-    'Exam'
-  );
+  if (!e) return 'Exam';
+  return e.name || [e.term, e.academic_year].filter(Boolean).join(' · ') || 'Exam';
 }
 
-function rankLabel(report: ChildReport['report']): string {
-  if (!report) return '—';
-  const pos = report.rank_in_class ?? report.class_position ?? report.position;
-  const out = report.rank_out_of_class;
-  if (pos != null && out != null) return `${pos} / ${out}`;
-  if (pos != null) return String(pos);
-  return '—';
-}
-
-function levelRankLabel(report: ChildReport['report']): string {
-  if (!report) return '—';
-  const pos = report.rank_in_level;
-  const out = report.rank_out_of_level;
-  if (pos != null && out != null) return `${pos} / ${out}`;
-  if (out != null) return `— / ${out}`;
-  return '—';
+/** A child's report row (either API spelling) → what the card shows. */
+function readReport(r: Record<string, unknown>) {
+  return {
+    mean: num(r.overall_mean ?? r.mean_mark),
+    grade: r.overall_grade ?? r.mean_grade ? String(r.overall_grade ?? r.mean_grade) : null,
+    points: num(r.mean_grade_points),
+    total: num(r.total_marks),
+    subjects: num(r.subject_entered_count),
+    rank: num(r.rank_in_class_by_marks ?? r.rank_in_class ?? r.class_position ?? r.position),
+    rankOf: num(r.rank_out_of_class),
+    levelRank: num(r.rank_in_level_marks ?? r.rank_in_level),
+    levelOf: num(r.rank_out_of_level),
+    classMean: num(r.class_mean_marks),
+    levelMean: num(r.level_mean_marks),
+    teacher: r.class_teacher_comment ? String(r.class_teacher_comment) : null,
+    principal: r.principal_comment ? String(r.principal_comment) : null,
+  };
 }
 
 export function AssessmentsScreen({ navigation }: Props) {
-  const insets = useSafeAreaInsets();
+  const { palette } = useAppTheme();
   const { selectedStudentId, selectedStudent } = useDeskAuth();
   const [payload, setPayload] = useState<AssessmentPayload | null>(null);
   const [examId, setExamId] = useState<string | null>(null);
@@ -98,68 +93,63 @@ export function AssessmentsScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [picker, setPicker] = useState<'year' | 'exam' | null>(null);
+  const reqId = useRef(0);
 
   const load = useCallback(
-    async (soft = false, nextExamId?: string | null) => {
-      if (!soft) setLoading(true);
+    async (opts: { soft?: boolean; exam?: string | null } = {}) => {
+      const id = ++reqId.current;
+      if (!opts.soft) setLoading(true);
       setError(null);
       try {
-        const data = (await fetchParentAssessmentReports(
-          nextExamId ?? examId ?? undefined,
-          selectedStudentId,
-        )) as AssessmentPayload;
-        setPayload(data ?? {});
-        const resolved = String(data?.exam_id ?? data?.exam?.id ?? '').trim() || null;
+        const data = ((await fetchParentAssessmentReports(opts.exam ?? undefined, selectedStudentId)) ??
+          {}) as AssessmentPayload;
+        if (id !== reqId.current) return;
+        setPayload(data);
+        const resolved = String(data.exam_id ?? data.exam?.id ?? '').trim() || null;
         if (resolved) setExamId(resolved);
-        const y =
-          String(data?.exam?.academic_year ?? '').trim() ||
-          (data?.years?.[0] ? String(data.years[0]) : null);
-        if (y && !year) setYear(y);
+        const y = String(data.exam?.academic_year ?? '').trim() || (data.years?.[0] ? String(data.years[0]) : null);
+        if (y) setYear((prev) => prev ?? y);
       } catch (e) {
+        if (id !== reqId.current) return;
         const msg = e instanceof Error ? e.message : String(e);
         log.warn('Assessments', msg);
         setError(msg);
         setPayload(null);
       } finally {
-        setLoading(false);
-        setRefreshing(false);
+        if (id === reqId.current) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     },
-    [examId, selectedStudentId, year],
+    [selectedStudentId],
   );
 
   useEffect(() => {
+    setYear(null);
+    setExamId(null);
     void load();
-    // initial load only — exam changes call load explicitly
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedStudentId]);
+  }, [load]);
 
-  const allExams = payload?.exams ?? [];
+  const allExams = useMemo(() => (Array.isArray(payload?.exams) ? payload!.exams.filter((e) => e && e.id) : []), [payload]);
   const years = useMemo(() => {
-    const fromApi = payload?.years ?? [];
+    const fromApi = (payload?.years ?? []).map(String).filter(Boolean);
     if (fromApi.length) return fromApi;
-    return Array.from(
-      new Set(allExams.map((e) => String(e.academic_year ?? '').trim()).filter(Boolean)),
-    );
+    return Array.from(new Set(allExams.map((e) => String(e.academic_year ?? '').trim()).filter(Boolean)));
   }, [payload?.years, allExams]);
-
-  const examsForYear = useMemo(() => {
-    if (!year) return allExams;
-    return allExams.filter((e) => String(e.academic_year ?? '') === year);
-  }, [allExams, year]);
+  const examsForYear = useMemo(
+    () => (year ? allExams.filter((e) => String(e.academic_year ?? '') === year) : allExams),
+    [allExams, year],
+  );
+  const currentExam = payload?.exam ?? allExams.find((e) => e.id === examId) ?? null;
 
   const children = useMemo(() => {
-    const all = Array.isArray(payload?.children) ? payload.children : [];
-    const filtered = selectedStudentId
-      ? all.filter((c) => String(c.student_id ?? '') === selectedStudentId)
-      : all;
+    const all = Array.isArray(payload?.children) ? payload!.children : [];
+    const filtered = selectedStudentId ? all.filter((c) => String(c.student_id ?? '') === selectedStudentId) : all;
     const source = filtered.length ? filtered : selectedStudentId ? [] : all;
     const seen = new Set<string>();
     return source.filter((c, index) => {
-      const sid = String(c.student_id ?? '').trim();
-      const adm = String(c.admission_number ?? '').trim();
-      const key = sid || adm || `row-${index}`;
+      const key = String(c.student_id ?? '').trim() || String(c.admission_number ?? '').trim() || `row-${index}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -168,285 +158,212 @@ export function AssessmentsScreen({ navigation }: Props) {
 
   const selectYear = (y: string) => {
     setYear(y);
-    setPicker(null);
     const inYear = allExams.filter((e) => String(e.academic_year ?? '') === y);
-    const closed = inYear.filter((e) => String(e.marking_status ?? '').toLowerCase() === 'closed');
-    const next = closed[0] ?? inYear[0];
-    if (next?.id) {
+    const next =
+      inYear.find((e) => e.is_current === true || e.is_current === 1) ??
+      inYear.find((e) => String(e.marking_status ?? '').toLowerCase() === 'closed') ??
+      inYear[0];
+    if (next?.id && next.id !== examId) {
       setExamId(next.id);
-      void load(false, next.id);
+      void load({ exam: next.id });
     }
   };
 
   const selectExam = (id: string) => {
+    if (id === examId) return;
     setExamId(id);
-    setPicker(null);
-    void load(false, id);
+    void load({ exam: id });
+  };
+
+  const openReportForm = (child: ChildReport) => {
+    if (!examId || !child.student_id) return;
+    navigation.navigate('DeskModule', {
+      title: 'Report form',
+      deskPath: `/parent/assessments/print?exam_id=${encodeURIComponent(examId)}&student_id=${encodeURIComponent(
+        String(child.student_id),
+      )}&reportType=report_forms&title=${encodeURIComponent(`Report form — ${child.full_name || 'Student'}`)}`,
+      description: 'Same school report layout, with download.',
+    });
+  };
+
+  const openClassAnalysis = (child: ChildReport) => {
+    if (!examId) return;
+    navigation.navigate('DeskModule', {
+      title: 'Class analysis',
+      deskPath: `/parent/assessments/print?exam_id=${encodeURIComponent(examId)}&reportType=class_performance&class_name=${encodeURIComponent(
+        String(child.class_name || ''),
+      )}&title=${encodeURIComponent('Class analysis')}`,
+      description: 'Class means — no other learners’ raw scores.',
+    });
   };
 
   return (
-    <View style={styles.root}>
-      <ThemedBackdrop />
-      <ScrollView
-        contentContainerStyle={[
-          styles.content,
-          {
-            paddingTop: floatingHeaderInset(insets.top),
-            paddingBottom: moduleScrollBottomPad(insets.bottom),
-          },
-        ]}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => {
-              setRefreshing(true);
-              void load(true);
-            }}
-            tintColor={Colors.brandGreenMid}
+    <ModuleScrollPage
+      title="Exams & results"
+      description={
+        selectedStudent?.name ? `Report forms for ${selectedStudent.name}.` : 'Your children’s report forms and class analysis.'
+      }
+      onBack={() => navigation.goBack()}
+      refreshing={refreshing}
+      onRefresh={() => {
+        setRefreshing(true);
+        void load({ soft: true, exam: examId });
+      }}>
+      {payload && !error && allExams.length ? (
+        <View>
+          {years.length > 1 ? (
+            <ChipRow value={year ?? years[0]} onChange={selectYear} options={years.map((y) => ({ key: y, label: y }))} />
+          ) : null}
+          <ChipRow
+            value={examId ?? ''}
+            onChange={selectExam}
+            options={examsForYear.map((e) => ({ key: e.id, label: examLabel(e) }))}
           />
-        }
-        showsVerticalScrollIndicator={false}>
-        <ModuleBackBar onBack={() => navigation.goBack()} />
-        <ModuleKicker>Assessments</ModuleKicker>
-        <ModuleScreenHeader
-          title={selectedStudent?.name ? selectedStudent.name : 'Exam results'}
-          description="Your child’s report form and class analysis — not Merit Lists."
+        </View>
+      ) : null}
+
+      {loading ? (
+        <ListSkeleton rows={2} height={160} />
+      ) : error ? (
+        <ErrorState title="Couldn’t load results" message={error} onRetry={() => void load({ exam: examId })} />
+      ) : allExams.length === 0 ? (
+        <StateCard icon="school-outline" title="No exams yet" body="Exams and report forms will show here once the school sets them up." />
+      ) : children.length === 0 ? (
+        <StateCard
+          icon="people-outline"
+          title="No linked children"
+          body="Once your children are linked at the school, their exam reports will show here."
         />
-
-        {!loading && !error ? (
-          <View style={styles.pickers}>
-            <Pressable style={styles.pickerBtn} onPress={() => setPicker('year')}>
-              <Text style={styles.pickerLabel}>Year</Text>
-              <Text style={styles.pickerValue}>{year || 'All years'}</Text>
-              <Ionicons name="chevron-down" size={16} color={Colors.mutedForeground} />
-            </Pressable>
-            <Pressable style={styles.pickerBtn} onPress={() => setPicker('exam')}>
-              <Text style={styles.pickerLabel}>Exam</Text>
-              <Text style={styles.pickerValue} numberOfLines={1}>
-                {examLabel(payload?.exam || examsForYear.find((e) => e.id === examId))}
-              </Text>
-              <Ionicons name="chevron-down" size={16} color={Colors.mutedForeground} />
-            </Pressable>
-          </View>
-        ) : null}
-
-        {loading ? (
-          <View style={styles.loader}>
-            <Loader />
-          </View>
-        ) : error ? (
-          <ModuleEmpty
-            title="Couldn’t load results"
-            body={
-              /session expired|401|unauthorized/i.test(error)
-                ? 'School API session isn’t accepted yet for this account. Pull to retry.'
-                : error
-            }
-            onRetry={() => void load()}
-          />
-        ) : children.length === 0 ? (
-          <ModuleEmpty
-            title="No linked children"
-            body="Once your children are linked at the school, their exam reports will show here."
-          />
-        ) : (
-          children.map((child, index) => {
-            const report = child.report;
-            const cardKey = `${String(child.student_id ?? 'unknown')}-${String(child.admission_number ?? 'na')}-${index}`;
+      ) : (
+        <>
+          {currentExam ? (
+            <SectionLabel
+              right={
+                String(currentExam.marking_status ?? '').toLowerCase() === 'open' ? (
+                  <StatusPill label="Marking in progress" tone="accent" />
+                ) : undefined
+              }>
+              {[examLabel(currentExam), currentExam.term].filter(Boolean).join(' · ')}
+            </SectionLabel>
+          ) : null}
+          {children.map((child, index) => {
+            const rep = child.report ? readReport(child.report) : null;
+            const hasMarks = rep && (rep.mean != null || rep.total != null);
             return (
-              <ModuleGlassCard key={cardKey}>
+              <SurfaceCard key={`${String(child.student_id ?? 'x')}-${index}`}>
                 <View style={styles.cardTop}>
-                  <View style={styles.iconWrap}>
-                    <Ionicons name="ribbon-outline" size={18} color={Colors.primary} />
+                  <View style={[styles.avatar, { backgroundColor: rgba(palette.primary, 0.08) }]}>
+                    <Text style={[styles.avatarText, { color: palette.primary }]}>
+                      {String(child.full_name || 'S').trim().charAt(0).toUpperCase()}
+                    </Text>
                   </View>
-                  <View style={styles.cardBody}>
-                    <Text style={styles.name}>{child.full_name || 'Student'}</Text>
-                    <Text style={styles.meta}>
-                      {[child.class_name, child.admission_number].filter(Boolean).join(' · ') ||
-                        'Linked student'}
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={styles.name} numberOfLines={1}>
+                      {child.full_name || 'Student'}
+                    </Text>
+                    <Text style={styles.meta} numberOfLines={1}>
+                      {[child.class_name, child.admission_number].filter(Boolean).join(' · ') || 'Linked learner'}
                     </Text>
                   </View>
                 </View>
-                {report ? (
-                  <View style={styles.stats}>
-                    <View style={styles.stat}>
-                      <Text style={styles.statLabel}>Mean</Text>
-                      <Text style={styles.statValue}>
-                        {report.mean_mark != null ? String(report.mean_mark) : '—'}
+
+                {rep && hasMarks ? (
+                  <>
+                    <View style={styles.stats}>
+                      <StatTile label="Mean" value={rep.mean != null ? `${fmtNum(rep.mean)}%` : '—'} hint={rep.grade ?? undefined} />
+                      <StatTile
+                        label="Total"
+                        value={rep.total != null ? fmtNum(rep.total, 0) : '—'}
+                        hint={rep.subjects != null ? `${rep.subjects} subjects` : undefined}
+                      />
+                      <StatTile
+                        label="Class rank"
+                        value={rep.rank != null ? String(rep.rank) : '—'}
+                        hint={rep.rankOf != null ? `of ${rep.rankOf}` : undefined}
+                      />
+                    </View>
+                    {rep.classMean != null || rep.levelMean != null || rep.levelOf != null ? (
+                      <View style={[styles.stats, { marginTop: 8 }]}>
+                        <StatTile label="Class mean" value={rep.classMean != null ? `${fmtNum(rep.classMean)}%` : '—'} />
+                        <StatTile label="Level mean" value={rep.levelMean != null ? `${fmtNum(rep.levelMean)}%` : '—'} />
+                        <StatTile
+                          label="Level rank"
+                          value={rep.levelRank != null ? String(rep.levelRank) : '—'}
+                          hint={rep.levelOf != null ? `of ${rep.levelOf}` : undefined}
+                        />
+                      </View>
+                    ) : null}
+                    {rep.mean != null && rep.classMean != null ? (
+                      <Text style={styles.compare}>
+                        {rep.mean >= rep.classMean
+                          ? `${fmtNum(rep.mean - rep.classMean)} points above the class mean`
+                          : `${fmtNum(rep.classMean - rep.mean)} points below the class mean`}
                       </Text>
-                    </View>
-                    <View style={styles.stat}>
-                      <Text style={styles.statLabel}>Grade</Text>
-                      <Text style={styles.statValue}>{report.mean_grade || '—'}</Text>
-                    </View>
-                    <View style={styles.stat}>
-                      <Text style={styles.statLabel}>Class rank</Text>
-                      <Text style={styles.statValue}>{rankLabel(report)}</Text>
-                    </View>
-                  </View>
+                    ) : null}
+                    {rep.teacher ? (
+                      <View style={styles.commentBox}>
+                        <Text style={[styles.commentLabel, { color: palette.primary }]}>Class teacher</Text>
+                        <Text style={styles.comment}>{rep.teacher}</Text>
+                      </View>
+                    ) : null}
+                    {rep.principal ? (
+                      <View style={styles.commentBox}>
+                        <Text style={[styles.commentLabel, { color: palette.primary }]}>Principal</Text>
+                        <Text style={styles.comment}>{rep.principal}</Text>
+                      </View>
+                    ) : null}
+                  </>
                 ) : (
-                  <Text style={styles.noReport}>No report for this exam yet.</Text>
+                  <Text style={styles.noReport}>
+                    {String(currentExam?.marking_status ?? '').toLowerCase() === 'open'
+                      ? 'Marking is still in progress for this exam.'
+                      : 'No report for this exam yet.'}
+                  </Text>
                 )}
-                {report &&
-                (report.rank_out_of_level != null ||
-                  report.level_mean_marks != null ||
-                  report.rank_in_level != null) ? (
-                  <View style={styles.stats}>
-                    <View style={styles.stat}>
-                      <Text style={styles.statLabel}>Level rank</Text>
-                      <Text style={styles.statValue}>{levelRankLabel(report)}</Text>
-                    </View>
-                    <View style={styles.stat}>
-                      <Text style={styles.statLabel}>Class mean</Text>
-                      <Text style={styles.statValue}>
-                        {report.class_mean_marks != null ? String(report.class_mean_marks) : '—'}
-                      </Text>
-                    </View>
-                    <View style={styles.stat}>
-                      <Text style={styles.statLabel}>Level mean</Text>
-                      <Text style={styles.statValue}>
-                        {report.level_mean_marks != null ? String(report.level_mean_marks) : '—'}
-                      </Text>
-                    </View>
-                  </View>
-                ) : null}
-                {report?.class_teacher_comment ? (
-                  <Text style={styles.comment}>Teacher: {report.class_teacher_comment}</Text>
-                ) : null}
-                {report?.principal_comment ? (
-                  <Text style={styles.comment}>Principal: {report.principal_comment}</Text>
-                ) : null}
+
                 {examId && child.student_id ? (
                   <View style={styles.actions}>
                     <Pressable
-                      style={styles.actionBtn}
-                      onPress={() =>
-                        navigation.navigate('DeskModule', {
-                          title: 'Report form',
-                          deskPath: `/parent/assessments/print?exam_id=${encodeURIComponent(examId)}&student_id=${encodeURIComponent(String(child.student_id))}&reportType=report_forms&title=${encodeURIComponent(`Report form — ${child.full_name || 'Student'}`)}`,
-                          description: 'Same school report layout, with download.',
-                        })
-                      }>
-                      <Ionicons name="download-outline" size={16} color={Colors.primary} />
-                      <Text style={styles.actionText}>Report form</Text>
+                      style={({ pressed }) => [styles.actionBtn, { backgroundColor: palette.primary }, pressed && { opacity: 0.85 }]}
+                      onPress={() => openReportForm(child)}
+                      accessibilityRole="button">
+                      <Ionicons name="document-text-outline" size={16} color="#FFFFFF" />
+                      <Text style={[styles.actionText, { color: '#FFFFFF' }]}>Report form</Text>
                     </Pressable>
                     <Pressable
-                      style={styles.actionBtn}
-                      onPress={() =>
-                        navigation.navigate('DeskModule', {
-                          title: 'Class analysis',
-                          deskPath: `/parent/assessments/print?exam_id=${encodeURIComponent(examId)}&reportType=class_performance&class_name=${encodeURIComponent(String(child.class_name || ''))}&title=${encodeURIComponent('Class analysis')}`,
-                          description: 'Class means — no other learners’ raw scores.',
-                        })
-                      }>
-                      <Ionicons name="bar-chart-outline" size={16} color={Colors.primary} />
-                      <Text style={styles.actionText}>Class analysis</Text>
+                      style={({ pressed }) => [
+                        styles.actionBtn,
+                        { backgroundColor: rgba(palette.primary, 0.07) },
+                        pressed && { opacity: 0.85 },
+                      ]}
+                      onPress={() => openClassAnalysis(child)}
+                      accessibilityRole="button">
+                      <Ionicons name="bar-chart-outline" size={16} color={palette.primary} />
+                      <Text style={[styles.actionText, { color: palette.primary }]}>Class analysis</Text>
                     </Pressable>
                   </View>
                 ) : null}
-              </ModuleGlassCard>
+              </SurfaceCard>
             );
-          })
-        )}
-      </ScrollView>
-
-      <Modal visible={picker != null} transparent animationType="fade" onRequestClose={() => setPicker(null)}>
-        <Pressable style={styles.modalBackdrop} onPress={() => setPicker(null)}>
-          <View style={styles.modalSheet}>
-            <Text style={styles.modalTitle}>{picker === 'year' ? 'Academic year' : 'Exam'}</Text>
-            <ScrollView style={{ maxHeight: 320 }}>
-              {picker === 'year'
-                ? years.map((y) => (
-                    <Pressable key={y} style={styles.modalRow} onPress={() => selectYear(y)}>
-                      <Text style={styles.modalRowText}>{y}</Text>
-                      {year === y ? (
-                        <Ionicons name="checkmark" size={18} color={Colors.primary} />
-                      ) : null}
-                    </Pressable>
-                  ))
-                : examsForYear.map((e) => (
-                    <Pressable key={e.id} style={styles.modalRow} onPress={() => selectExam(e.id)}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.modalRowText}>{examLabel(e)}</Text>
-                        <Text style={styles.modalMeta}>
-                          {[e.marking_status, e.term].filter(Boolean).join(' · ')}
-                        </Text>
-                      </View>
-                      {examId === e.id ? (
-                        <Ionicons name="checkmark" size={18} color={Colors.primary} />
-                      ) : null}
-                    </Pressable>
-                  ))}
-            </ScrollView>
-          </View>
-        </Pressable>
-      </Modal>
-    </View>
+          })}
+        </>
+      )}
+    </ModuleScrollPage>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#FFFFFF' },
-  content: { paddingHorizontal: 18 },
-  heading: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: Colors.ink,
-    marginBottom: 10,
-  },
-  pickers: { flexDirection: 'row', gap: 8, marginBottom: 14 },
-  pickerBtn: {
-    flex: 1,
-    backgroundColor: 'rgba(10,61,46,0.06)',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  pickerLabel: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: Colors.primary,
-    textTransform: 'uppercase',
-  },
-  pickerValue: { flex: 1, fontSize: 13, fontWeight: '700', color: Colors.ink },
-  loader: { paddingVertical: 40, alignItems: 'center' },
   cardTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  iconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: Colors.primaryLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cardBody: { flex: 1 },
-  name: { fontSize: 16, fontWeight: '700', color: Colors.brandGreenDark },
-  meta: { marginTop: 3, fontSize: 12, color: Colors.mutedForeground },
-  stats: { flexDirection: 'row', marginTop: 14, gap: 8 },
-  stat: {
-    flex: 1,
-    backgroundColor: 'rgba(10,61,46,0.06)',
-    borderRadius: 12,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  statLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: Colors.primary,
-    textTransform: 'uppercase',
-  },
-  statValue: { marginTop: 4, fontSize: 16, fontWeight: '800', color: Colors.brandGreenDark },
-  noReport: { marginTop: 12, fontSize: 13, color: Colors.mutedForeground },
-  comment: {
-    marginTop: 10,
-    fontSize: 13,
-    lineHeight: 18,
-    color: Colors.mutedForeground,
-  },
+  avatar: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { fontSize: 16, fontWeight: '800' },
+  name: { fontSize: 16, fontWeight: '800', color: INK },
+  meta: { marginTop: 2, fontSize: 12, color: MUTED_INK },
+  stats: { flexDirection: 'row', marginTop: 12, gap: 8 },
+  compare: { marginTop: 10, fontSize: 12.5, color: MUTED_INK },
+  commentBox: { marginTop: 10 },
+  commentLabel: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.4 },
+  comment: { marginTop: 3, fontSize: 13.5, lineHeight: 19, color: INK },
+  noReport: { marginTop: 12, fontSize: 13, color: MUTED_INK },
   actions: { flexDirection: 'row', gap: 8, marginTop: 14 },
   actionBtn: {
     flex: 1,
@@ -454,32 +371,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    backgroundColor: 'rgba(10,61,46,0.08)',
-    borderRadius: 10,
-    paddingVertical: 10,
+    borderRadius: 12,
+    paddingVertical: 11,
   },
-  actionText: { fontSize: 12, fontWeight: '800', color: Colors.primary },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'flex-end',
-  },
-  modalSheet: {
-    backgroundColor: Colors.white,
-    borderTopLeftRadius: 18,
-    borderTopRightRadius: 18,
-    padding: 18,
-    paddingBottom: 32,
-  },
-  modalTitle: { fontSize: 16, fontWeight: '800', color: Colors.ink, marginBottom: 10 },
-  modalRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(0,0,0,0.08)',
-    gap: 8,
-  },
-  modalRowText: { fontSize: 15, fontWeight: '600', color: Colors.ink },
-  modalMeta: { marginTop: 2, fontSize: 12, color: Colors.mutedForeground },
+  actionText: { fontWeight: '800', fontSize: 13.5 },
 });

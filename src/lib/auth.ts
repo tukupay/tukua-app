@@ -1,6 +1,7 @@
 import * as SecureStore from './secureStore';
 import { cachePasswordForBiometrics, refreshBiometricCredentialsIfEnabled } from './biometricStorage';
 import { log } from './logger';
+import { BAD_ANSWER_MESSAGE, apiError, fetchWithTimeout } from './apiHttp';
 
 const SESSION_KEY = 'tukua_session';
 const PROFILE_KEY = 'tukua_profile';
@@ -178,7 +179,11 @@ export async function signInWithNestIdentity(email: string, password: string) {
   const { persistPlatformNestSession } = await import('./platformNestAuth');
   const res = await platformLogin(email.trim(), password);
   if (!res.ok || !res.data?.access_token) {
-    throw new Error(res.message || res.error || 'Could not sign in');
+    // ok with no token: a captive portal / proxy page answered instead of the API.
+    const message = !res.ok
+      ? res.message || 'Could not sign in. Check your details and try again.'
+      : BAD_ANSWER_MESSAGE;
+    throw apiError(message, { statusCode: res.status || undefined, code: res.error, network: res.status === 0 && res.error === 'network_error', timeout: res.error === 'timeout' });
   }
   const data = res.data as {
     access_token: string;
@@ -255,7 +260,7 @@ export async function fetchProfileFromNest(accessToken: string): Promise<UserPro
 
     for (const path of ['/platform/auth/me', '/platform/me/profile']) {
       try {
-        const res = await fetch(`${base}${path}`, { headers });
+        const res = await fetchWithTimeout(`${base}${path}`, { headers }, 15_000);
         if (!res.ok) continue;
         const json = await res.json().catch(() => null);
         const data = json?.data || json;
@@ -291,7 +296,10 @@ export async function signUpWithEmail(
     phone: metadata.phone,
   });
   if (!res.ok) {
-    throw new Error(res.message || res.error || 'Could not create account');
+    throw apiError(res.message || 'Could not create your account. Please try again.', {
+      statusCode: res.status || undefined,
+      code: res.error,
+    });
   }
 
   const data = res.data as {
@@ -421,7 +429,10 @@ export async function sendPasswordReset(email?: string, phone?: string) {
     redirect_to: 'tukua://reset-password',
   });
   if (!result.ok) {
-    throw new Error(result.message || 'Failed to send reset link');
+    throw apiError(result.message || 'Could not send the reset link. Please try again.', {
+      statusCode: result.status || undefined,
+      code: result.error,
+    });
   }
   return result;
 }

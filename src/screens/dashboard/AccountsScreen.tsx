@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  FlatList,
   Image,
   Modal,
   Pressable,
   RefreshControl,
-  ScrollView,
   Share,
   StyleSheet,
   Text,
@@ -14,20 +14,28 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from '../../components/FlatFill'; // flat fill: no gradients
-import { GreenPattern } from '../../components/dashboard/DashboardBackground';
-import { ThemedBackdrop } from '../../components/theme/ThemedPage';
-import { GlassPanel } from '../../components/dashboard/Glass';
-import { ModuleTabPager } from '../../components/dashboard/ModuleTabPager';
+import { ThemedBackdrop, INK, rgba } from '../../components/theme/ThemedPage';
 import { PaymentBottomSheet } from '../../components/dashboard/PaymentBottomSheet';
 import { PaymentProcessCard } from '../../components/dashboard/PaymentProcessCard';
-import { ModuleBackBar, ModuleScreenHeader, ModuleEmpty, ModuleKicker } from './ModuleChrome';
-import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
+import {
+  AmountRow,
+  BalancePanel,
+  ListFooter,
+  ListSkeleton,
+  MoneyButton,
+  MoneyHeader,
+  MoneyTabs,
+  PanelStat,
+  SectionTitle,
+  StateCard,
+} from '../../components/dashboard/MoneyKit';
+import { kes, shortDate, useWindowedList } from '../../lib/moneyFormat';
+import { useBottomBarSpace } from '../../components/navigation/useBottomBarSpace';
 import { useAuth } from '../../context/AuthContext';
 import { useDeskAuth } from '../../context/DeskAuthContext';
 import { useDialog } from '../../context/DialogContext';
+import { useAppTheme } from '../../context/AppThemeContext';
 import {
   createParentPaymentSlip,
   fetchParentAccountsStatement,
@@ -42,232 +50,284 @@ import { Colors } from '../../theme/yana';
 import { defaultMpesaPhone } from '../../lib/phoneUtils';
 import { log } from '../../lib/logger';
 import { fetchStudentFees, type StudentFeeBalance } from '../../lib/studentPortalApi';
-import { Loader } from '../../components/ui/Loader';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'Accounts'>;
 
-type MoneyTab = 'fees' | 'invoices' | 'slips';
+type MoneyTab = 'receipts' | 'invoices' | 'pocket' | 'slips';
 
-type FeeYearRow = {
-  financial_year: string | null;
-  balance: number;
-};
+type Row = Record<string, unknown>;
 
 type FeeCard = {
   student_id: string;
   student_name: string;
-  admission_number?: string | null;
-  years: FeeYearRow[];
-  total: number;
-};
-
-type PocketCard = {
-  student_id: string;
-  admission_number?: string | null;
+  year_name: string | null;
   balance: number;
 };
 
-type ReceiptRow = Record<string, unknown>;
+const PAGE = 12;
 
-const HERO_GREEN = '#15411D';
-const RECEIPT_PAGE = 8;
-
-function kes(n: number | undefined | null): string {
-  const v = Number(n ?? 0) || 0;
-  return `KES ${v.toLocaleString()}`;
+/** Seeded rows carry a "[ACCOUNTS-SEED:…]" tag in front of the text: never show it. */
+function clean(v: unknown): string {
+  return String(v ?? '').replace(/^\s*\[[^\]]*\]\s*/, '').trim();
 }
 
-function yearLabel(raw: string | null): string {
-  if (!raw) return 'Current year';
-  if (/^[0-9a-f-]{36}$/i.test(raw)) return `FY ${raw.slice(0, 8)}`;
-  return raw;
+function yearLabel(raw: string | null | undefined): string {
+  const s = String(raw ?? '').trim();
+  if (!s || /^[0-9a-f-]{36}$/i.test(s)) return '';
+  return s.replace(/^Financial Year\s*/i, 'FY ');
+}
+
+function methodLabel(raw: unknown): string {
+  const s = String(raw ?? '').replace(/_/g, ' ').trim();
+  if (!s) return '';
+  if (/mpesa|mobile money/i.test(s)) return 'M-Pesa';
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 export function AccountsScreen({ navigation }: Props) {
-  const insets = useSafeAreaInsets();
+  const { persona } = useDeskAuth();
+  return persona === 'student' ? (
+    <StudentFees onBack={() => navigation.goBack()} />
+  ) : (
+    <ParentAccounts navigation={navigation} />
+  );
+}
+
+/** Student: read-only fee balance and recent receipts. */
+function StudentFees({ onBack }: { onBack: () => void }) {
+  const bottomSpace = useBottomBarSpace();
+  const { palette } = useAppTheme();
+  const [fees, setFees] = useState<StudentFeeBalance | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  const load = useCallback(async () => {
+    setFailed(false);
+    const row = await fetchStudentFees();
+    setFees(row);
+    setFailed(!row);
+    setLoading(false);
+    setRefreshing(false);
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const receipts = (fees?.recent_receipts ?? []) as Row[];
+  const win = useWindowedList(receipts, PAGE);
+
+  return (
+    <View style={styles.root}>
+      <ThemedBackdrop />
+      <FlatList
+        data={loading || failed ? [] : win.visible}
+        keyExtractor={(r, i) => String(r.id ?? i)}
+        contentContainerStyle={[styles.content, { paddingBottom: bottomSpace + 16 }]}
+        onEndReached={win.loadMore}
+        onEndReachedThreshold={0.4}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              void load();
+            }}
+            tintColor={palette.primary}
+          />
+        }
+        ListHeaderComponent={
+          <View style={{ gap: 12, marginBottom: 12 }}>
+            <MoneyHeader title="Your fees" subtitle="Balance from the school's books" onBack={onBack} />
+            {loading ? null : fees ? (
+              <>
+                <BalancePanel
+                  kicker="Fee balance"
+                  value={kes(fees.balance)}
+                  line={[fees.student_name, yearLabel(fees.financial_year_name ?? fees.financial_year)].filter(Boolean).join(' · ')}>
+                  <View style={styles.panelSplit}>
+                    <PanelStat label="Billed" value={kes(fees.total_invoiced)} />
+                    <PanelStat label="Paid" value={kes(fees.total_receipts)} />
+                  </View>
+                </BalancePanel>
+                <Text style={styles.note}>
+                  A parent pays fees from their Tukua app, or at the school office.
+                </Text>
+                {receipts.length ? <SectionTitle>Recent receipts</SectionTitle> : null}
+              </>
+            ) : null}
+          </View>
+        }
+        renderItem={({ item: r }) => (
+          <View style={styles.rowCard}>
+            <AmountRow
+              icon="receipt-outline"
+              iconTone="in"
+              title={String(r.receipt_number ?? 'Receipt')}
+              meta={[shortDate(r.created_at ?? r.receipt_date), methodLabel(r.payment_method)].filter(Boolean).join(' · ')}
+              amount={kes(Number(r.amount ?? 0))}
+              last
+            />
+          </View>
+        )}
+        ListEmptyComponent={
+          loading ? (
+            <ListSkeleton withPanel rows={4} />
+          ) : failed ? (
+            <StateCard
+              tone="error"
+              title="Could not load your fees"
+              body="Check your connection and try again."
+              onRetry={() => {
+                setLoading(true);
+                void load();
+              }}
+            />
+          ) : (
+            <StateCard icon="receipt-outline" title="No receipts yet" body="Payments the school records show here." />
+          )
+        }
+        ListFooterComponent={<ListFooter hasMore={win.hasMore} total={loading ? 0 : win.total} noun="receipts" />}
+      />
+    </View>
+  );
+}
+
+function ParentAccounts({ navigation }: { navigation: Props['navigation'] }) {
+  const bottomSpace = useBottomBarSpace();
+  const { palette } = useAppTheme();
   const { profile } = useAuth();
-  const { selectedStudentId, selectedStudent, selectedSchool, persona } = useDeskAuth();
+  const { selectedStudentId, selectedStudent, selectedSchool } = useDeskAuth();
   const { showDialog } = useDialog();
   const [feeCards, setFeeCards] = useState<FeeCard[]>([]);
-  const [pockets, setPockets] = useState<PocketCard[]>([]);
-  const [receipts, setReceipts] = useState<ReceiptRow[]>([]);
-  const [receiptPage, setReceiptPage] = useState(0);
+  const [pocketBalance, setPocketBalance] = useState(0);
+  const [pocketTx, setPocketTx] = useState<Row[]>([]);
+  const [receipts, setReceipts] = useState<Row[]>([]);
+  const [invoices, setInvoices] = useState<ParentInvoice[]>([]);
+  const [slips, setSlips] = useState<ParentPaymentSlip[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [partialWarn, setPartialWarn] = useState<string | null>(null);
-  const [invoices, setInvoices] = useState<ParentInvoice[]>([]);
-  const [slips, setSlips] = useState<ParentPaymentSlip[]>([]);
+  const [tab, setTab] = useState<MoneyTab>('receipts');
+  const [openInvoice, setOpenInvoice] = useState<string | null>(null);
   const [slipModal, setSlipModal] = useState(false);
   const [slipFileUri, setSlipFileUri] = useState<string | null>(null);
   const [slipFileName, setSlipFileName] = useState<string | null>(null);
   const [submittingSlip, setSubmittingSlip] = useState(false);
-  const [moneyTab, setMoneyTab] = useState<MoneyTab>('fees');
-  const [payForm, setPayForm] = useState<'fees' | 'pocket' | 'tip' | null>(null);
+  const [payForm, setPayForm] = useState<'fees' | 'pocket' | null>(null);
   const [payAmountSeed, setPayAmountSeed] = useState('');
   const [payPhone, setPayPhone] = useState(() => defaultMpesaPhone(profile?.phone));
-  const [studentFees, setStudentFees] = useState<StudentFeeBalance | null>(null);
-  const [studentFeesLoading, setStudentFeesLoading] = useState(false);
 
   useEffect(() => {
     const next = defaultMpesaPhone(profile?.phone);
     if (next) setPayPhone((prev) => (prev.trim() ? prev : next));
   }, [profile?.phone]);
 
-  useEffect(() => {
-    if (persona !== 'student') return;
-    setStudentFeesLoading(true);
-    void fetchStudentFees()
-      .then(setStudentFees)
-      .finally(() => setStudentFeesLoading(false));
-  }, [persona]);
-
   const load = useCallback(
     async (soft = false) => {
-      if (persona === 'student') {
-        setLoading(false);
-        setRefreshing(false);
-        setError(null);
-        setFeeCards([]);
-        setPockets([]);
-        setInvoices([]);
-        setSlips([]);
-        setReceipts([]);
-        return;
-      }
       if (!soft) setLoading(true);
       setError(null);
       setPartialWarn(null);
-      try {
-        const sid = selectedStudentId ?? undefined;
-        const [accountsRes, pocketRes, invoicesRes, slipsRes] = await Promise.allSettled([
-          fetchParentAccountsStatement(sid),
-          fetchParentPocketMoney(sid),
-          fetchParentInvoices(sid),
-          fetchParentPaymentSlips(sid),
-        ]);
+      const sid = selectedStudentId ?? undefined;
+      const [accountsRes, pocketRes, invoicesRes, slipsRes] = await Promise.allSettled([
+        fetchParentAccountsStatement(sid),
+        fetchParentPocketMoney(sid),
+        fetchParentInvoices(sid),
+        fetchParentPaymentSlips(sid),
+      ]);
+      const msg = (r: PromiseRejectedResult) => (r.reason instanceof Error ? r.reason.message : String(r.reason));
+      const errs: string[] = [];
 
-        let accountsErr: string | null = null;
-        let pocketErr: string | null = null;
-        let invoicesErr: string | null = null;
-        let slipsErr: string | null = null;
-
-        if (accountsRes.status === 'fulfilled') {
-          const accounts = accountsRes.value;
-          const raw = Array.isArray(accounts?.balances) ? accounts.balances : [];
-          // Prefer one FY per student (calendar year e.g. "2026") — never sum all FY rows
-          // (that inflated mobile totals e.g. 32945+13550+7268 = 53763).
-          const yearNow = String(new Date().getFullYear());
-          const scoreFy = (fy: string | null | undefined) => {
-            const s = String(fy ?? '');
-            if (s === yearNow) return 3;
-            if (/^\d{4}$/.test(s)) return 2;
-            return 1;
-          };
-          const byStudent = new Map<string, FeeCard>();
-          for (const b of raw) {
-            if (!b || typeof b !== 'object') continue;
-            const id = String(b.student_id ?? '').trim() || 'unknown';
-            const bal = Number(b.balance ?? 0) || 0;
-            const fy = (b as { financial_year?: string | null }).financial_year ?? null;
-            const existing = byStudent.get(id);
-            if (!existing) {
-              byStudent.set(id, {
-                student_id: id,
-                student_name: b.student_name || selectedStudent?.name || 'Student',
-                admission_number: (b as { admission_number?: string | null }).admission_number,
-                years: [{ financial_year: fy, balance: bal }],
-                total: bal,
-              });
-            } else {
-              const prevFy = existing.years[0]?.financial_year ?? null;
-              if (scoreFy(fy) > scoreFy(prevFy)) {
-                existing.years = [{ financial_year: fy, balance: bal }];
-                existing.total = bal;
-              }
-            }
-          }
-          setFeeCards([...byStudent.values()]);
-          setReceipts(Array.isArray(accounts?.receipts) ? accounts.receipts : []);
-          setReceiptPage(0);
-        } else {
-          accountsErr =
-            accountsRes.reason instanceof Error
-              ? accountsRes.reason.message
-              : String(accountsRes.reason);
-          setFeeCards([]);
-          setReceipts([]);
+      if (accountsRes.status === 'fulfilled') {
+        const raw = Array.isArray(accountsRes.value?.balances) ? accountsRes.value.balances : [];
+        // One FY per learner (the current calendar year first): never add up all years' rows.
+        const yearNow = String(new Date().getFullYear());
+        const score = (b: Row) => {
+          const s = `${b.financial_year_name ?? ''} ${b.financial_year ?? ''}`;
+          return s.includes(yearNow) ? 3 : /\d{4}/.test(s) ? 2 : 1;
+        };
+        const byStudent = new Map<string, { row: Row; score: number }>();
+        for (const b of raw as Row[]) {
+          if (!b || typeof b !== 'object') continue;
+          const id = String(b.student_id ?? '').trim() || 'unknown';
+          const prev = byStudent.get(id);
+          if (!prev || score(b) > prev.score) byStudent.set(id, { row: b, score: score(b) });
         }
-
-        if (pocketRes.status === 'fulfilled') {
-          const wallets = Array.isArray(pocketRes.value?.wallets) ? pocketRes.value.wallets : [];
-          setPockets(
-            wallets.map((w) => ({
-              student_id: String(w?.student_id ?? ''),
-              admission_number: w?.admission_number,
-              balance: Number(w?.balance ?? 0) || 0,
-            })),
-          );
-        } else {
-          pocketErr =
-            pocketRes.reason instanceof Error
-              ? pocketRes.reason.message
-              : String(pocketRes.reason);
-          setPockets([]);
-        }
-
-        if (invoicesRes.status === 'fulfilled') {
-          setInvoices(invoicesRes.value?.invoices ?? []);
-        } else {
-          invoicesErr =
-            invoicesRes.reason instanceof Error
-              ? invoicesRes.reason.message
-              : String(invoicesRes.reason);
-          setInvoices([]);
-        }
-
-        if (slipsRes.status === 'fulfilled') {
-          setSlips(slipsRes.value?.slips ?? []);
-        } else {
-          slipsErr =
-            slipsRes.reason instanceof Error ? slipsRes.reason.message : String(slipsRes.reason);
-          setSlips([]);
-        }
-
-        const errs = [accountsErr, pocketErr, invoicesErr, slipsErr].filter(Boolean);
-        if (errs.length >= 3) setError(errs[0] ?? 'Could not load accounts');
-        else if (errs.length) setPartialWarn(errs[0] ?? null);
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        log.warn('Accounts', msg);
-        setError(msg);
-      } finally {
-        setLoading(false);
-        setRefreshing(false);
+        setFeeCards(
+          [...byStudent.entries()].map(([id, { row }]) => ({
+            student_id: id,
+            student_name: String(row.student_name || selectedStudent?.name || 'Learner'),
+            year_name: yearLabel((row.financial_year_name as string) ?? (row.financial_year as string)),
+            balance: Number(row.balance ?? 0) || 0,
+          })),
+        );
+        const rec = Array.isArray(accountsRes.value?.receipts) ? (accountsRes.value.receipts as Row[]) : [];
+        setReceipts(
+          [...rec].sort((a, b) =>
+            String(b.receipt_date ?? b.created_at ?? '').localeCompare(String(a.receipt_date ?? a.created_at ?? '')),
+          ),
+        );
+      } else {
+        errs.push(msg(accountsRes));
+        setFeeCards([]);
+        setReceipts([]);
       }
+
+      if (pocketRes.status === 'fulfilled') {
+        const wallets = Array.isArray(pocketRes.value?.wallets) ? pocketRes.value.wallets : [];
+        setPocketBalance(wallets.reduce((s, w) => s + (Number(w?.balance ?? 0) || 0), 0));
+        setPocketTx(Array.isArray(pocketRes.value?.transactions) ? pocketRes.value.transactions : []);
+      } else {
+        errs.push(msg(pocketRes));
+        setPocketBalance(0);
+        setPocketTx([]);
+      }
+
+      if (invoicesRes.status === 'fulfilled') setInvoices(invoicesRes.value?.invoices ?? []);
+      else {
+        errs.push(msg(invoicesRes));
+        setInvoices([]);
+      }
+
+      if (slipsRes.status === 'fulfilled') setSlips(slipsRes.value?.slips ?? []);
+      else {
+        errs.push(msg(slipsRes));
+        setSlips([]);
+      }
+
+      if (errs.length >= 3) setError(errs[0] ?? 'Could not load accounts');
+      else if (errs.length) {
+        log.warn('Accounts', errs[0]);
+        setPartialWarn('Some of this page did not load. Pull down to try again.');
+      }
+      setLoading(false);
+      setRefreshing(false);
     },
-    [persona, selectedStudentId, selectedStudent?.name],
+    [selectedStudentId, selectedStudent?.name],
   );
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const feeTotal = useMemo(
-    () => feeCards.reduce((sum, c) => sum + c.total, 0),
-    [feeCards],
-  );
-  const pocketTotal = useMemo(
-    () => pockets.reduce((sum, w) => sum + w.balance, 0),
-    [pockets],
-  );
-  const combined = feeTotal + pocketTotal;
+  const feeTotal = useMemo(() => feeCards.reduce((s, c) => s + c.balance, 0), [feeCards]);
+  const learnerName = feeCards[0]?.student_name || selectedStudent?.name || 'your child';
+  const yearName = feeCards[0]?.year_name || '';
 
-  const receiptPages = Math.max(1, Math.ceil(receipts.length / RECEIPT_PAGE));
-  const pageReceipts = useMemo(() => {
-    const start = receiptPage * RECEIPT_PAGE;
-    return receipts.slice(start, start + RECEIPT_PAGE);
-  }, [receipts, receiptPage]);
+  const rows: Row[] = useMemo(() => {
+    if (tab === 'receipts') return receipts;
+    if (tab === 'invoices') return invoices as Row[];
+    if (tab === 'pocket') return pocketTx;
+    return slips as Row[];
+  }, [tab, receipts, invoices, pocketTx, slips]);
+  const win = useWindowedList(rows, PAGE);
+
+  const getReceiptIds = useCallback(
+    () => receipts.map((r) => String(r?.id ?? r?.receipt_number ?? '').trim()).filter(Boolean),
+    [receipts],
+  );
 
   const onPayFees = () => {
     setPayAmountSeed(feeTotal > 0 ? String(Math.round(feeTotal)) : '');
@@ -281,27 +341,14 @@ export function AccountsScreen({ navigation }: Props) {
     setPayForm('pocket');
   };
 
-  const getReceiptIds = useCallback(
-    () =>
-      receipts
-        .map((r) => String(r?.id ?? r?.receipt_number ?? '').trim())
-        .filter(Boolean),
-    [receipts],
-  );
-
-  const openReceiptView = (r: ReceiptRow) => {
+  const openReceiptView = (r: Row) => {
     navigation.navigate('ReceiptView', {
       receipt: r,
-      studentName: selectedStudent?.name,
+      studentName: learnerName,
       schoolName: selectedSchool?.name,
       admissionNumber: selectedStudent?.admissionNumber,
       className: selectedStudent?.className,
     });
-  };
-
-  const resetSlipForm = () => {
-    setSlipFileUri(null);
-    setSlipFileName(null);
   };
 
   const pickSlipImage = async () => {
@@ -321,11 +368,16 @@ export function AccountsScreen({ navigation }: Props) {
     }
   };
 
+  const resetSlipForm = () => {
+    setSlipFileUri(null);
+    setSlipFileName(null);
+  };
+
   const submitSlip = async () => {
     if (!slipFileUri) {
       showDialog({
         title: 'Attach slip photo',
-        message: 'Upload a clear photo of the bank slip. Amount can be read by school AI / bursar.',
+        message: 'Upload a clear photo of the bank slip. The bursar reads the amount from it.',
         variant: 'warning',
       });
       return;
@@ -334,9 +386,7 @@ export function AccountsScreen({ navigation }: Props) {
     try {
       let file_url: string | undefined;
       try {
-        const b64 = await FileSystem.readAsStringAsync(slipFileUri, {
-          encoding: 'base64',
-        });
+        const b64 = await FileSystem.readAsStringAsync(slipFileUri, { encoding: 'base64' });
         file_url = `data:image/jpeg;base64,${b64}`;
       } catch {
         file_url = slipFileUri;
@@ -350,7 +400,7 @@ export function AccountsScreen({ navigation }: Props) {
       setSlipModal(false);
       showDialog({
         title: 'Submitted',
-        message: 'Your bank slip photo is pending bursar approval before fees are posted.',
+        message: 'Your bank slip is waiting for the bursar to approve it before the fees are posted.',
         variant: 'success',
       });
       await load(true);
@@ -367,105 +417,227 @@ export function AccountsScreen({ navigation }: Props) {
 
   const exportReceipts = useCallback(async () => {
     if (!receipts.length) {
-      showDialog({
-        title: 'Nothing to export',
-        message: 'No receipts yet for this student.',
-        variant: 'info',
-      });
+      showDialog({ title: 'Nothing to export', message: 'No receipts yet for this learner.', variant: 'info' });
       return;
     }
-    const header = 'receipt_number,amount,method,date,student_id';
+    const header = 'receipt_number,amount,method,date';
     const lines = receipts.map((r) =>
       [
         String(r.receipt_number ?? r.id ?? ''),
         String(r.amount ?? ''),
         String(r.payment_method ?? r.method ?? ''),
-        String(r.created_at ?? r.receipt_date ?? ''),
-        String(r.student_id ?? selectedStudentId ?? ''),
+        String(r.receipt_date ?? r.created_at ?? ''),
       ]
         .map((c) => `"${c.replace(/"/g, '""')}"`)
         .join(','),
     );
     try {
-      await Share.share({
-        title: `Receipts ${selectedStudent?.name || ''}`.trim(),
-        message: [header, ...lines].join('\n'),
-      });
+      await Share.share({ title: `Receipts ${learnerName}`.trim(), message: [header, ...lines].join('\n') });
     } catch (e) {
       log.warn('Accounts', 'export failed', String(e));
     }
-  }, [receipts, selectedStudent?.name, selectedStudentId, showDialog]);
+  }, [receipts, learnerName, showDialog]);
 
-  if (persona === 'student') {
-    const balance = Number(studentFees?.balance ?? 0);
-    return (
-      <View style={styles.root}>
-        <ThemedBackdrop />
-        <ScrollView
-          contentContainerStyle={[
-            styles.content,
-            {
-              paddingTop: floatingHeaderInset(insets.top),
-              paddingBottom: moduleScrollBottomPad(insets.bottom),
-            },
-          ]}
-          showsVerticalScrollIndicator={false}>
-          <ModuleBackBar onBack={() => navigation.goBack()} />
-          <ModuleKicker>School fees</ModuleKicker>
-          <ModuleScreenHeader
-            title="Your fees"
-            description="Read-only balance from the school ledger. M-Pesa pay stays on the parent app or office."
+  const sectionRight =
+    tab === 'receipts' && receipts.length ? (
+      <Pressable style={styles.linkBtn} onPress={() => void exportReceipts()} hitSlop={8}>
+        <Ionicons name="share-outline" size={15} color={palette.primary} />
+        <Text style={[styles.linkText, { color: palette.primary }]}>Export</Text>
+      </Pressable>
+    ) : tab === 'slips' ? (
+      <Pressable
+        style={styles.linkBtn}
+        onPress={() => {
+          resetSlipForm();
+          setSlipModal(true);
+        }}
+        hitSlop={8}>
+        <Ionicons name="camera-outline" size={15} color={palette.primary} />
+        <Text style={[styles.linkText, { color: palette.primary }]}>Upload photo</Text>
+      </Pressable>
+    ) : null;
+
+  const sectionTitle =
+    tab === 'receipts' ? 'Receipts' : tab === 'invoices' ? 'Invoices' : tab === 'pocket' ? 'Pocket money activity' : 'Bank slips';
+
+  const header = (
+    <View style={{ gap: 12, marginBottom: 10 }}>
+      <MoneyHeader
+        title="Fees & pocket money"
+        subtitle={`For ${learnerName}`}
+        onBack={() => navigation.goBack()}
+      />
+      {loading ? null : error ? null : (
+        <>
+          <BalancePanel kicker="Fee balance" value={kes(feeTotal)} line={[learnerName, yearName].filter(Boolean).join(' · ')}>
+            <View style={styles.panelSplit}>
+              <PanelStat label="Fees owed" value={kes(feeTotal)} sub="Tap to pay" onPress={onPayFees} />
+              <PanelStat label="Pocket money" value={kes(pocketBalance)} sub="Tap to add" onPress={onAddPocket} />
+            </View>
+          </BalancePanel>
+          <View style={styles.actionRow}>
+            <MoneyButton label="Pay fees" icon="card" onPress={onPayFees} style={{ flex: 1 }} />
+            <MoneyButton label="Add pocket money" icon="add-circle" variant="accent" onPress={onAddPocket} style={{ flex: 1 }} />
+          </View>
+          {feeCards.length > 1
+            ? feeCards.map((c) => (
+                <View key={c.student_id} style={styles.rowCard}>
+                  <AmountRow title={c.student_name} meta={c.year_name} amount={kes(c.balance)} last />
+                </View>
+              ))
+            : null}
+          {partialWarn ? <Text style={styles.warn}>{partialWarn}</Text> : null}
+          <MoneyTabs
+            tabs={[
+              { key: 'receipts', label: 'Receipts' },
+              { key: 'invoices', label: 'Invoices' },
+              { key: 'pocket', label: 'Pocket' },
+              { key: 'slips', label: 'Slips' },
+            ]}
+            value={tab}
+            onChange={setTab}
           />
-          {studentFeesLoading ? (
-            <Loader />
-          ) : studentFees ? (
-            <GlassPanel tone="frost" radius={16} style={styles.tableCard}>
-              <View style={styles.tableInner}>
-                <Text style={styles.section}>Outstanding balance</Text>
-                <Text style={[styles.heroStatValue, { color: Colors.brandGreenDark, fontSize: 28, marginTop: 4 }]}>
-                  {kes(balance)}
-                </Text>
-                <Text style={styles.sub}>
-                  FY {yearLabel(studentFees.financial_year ?? null)}
-                  {studentFees.student_number ? ` · #${studentFees.student_number}` : ''}
-                </Text>
-                <Text style={[styles.sub, { marginTop: 12 }]}>
-                  Invoiced {kes(studentFees.total_invoiced)} · Receipted {kes(studentFees.total_receipts)}
-                </Text>
-                {(studentFees.recent_receipts ?? []).length > 0 ? (
-                  <>
-                    <Text style={[styles.section, { marginTop: 16 }]}>Recent receipts</Text>
-                    {(studentFees.recent_receipts ?? []).slice(0, 5).map((r, i) => (
-                      <Text key={String(r.id ?? i)} style={styles.sub}>
-                        {String(r.receipt_number ?? r.id ?? 'Receipt')} · {kes(Number(r.amount ?? 0))}
-                      </Text>
-                    ))}
-                  </>
-                ) : null}
+          <SectionTitle right={sectionRight}>{sectionTitle}</SectionTitle>
+          {tab === 'slips' ? (
+            <Text style={styles.note}>Paid at the bank? Upload a photo of the slip. The bursar reads the amount and posts it.</Text>
+          ) : null}
+        </>
+      )}
+    </View>
+  );
+
+  const renderItem = ({ item: r }: { item: Row }) => {
+    if (tab === 'receipts') {
+      return (
+        <View style={styles.rowCard}>
+          <AmountRow
+            icon="receipt-outline"
+            iconTone="in"
+            title={String(r.receipt_number ?? 'Receipt')}
+            meta={[shortDate(r.receipt_date ?? r.created_at), methodLabel(r.payment_method)].filter(Boolean).join(' · ')}
+            amount={kes(Number(r.amount ?? 0))}
+            onPress={() => openReceiptView(r)}
+            right={<Ionicons name="chevron-forward" size={16} color={Colors.mutedForeground} />}
+            last
+          />
+        </View>
+      );
+    }
+    if (tab === 'invoices') {
+      const inv = r as ParentInvoice & { total_amount?: number | string; items?: Row[] };
+      const id = String(inv.id ?? inv.invoice_number ?? '');
+      const open = openInvoice === id;
+      const items = Array.isArray(inv.items) ? inv.items : [];
+      const total = Number(inv.total_amount ?? inv.amount ?? inv.balance ?? 0);
+      return (
+        <View style={styles.rowCard}>
+          <AmountRow
+            icon="document-text-outline"
+            title={String(inv.invoice_number || 'Invoice')}
+            meta={[clean(inv.description), shortDate(inv.invoice_date ?? inv.due_date)].filter(Boolean).join(' · ')}
+            amount={kes(total)}
+            onPress={items.length ? () => setOpenInvoice(open ? null : id) : undefined}
+            right={
+              items.length ? (
+                <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color={Colors.mutedForeground} />
+              ) : null
+            }
+            last={!open}
+          />
+          {open ? (
+            <View style={styles.items}>
+              {items.map((it, i) => (
+                <View key={i} style={styles.itemRow}>
+                  <Text style={styles.itemLabel} numberOfLines={2}>
+                    {String(it.description ?? 'Item')}
+                  </Text>
+                  <Text style={styles.itemAmt}>{kes(Number(it.line_total ?? it.amount ?? 0))}</Text>
+                </View>
+              ))}
+              <View style={[styles.itemRow, styles.itemTotal]}>
+                <Text style={[styles.itemLabel, { fontWeight: '800' }]}>Total</Text>
+                <Text style={[styles.itemAmt, { fontWeight: '800' }]}>{kes(total)}</Text>
               </View>
-            </GlassPanel>
-          ) : (
-            <ModuleEmpty
-              title="Balance unavailable"
-              body="Could not load your fee ledger yet. Ask the bursar or a parent to check Accounts."
-            />
-          )}
-        </ScrollView>
+            </View>
+          ) : null}
+        </View>
+      );
+    }
+    if (tab === 'pocket') {
+      const amt = Number(r.amount ?? 0);
+      const type = String(r.txn_type ?? r.category ?? '').toLowerCase();
+      const isIn = /deposit|top|credit|refund/.test(type) || (!type && amt > 0);
+      return (
+        <View style={styles.rowCard}>
+          <AmountRow
+            icon={isIn ? 'arrow-down-circle-outline' : 'cart-outline'}
+            iconTone={isIn ? 'in' : 'out'}
+            title={clean(r.description) || (isIn ? 'Money added' : 'Spent')}
+            meta={[shortDate(r.created_at), methodLabel(r.payment_method)].filter(Boolean).join(' · ')}
+            amount={`${isIn ? '+' : '−'}${kes(Math.abs(amt))}`}
+            amountStyle={{ color: isIn ? '#15803D' : INK }}
+            last
+          />
+        </View>
+      );
+    }
+    const s = r as ParentPaymentSlip;
+    const amt = Number(s.amount ?? 0);
+    return (
+      <View style={styles.rowCard}>
+        <AmountRow
+          icon="image-outline"
+          title={String(s.file_name || s.bank_ref || 'Bank slip photo')}
+          meta={[shortDate(s.created_at ?? s.paid_on), String(s.status ?? 'pending').replace(/_/g, ' ')].filter(Boolean).join(' · ')}
+          amount={amt > 0 ? kes(amt) : 'Pending'}
+          last
+        />
       </View>
     );
-  }
+  };
+
+  const empty = loading ? (
+    <ListSkeleton withPanel rows={5} />
+  ) : error ? (
+    <StateCard tone="error" title="Could not load accounts" body={error} onRetry={() => void load()} />
+  ) : (
+    <StateCard
+      icon={tab === 'pocket' ? 'wallet-outline' : tab === 'slips' ? 'image-outline' : 'receipt-outline'}
+      title={
+        tab === 'receipts'
+          ? 'No receipts yet'
+          : tab === 'invoices'
+            ? 'No invoices yet'
+            : tab === 'pocket'
+              ? 'No pocket money activity'
+              : 'No bank slips yet'
+      }
+      body={
+        tab === 'pocket'
+          ? 'Top-ups and canteen spending show here.'
+          : tab === 'slips'
+            ? 'Upload a photo after paying at the bank.'
+            : 'They show here as the school records them.'
+      }
+    />
+  );
 
   return (
     <View style={styles.root}>
       <ThemedBackdrop />
-      <ScrollView
-        contentContainerStyle={[
-          styles.content,
-          {
-            paddingTop: floatingHeaderInset(insets.top),
-            paddingBottom: moduleScrollBottomPad(insets.bottom),
-          },
-        ]}
+      <FlatList
+        data={loading || error ? [] : win.visible}
+        keyExtractor={(r, i) => `${tab}-${String(r.id ?? r.receipt_number ?? r.invoice_number ?? i)}`}
+        renderItem={renderItem}
+        extraData={openInvoice}
+        ListHeaderComponent={header}
+        ListEmptyComponent={empty}
+        ListFooterComponent={<ListFooter hasMore={win.hasMore} total={loading || error ? 0 : win.total} noun={tab === 'pocket' ? 'transactions' : tab} />}
+        onEndReached={win.loadMore}
+        onEndReachedThreshold={0.4}
+        contentContainerStyle={[styles.content, { paddingBottom: bottomSpace + 16 }]}
+        initialNumToRender={PAGE}
+        windowSize={7}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -473,308 +645,29 @@ export function AccountsScreen({ navigation }: Props) {
               setRefreshing(true);
               void load(true);
             }}
-            tintColor={Colors.brandGreenMid}
+            tintColor={palette.primary}
           />
         }
-        showsVerticalScrollIndicator={false}>
-        <ModuleBackBar onBack={() => navigation.goBack()} />
-        <ModuleKicker>School fees</ModuleKicker>
-        <ModuleScreenHeader title="Fees & pocket money" description="Pay fees, view invoices and pocket money." />
-        <Text style={styles.sub}>
-          {selectedStudent?.name
-            ? `For ${selectedStudent.name}`
-            : 'Balances and receipts for the selected student.'}
-        </Text>
+        showsVerticalScrollIndicator={false}
+      />
 
-        <ModuleTabPager
-          tabs={[
-            { key: 'fees', label: 'Fees' },
-            { key: 'invoices', label: 'Invoices' },
-            { key: 'slips', label: 'Bank slips' },
-          ]}
-          value={moneyTab}
-          onChange={setMoneyTab}
-          minHeight={320}
-          renderPage={(key) => {
-        if (loading) {
-          return <Loader />;
-        }
-        if (error) {
-          return <ModuleEmpty title="Could not load accounts" body={error} onRetry={() => void load()} />;
-        }
-        return (
-          <>
-            {partialWarn ? <Text style={styles.warn}>{partialWarn}</Text> : null}
-
-            {key === 'fees' ? (
-              <>
-            {/* Same elevated green balance card as dashboard */}
-            <View style={styles.heroElevate}>
-              <View style={styles.heroCard}>
-                <GreenPattern darker />
-                <LinearGradient
-                  pointerEvents="none"
-                  colors={['rgba(21,65,29,0.35)', 'rgba(0,109,105,0.55)']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={StyleSheet.absoluteFill}
-                />
-                <View style={styles.heroContent}>
-                  <View style={styles.heroHead}>
-                    <View style={styles.heroIconBox}>
-                      <Ionicons name="wallet" size={22} color={HERO_GREEN} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.heroKicker}>Total balance</Text>
-                      <Text style={styles.heroValue}>{kes(combined)}</Text>
-                      <Text style={styles.heroSub}>
-                        {selectedStudent?.name || 'Student'} · fees + pocket
-                      </Text>
-                    </View>
-                  </View>
-                  <View style={styles.heroSplit}>
-                    <Pressable style={styles.heroStat} onPress={onPayFees}>
-                      <Text style={styles.heroStatLabel}>Fee balance</Text>
-                      <Text style={styles.heroStatValue} numberOfLines={1}>
-                        {kes(feeTotal)}
-                      </Text>
-                      <Text style={styles.heroStatSub} numberOfLines={1}>
-                        Outstanding
-                      </Text>
-                    </Pressable>
-                    <Pressable style={styles.heroStat} onPress={onAddPocket}>
-                      <Text style={styles.heroStatLabel}>Pocket money</Text>
-                      <Text style={styles.heroStatValue} numberOfLines={1}>
-                        {kes(pocketTotal)}
-                      </Text>
-                      <Text style={styles.heroStatSub} numberOfLines={1}>
-                        Wallet
-                      </Text>
-                    </Pressable>
-                  </View>
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.actionRow}>
-              <Pressable style={[styles.primaryBtn, styles.actionFlex]} onPress={onPayFees}>
-                <Ionicons name="card" size={16} color={Colors.white} />
-                <Text style={styles.primaryBtnText}>Pay fees</Text>
-              </Pressable>
-              <Pressable style={[styles.secondaryBtn, styles.actionFlex]} onPress={onAddPocket}>
-                <Ionicons name="add-circle" size={16} color={HERO_GREEN} />
-                <Text style={styles.secondaryBtnText}>Add pocket</Text>
-              </Pressable>
-            </View>
-
-            {feeCards.length > 1
-              ? feeCards.map((card) => (
-                  <GlassPanel key={card.student_id} tone="frost" radius={16}>
-                    <View style={styles.detailInner}>
-                      <Text style={styles.detailName}>{card.student_name}</Text>
-                      <Text style={styles.detailAmt}>{kes(card.total)}</Text>
-                      {card.years.map((y, i) => (
-                        <Text key={`${card.student_id}-y-${i}`} style={styles.yearLine}>
-                          {yearLabel(y.financial_year)} · {kes(y.balance)}
-                        </Text>
-                      ))}
-                    </View>
-                  </GlassPanel>
-                ))
-              : null}
-
-            <View style={styles.receiptHead}>
-              <Text style={[styles.section, { marginTop: 0, flex: 1 }]}>Recent receipts</Text>
-              <Pressable style={styles.exportBtn} onPress={() => void exportReceipts()}>
-                <Ionicons name="share-outline" size={16} color={HERO_GREEN} />
-                <Text style={styles.exportText}>Export</Text>
-              </Pressable>
-            </View>
-
-            {receipts.length === 0 ? (
-              <Text style={styles.sub}>No receipts yet.</Text>
-            ) : (
-              <GlassPanel tone="frost" radius={16} style={styles.tableCard}>
-                <View style={styles.tableInner}>
-                  <View style={[styles.tr, styles.trHead]}>
-                    <Text style={[styles.th, styles.colDate]}>Date</Text>
-                    <Text style={[styles.th, styles.colAmt]}>Amount</Text>
-                    <Text style={[styles.th, styles.colAct]}> </Text>
-                  </View>
-                  {pageReceipts.map((r, i) => {
-                    const date = String(r.created_at ?? r.receipt_date ?? '').slice(0, 10);
-                    return (
-                      <View key={String(r.id ?? `${date}-${i}`)} style={styles.tr}>
-                        <Text style={[styles.td, styles.colDate]} numberOfLines={1}>
-                          {date || '—'}
-                        </Text>
-                        <Text style={[styles.td, styles.colAmt]} numberOfLines={1}>
-                          {kes(Number(r.amount ?? 0))}
-                        </Text>
-                        <Pressable
-                          style={styles.viewBtn}
-                          onPress={() => openReceiptView(r)}
-                          accessibilityRole="button"
-                          accessibilityLabel="View receipt">
-                          <Text style={styles.viewBtnText}>View</Text>
-                        </Pressable>
-                      </View>
-                    );
-                  })}
-                  <View style={styles.pager}>
-                    <Pressable
-                      style={[styles.pageBtn, receiptPage === 0 && styles.pageBtnDisabled]}
-                      disabled={receiptPage === 0}
-                      onPress={() => setReceiptPage((p) => Math.max(0, p - 1))}>
-                      <Ionicons
-                        name="chevron-back"
-                        size={18}
-                        color={receiptPage === 0 ? Colors.mutedForeground : HERO_GREEN}
-                      />
-                    </Pressable>
-                    <Text style={styles.pageLabel}>
-                      {receiptPage + 1} / {receiptPages} · {receipts.length} total
-                    </Text>
-                    <Pressable
-                      style={[
-                        styles.pageBtn,
-                        receiptPage >= receiptPages - 1 && styles.pageBtnDisabled,
-                      ]}
-                      disabled={receiptPage >= receiptPages - 1}
-                      onPress={() =>
-                        setReceiptPage((p) => Math.min(receiptPages - 1, p + 1))
-                      }>
-                      <Ionicons
-                        name="chevron-forward"
-                        size={18}
-                        color={
-                          receiptPage >= receiptPages - 1
-                            ? Colors.mutedForeground
-                            : HERO_GREEN
-                        }
-                      />
-                    </Pressable>
-                  </View>
-                </View>
-              </GlassPanel>
-            )}
-              </>
-            ) : null}
-
-            {key === 'invoices' ? (
-              <>
-            <View style={styles.receiptHead}>
-              <Text style={[styles.section, { marginTop: 0, flex: 1 }]}>Invoices</Text>
-            </View>
-            {invoices.length === 0 ? (
-              <Text style={styles.sub}>No invoices yet.</Text>
-            ) : (
-              <GlassPanel tone="frost" radius={16} style={styles.tableCard}>
-                <View style={styles.tableInner}>
-                  {invoices.slice(0, 10).map((inv, i) => {
-                    const date = String(inv.invoice_date ?? inv.due_date ?? '').slice(0, 10);
-                    return (
-                      <View key={String(inv.id ?? `inv-${i}`)} style={styles.tr}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.td} numberOfLines={1}>
-                            {inv.invoice_number || inv.description || 'Invoice'}
-                          </Text>
-                          <Text style={styles.invMeta}>{date || '—'}</Text>
-                        </View>
-                        <Text style={[styles.td, styles.colAmt]} numberOfLines={1}>
-                          {kes(Number(inv.amount ?? (inv as { total_amount?: number }).total_amount ?? inv.balance ?? 0))}
-                        </Text>
-                      </View>
-                    );
-                  })}
-                </View>
-              </GlassPanel>
-            )}
-              </>
-            ) : null}
-
-            {key === 'slips' ? (
-              <>
-            <View style={styles.receiptHead}>
-              <Text style={[styles.section, { marginTop: 0, flex: 1 }]}>Bank slips</Text>
-              <Pressable
-                style={styles.exportBtn}
-                onPress={() => {
-                  resetSlipForm();
-                  setSlipModal(true);
-                }}>
-                <Ionicons name="camera-outline" size={16} color={HERO_GREEN} />
-                <Text style={styles.exportText}>Upload photo</Text>
-              </Pressable>
-            </View>
-            <Text style={styles.sub}>
-              Photo only — no form. School AI / bursar reads amount from the slip image.
-            </Text>
-            {slips.length === 0 ? (
-              <Text style={styles.sub}>No bank slips submitted yet.</Text>
-            ) : (
-              <GlassPanel tone="frost" radius={16} style={styles.tableCard}>
-                <View style={styles.tableInner}>
-                  {slips.slice(0, 10).map((s, i) => {
-                    const date = String(s.created_at ?? s.paid_on ?? '').slice(0, 10);
-                    const st = String(s.status ?? 'pending').replace(/_/g, ' ');
-                    const amt = Number(s.amount ?? 0);
-                    return (
-                      <View key={String(s.id ?? `slip-${i}`)} style={styles.tr}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.td} numberOfLines={1}>
-                            {s.file_name || s.bank_ref || 'Bank slip photo'}
-                          </Text>
-                          <Text style={styles.invMeta}>
-                            {date} · {st}
-                          </Text>
-                        </View>
-                        <Text style={[styles.td, styles.colAmt]} numberOfLines={1}>
-                          {amt > 0 ? kes(amt) : 'Pending'}
-                        </Text>
-                      </View>
-                    );
-                  })}
-                </View>
-              </GlassPanel>
-            )}
-              </>
-            ) : null}
-          </>
-        );
-          }}
-        />
-      </ScrollView>
-
-      <PaymentBottomSheet visible={payForm != null} onClose={() => setPayForm(null)}>
+      <PaymentBottomSheet visible={payForm != null} onClose={() => setPayForm(null)} bare>
         {payForm ? (
           <PaymentProcessCard
-            key={`${payForm}-${payAmountSeed}-${payPhone}`}
-            mode={
-              payForm === 'fees'
-                ? 'school_fees'
-                : payForm === 'pocket'
-                  ? 'school_pocket'
-                  : 'teacher_tip'
-            }
-            title={
-              payForm === 'fees'
-                ? 'Pay school fees'
-                : payForm === 'pocket'
-                  ? 'Add pocket money'
-                  : 'Tip teacher'
-            }
+            key={`${payForm}-${payAmountSeed}`}
+            layout="sheet"
+            mode={payForm === 'fees' ? 'school_fees' : 'school_pocket'}
+            title={payForm === 'fees' ? 'Pay school fees' : 'Add pocket money'}
             subtitle={
               payForm === 'fees' && feeTotal > 0
-                ? `Balance · ${kes(feeTotal)}`
-                : selectedStudent?.name
-                  ? `For ${selectedStudent.name}`
-                  : undefined
+                ? `${learnerName} · balance ${kes(feeTotal)}`
+                : `For ${learnerName}`
             }
+            balance={payForm === 'fees' ? feeTotal : null}
             defaultAmount={payAmountSeed}
             defaultPhone={payPhone}
             studentId={selectedStudentId}
-            getReceiptIds={getReceiptIds}
+            getReceiptIds={payForm === 'fees' ? getReceiptIds : undefined}
             onRefresh={async () => {
               await load(true);
             }}
@@ -783,46 +676,37 @@ export function AccountsScreen({ navigation }: Props) {
         ) : null}
       </PaymentBottomSheet>
 
-      <Modal
-        visible={slipModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setSlipModal(false)}>
+      <Modal visible={slipModal} transparent animationType="slide" onRequestClose={() => setSlipModal(false)}>
         <Pressable style={styles.modalBackdrop} onPress={() => setSlipModal(false)}>
           <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
             <Text style={styles.modalTitle}>Upload bank slip</Text>
             <Text style={styles.modalMeta}>
-              Photo only. Amount and bank reference are read from the image by school AI / bursar —
-              no form to fill.
+              Photo only. The bursar reads the amount and bank reference from the picture: nothing to fill in.
             </Text>
-            <Pressable style={styles.secondaryBtn} onPress={() => void pickSlipImage()}>
-              <Ionicons name="camera-outline" size={16} color={HERO_GREEN} />
-              <Text style={styles.secondaryBtnText}>
-                {slipFileName || 'Choose slip photo'}
-              </Text>
-            </Pressable>
-            {slipFileUri ? (
-              <Image source={{ uri: slipFileUri }} style={styles.slipPreview} resizeMode="cover" />
-            ) : null}
-            <View style={styles.modalActions}>
-              <Pressable
-                style={[styles.primaryBtn, submittingSlip && { opacity: 0.6 }]}
-                disabled={submittingSlip}
-                onPress={() => void submitSlip()}>
-                {submittingSlip ? (
-                  <ActivityIndicator color={Colors.white} size="small" />
-                ) : (
-                  <Text style={styles.primaryBtnText}>Submit photo</Text>
-                )}
-              </Pressable>
-              <Pressable
-                style={styles.secondaryBtn}
+            <MoneyButton
+              label={slipFileName ? 'Choose another photo' : 'Choose slip photo'}
+              icon="camera-outline"
+              variant="secondary"
+              onPress={() => void pickSlipImage()}
+            />
+            {slipFileUri ? <Image source={{ uri: slipFileUri }} style={styles.slipPreview} resizeMode="cover" /> : null}
+            <View style={styles.actionRow}>
+              <MoneyButton
+                label="Cancel"
+                variant="secondary"
                 onPress={() => {
                   resetSlipForm();
                   setSlipModal(false);
-                }}>
-                <Text style={styles.secondaryBtnText}>Cancel</Text>
-              </Pressable>
+                }}
+                style={{ flex: 1 }}
+              />
+              {submittingSlip ? (
+                <View style={[styles.busyBtn, { backgroundColor: palette.primary }]}>
+                  <ActivityIndicator color={Colors.white} size="small" />
+                </View>
+              ) : (
+                <MoneyButton label="Submit photo" icon="cloud-upload-outline" onPress={() => void submitSlip()} style={{ flex: 1 }} />
+              )}
             </View>
           </Pressable>
         </Pressable>
@@ -833,168 +717,50 @@ export function AccountsScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  content: { paddingHorizontal: 20, gap: 12 },
-  title: { fontSize: 26, fontWeight: '800', color: Colors.ink, letterSpacing: -0.4 },
-  sub: { fontSize: 14, color: Colors.mutedForeground, marginBottom: 4 },
+  content: { paddingHorizontal: 16, flexGrow: 1 },
+  panelSplit: { flexDirection: 'row', gap: 8, marginTop: 14 },
+  actionRow: { flexDirection: 'row', gap: 10 },
+  note: { fontSize: 12, lineHeight: 17, color: Colors.mutedForeground },
   warn: {
     fontSize: 13,
-    color: Colors.orange,
-    backgroundColor: 'rgba(232,93,4,0.08)',
+    color: '#92400E',
+    backgroundColor: 'rgba(245,184,0,0.14)',
     padding: 10,
     borderRadius: 10,
   },
-  section: {
-    marginTop: 12,
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-    color: Colors.mutedForeground,
+  rowCard: {
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.06)',
+    paddingHorizontal: 12,
+    marginBottom: 8,
   },
-  heroElevate: {
-    borderRadius: 16,
-    marginTop: 4,
-    shadowColor: Colors.primaryDark,
-    shadowOpacity: 0.22,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 7,
-  },
-  heroCard: {
-    borderRadius: 16,
-    overflow: 'hidden',
-    minHeight: 168,
-  },
-  heroContent: { padding: 16, zIndex: 1 },
-  heroHead: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
-  heroIconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: Colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  heroKicker: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-    color: 'rgba(255,255,255,0.72)',
-  },
-  heroValue: { marginTop: 2, fontSize: 26, fontWeight: '800', color: Colors.white },
-  heroSub: { marginTop: 2, fontSize: 12, fontWeight: '500', color: 'rgba(255,255,255,0.7)' },
-  heroSplit: { flexDirection: 'row', gap: 8 },
-  heroStat: {
-    flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.14)',
-    borderRadius: 12,
-    padding: 12,
-  },
-  heroStatLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
-    color: 'rgba(255,255,255,0.7)',
-  },
-  heroStatValue: { marginTop: 4, fontSize: 16, fontWeight: '800', color: Colors.white },
-  heroStatSub: { marginTop: 2, fontSize: 11, color: 'rgba(255,255,255,0.65)' },
-  actionRow: { flexDirection: 'row', gap: 12, marginTop: 4, marginBottom: 8 },
-  actionFlex: { flex: 1, justifyContent: 'center' },
-  primaryBtn: {
-    flex: 1,
+  linkBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4 },
+  linkText: { fontSize: 13, fontWeight: '700' },
+  items: { paddingBottom: 8, paddingLeft: 48 },
+  itemRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: HERO_GREEN,
-    paddingVertical: 12,
-    borderRadius: 12,
-  },
-  primaryBtnText: { color: Colors.white, fontWeight: '700', fontSize: 14 },
-  secondaryBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(21,65,29,0.1)',
-    paddingVertical: 12,
-    borderRadius: 12,
-  },
-  secondaryBtnText: { color: HERO_GREEN, fontWeight: '700', fontSize: 14 },
-  detailInner: { padding: 14, gap: 4 },
-  detailName: { fontSize: 15, fontWeight: '700', color: Colors.ink },
-  detailAmt: { fontSize: 20, fontWeight: '800', color: HERO_GREEN },
-  yearLine: { fontSize: 12, color: Colors.mutedForeground },
-  receiptHead: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-    gap: 8,
-  },
-  exportBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, padding: 6 },
-  exportText: { fontSize: 13, fontWeight: '700', color: HERO_GREEN },
-  tableCard: { overflow: 'hidden' },
-  tableInner: { paddingVertical: 4, paddingHorizontal: 8 },
-  tr: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 6,
+    gap: 10,
+    paddingVertical: 7,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: 'rgba(0,0,0,0.06)',
   },
-  trHead: { borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.08)' },
-  th: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: Colors.mutedForeground,
-    textTransform: 'uppercase',
-  },
-  td: { fontSize: 13, color: Colors.ink, fontWeight: '600' },
-  colDate: { flex: 1.1 },
-  colAmt: { flex: 1 },
-  colAct: { width: 56 },
-  viewBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: 'rgba(21,65,29,0.1)',
-  },
-  viewBtnText: { fontSize: 12, fontWeight: '800', color: HERO_GREEN },
-  pager: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-    paddingVertical: 10,
-  },
-  pageBtn: { padding: 6 },
-  pageBtnDisabled: { opacity: 0.35 },
-  pageLabel: { fontSize: 12, fontWeight: '600', color: Colors.mutedForeground },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'flex-end',
-  },
+  itemTotal: { borderBottomWidth: 0, borderTopWidth: 1, borderTopColor: 'rgba(0,0,0,0.1)' },
+  itemLabel: { flex: 1, fontSize: 13, color: INK },
+  itemAmt: { fontSize: 13, fontWeight: '700', color: INK, textAlign: 'right', fontVariant: ['tabular-nums'] },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
   modalSheet: {
     backgroundColor: Colors.white,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
     padding: 20,
     paddingBottom: 36,
-    gap: 10,
+    gap: 12,
   },
-  modalTitle: { fontSize: 12, fontWeight: '800', letterSpacing: 0.8, color: Colors.mutedForeground },
+  modalTitle: { fontSize: 18, fontWeight: '800', color: INK },
   modalMeta: { fontSize: 13, color: Colors.mutedForeground, lineHeight: 18 },
-  modalActions: { flexDirection: 'row', gap: 10, marginTop: 8 },
-  invMeta: { marginTop: 2, fontSize: 11, color: Colors.mutedForeground },
-  slipPreview: {
-    width: '100%',
-    height: 180,
-    borderRadius: 12,
-    backgroundColor: 'rgba(0,0,0,0.04)',
-  },
+  slipPreview: { width: '100%', height: 180, borderRadius: 12, backgroundColor: rgba('#000000', 0.04) },
+  busyBtn: { flex: 1, borderRadius: 14, alignItems: 'center', justifyContent: 'center', minHeight: 48 },
 });

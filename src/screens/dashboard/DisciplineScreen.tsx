@@ -1,27 +1,35 @@
+/**
+ * Discipline — conduct records.
+ * - student: own cases (GET /discipline/incidents answers only theirs).
+ * - parent: cases for the selected child.
+ * - teacher: cases they recorded (scope=mine); office (school_admin): the school's cases.
+ * Staff can record a case and ask for an AI analysis; families only read.
+ */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { ThemedBackdrop } from '../../components/theme/ThemedPage';
-import { ModuleBackBar, ModuleEmpty, ModuleGlassCard, ModuleKicker, ModuleScreenHeader } from './ModuleChrome';
-import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import { useDeskAuth } from '../../context/DeskAuthContext';
+import { useAppTheme } from '../../context/AppThemeContext';
 import { deskFetch } from '../../lib/deskApi';
-import { seedParentDemoData } from '../../lib/parentPortalApi';
 import { fetchTeacherDisciplineIncidents } from '../../lib/teacherPortalApi';
 import { DashboardStackParamList } from '../../navigation/types';
-import { Colors } from '../../theme/yana';
 import { log } from '../../lib/logger';
-import { Loader } from '../../components/ui/Loader';
+import { INK, rgba } from '../../components/theme/ThemedPage';
+import {
+  ChipRow,
+  ErrorState,
+  ListSkeleton,
+  MUTED_INK,
+  ModuleScrollPage,
+  ShowMoreButton,
+  StateCard,
+  StatusPill,
+  SurfaceCard,
+  fmtDay,
+  useClientPager,
+  type PillTone,
+} from '../../components/ui/ModuleKit';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'Discipline'>;
 
@@ -47,28 +55,31 @@ type Incident = {
     admission_number?: string;
     student_id?: string;
     student_name?: string;
+    class_label?: string;
   }>;
 };
+
+type Filter = 'all' | 'concern' | 'positive';
 
 function unwrapList(data: unknown): Incident[] {
   if (Array.isArray(data)) return data as Incident[];
   if (data && typeof data === 'object') {
     const obj = data as Record<string, unknown>;
-    if (Array.isArray(obj.incidents)) return obj.incidents as Incident[];
-    if (Array.isArray(obj.items)) return obj.items as Incident[];
-    if (Array.isArray(obj.data)) return obj.data as Incident[];
+    for (const k of ['incidents', 'items', 'data']) {
+      if (Array.isArray(obj[k])) return (obj[k] as unknown[]).filter((x) => x && typeof x === 'object') as Incident[];
+    }
   }
   return [];
 }
 
-function asTextList(raw: string | string[] | null | undefined): string[] {
+function asTextList(raw: unknown): string[] {
   if (!raw) return [];
-  if (Array.isArray(raw)) return raw.map(String).filter(Boolean);
+  if (Array.isArray(raw)) return raw.map((x) => String(x ?? '')).filter(Boolean);
   const s = String(raw).trim();
   if (!s) return [];
   try {
     const parsed = JSON.parse(s) as unknown;
-    if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean);
+    if (Array.isArray(parsed)) return parsed.map((x) => String(x ?? '')).filter(Boolean);
   } catch {
     /* plain text */
   }
@@ -89,20 +100,37 @@ function extractAnalysisText(res: unknown): string {
   return 'Analysis complete — pull to refresh for updated case details.';
 }
 
+function isPositive(i: Incident): boolean {
+  const s = `${i.sentiment ?? ''} ${i.category_label ?? i.category_name ?? ''} ${i.case_number ?? ''}`.toLowerCase();
+  return /positive|commend|merit|award|praise/.test(s) || /-c-\d/.test(s);
+}
+
+function severityTone(sev?: string): PillTone {
+  const s = String(sev ?? '').toLowerCase();
+  if (s === 'high' || s === 'critical' || s === 'severe') return 'danger';
+  if (s === 'medium' || s === 'moderate') return 'warning';
+  return 'neutral';
+}
+
+function cap(s?: string | null): string {
+  const v = String(s ?? '').trim().replace(/_/g, ' ');
+  return v ? v.charAt(0).toUpperCase() + v.slice(1) : '';
+}
+
 export function DisciplineScreen({ navigation }: Props) {
-  const insets = useSafeAreaInsets();
+  const { palette } = useAppTheme();
   const { selectedStudent, selectedStudentId, persona, deskUser } = useDeskAuth();
   const isStudent = persona === 'student';
   const selfStudentId = isStudent
     ? String(selectedStudentId ?? deskUser?.id ?? deskUser?.user_id ?? '').trim()
     : selectedStudentId;
-  const canRecord = persona === 'teacher' || persona === 'school_admin' || persona === 'super_admin';
+  const isStaff = persona === 'teacher' || persona === 'school_admin' || persona === 'super_admin';
   const [items, setItems] = useState<Incident[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [seeding, setSeeding] = useState(false);
+  const [filter, setFilter] = useState<Filter>('all');
   const [analyzingCase, setAnalyzingCase] = useState<string | null>(null);
   const [analyzingStudent, setAnalyzingStudent] = useState<string | null>(null);
   const [analysisByKey, setAnalysisByKey] = useState<Record<string, string>>({});
@@ -128,42 +156,38 @@ export function DisciplineScreen({ navigation }: Props) {
         setRefreshing(false);
       }
     },
-    [persona, selfStudentId],
+    [persona],
   );
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const visible = useMemo(() => {
-    const list = Array.isArray(items) ? items : [];
-    if (!selfStudentId) return list;
-    return list.filter((inc) =>
-      (inc.students ?? []).some((s) => String(s.student_id ?? '') === selfStudentId),
-    );
-  }, [items, selfStudentId]);
+  // Staff lists carry no students; families' lists do — keep only the selected learner's cases.
+  const scoped = useMemo(() => {
+    if (!selfStudentId || isStaff) return items;
+    return items.filter((inc) => {
+      const studs = Array.isArray(inc.students) ? inc.students : [];
+      return studs.length === 0 || studs.some((s) => String(s?.student_id ?? '') === selfStudentId);
+    });
+  }, [items, selfStudentId, isStaff]);
 
-  const seed = async () => {
-    setSeeding(true);
-    try {
-      await seedParentDemoData();
-      await load(true);
-    } catch (e) {
-      log.warn('Discipline', 'seed failed', String(e));
-    } finally {
-      setSeeding(false);
-    }
-  };
+  const counts = useMemo(() => {
+    const pos = scoped.filter(isPositive).length;
+    return { all: scoped.length, positive: pos, concern: scoped.length - pos };
+  }, [scoped]);
+
+  const filtered = useMemo(() => {
+    if (filter === 'positive') return scoped.filter(isPositive);
+    if (filter === 'concern') return scoped.filter((i) => !isPositive(i));
+    return scoped;
+  }, [scoped, filter]);
+
+  const pager = useClientPager(filtered, 15, `${filter}-${selfStudentId}`);
 
   const runCaseAnalyze = async (item: Incident) => {
     const caseNo = String(item.case_number ?? '').trim();
-    if (!caseNo) {
-      setAnalysisError((prev) => ({
-        ...prev,
-        [`case-${item.id}`]: 'Case number missing — cannot analyze.',
-      }));
-      return;
-    }
+    if (!caseNo) return;
     const key = `case-${caseNo}`;
     setAnalyzingCase(key);
     setAnalysisError((prev) => {
@@ -172,14 +196,12 @@ export function DisciplineScreen({ navigation }: Props) {
       return next;
     });
     try {
-      const res = await deskFetch<unknown>(
-        `/discipline/cases/${encodeURIComponent(caseNo)}/analyze?use_ai=true`,
-        { method: 'POST' },
-      );
+      const res = await deskFetch<unknown>(`/discipline/cases/${encodeURIComponent(caseNo)}/analyze?use_ai=true`, {
+        method: 'POST',
+      });
       setAnalysisByKey((prev) => ({ ...prev, [key]: extractAnalysisText(res) }));
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setAnalysisError((prev) => ({ ...prev, [key]: msg }));
+      setAnalysisError((prev) => ({ ...prev, [key]: e instanceof Error ? e.message : String(e) }));
     } finally {
       setAnalyzingCase(null);
     }
@@ -196,339 +218,271 @@ export function DisciplineScreen({ navigation }: Props) {
       return next;
     });
     try {
-      const res = await deskFetch<unknown>(
-        `/discipline/students/${encodeURIComponent(adm)}/analyze?use_ai=true`,
-        { method: 'POST' },
-      );
+      const res = await deskFetch<unknown>(`/discipline/students/${encodeURIComponent(adm)}/analyze?use_ai=true`, {
+        method: 'POST',
+      });
       setAnalysisByKey((prev) => ({ ...prev, [key]: extractAnalysisText(res) }));
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      setAnalysisError((prev) => ({ ...prev, [key]: msg }));
+      setAnalysisError((prev) => ({ ...prev, [key]: e instanceof Error ? e.message : String(e) }));
     } finally {
       setAnalyzingStudent(null);
     }
   };
 
+  const title = isStudent
+    ? 'My conduct record'
+    : !isStaff && selectedStudent?.name
+      ? `${selectedStudent.name}'s conduct`
+      : persona === 'teacher'
+        ? 'Cases I recorded'
+        : 'Discipline cases';
+  const description = isStudent
+    ? 'Cases and commendations the school logged for you.'
+    : !isStaff
+      ? 'Conduct records and commendations for your child.'
+      : 'Tap a case for the full detail.';
+
   return (
-    <View style={styles.root}>
-      <ThemedBackdrop />
-      <ScrollView
-        contentContainerStyle={[
-          styles.content,
-          {
-            paddingTop: floatingHeaderInset(insets.top),
-            paddingBottom: moduleScrollBottomPad(insets.bottom),
-          },
-        ]}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => {
-              setRefreshing(true);
-              void load(true);
-            }}
-            tintColor={Colors.brandGreenMid}
-          />
-        }
-        showsVerticalScrollIndicator={false}>
-        <ModuleBackBar onBack={() => navigation.goBack()} />
-        <ModuleKicker>Discipline</ModuleKicker>
-        <ModuleScreenHeader
-          title={
+    <ModuleScrollPage
+      title={title}
+      description={description}
+      onBack={() => navigation.goBack()}
+      refreshing={refreshing}
+      onRefresh={() => {
+        setRefreshing(true);
+        void load(true);
+      }}
+      headerRight={
+        isStaff ? (
+          <Pressable
+            onPress={() => navigation.navigate('RecordDiscipline')}
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.recordBtn, { backgroundColor: palette.primary }, pressed && { opacity: 0.85 }]}>
+            <Ionicons name="add" size={16} color="#FFFFFF" />
+            <Text style={styles.recordText}>Record case</Text>
+          </Pressable>
+        ) : undefined
+      }>
+      {loading ? (
+        <ListSkeleton rows={4} />
+      ) : error ? (
+        <ErrorState title="Couldn’t load conduct records" message={error} onRetry={() => void load()} />
+      ) : scoped.length === 0 ? (
+        <StateCard
+          icon="shield-checkmark-outline"
+          title="No cases on record"
+          body={
             isStudent
-              ? 'My conduct record'
-              : selectedStudent?.name
-                ? `${selectedStudent.name}'s cases`
-                : 'Discipline cases'
-          }
-          description={
-            isStudent
-              ? 'Cases the school logged for you. Empty means no incidents on file.'
-              : selectedStudent?.name
-                ? 'Conduct records for the selected student.'
-                : 'Cases you recorded or linked to your account. Tap Record to open a new case.'
+              ? 'Nothing on file. Cases and commendations the school logs for you will show here.'
+              : isStaff
+                ? persona === 'teacher'
+                  ? 'Cases you record will show here.'
+                  : 'No discipline cases recorded yet.'
+                : 'Nothing on file for your child. Cases and commendations will show here.'
           }
         />
-        {canRecord ? (
-          <Pressable
-            style={{
-              alignSelf: 'flex-start',
-              backgroundColor: Colors.primary,
-              borderRadius: 12,
-              paddingHorizontal: 14,
-              paddingVertical: 10,
-              marginBottom: 12,
-            }}
-            onPress={() => navigation.navigate('RecordDiscipline')}>
-            <Text style={{ color: '#fff', fontWeight: '800' }}>Record case</Text>
-          </Pressable>
-        ) : null}
-
-        {loading ? (
-          <View style={styles.loader}>
-            <Loader />
-          </View>
-        ) : error ? (
-          <ModuleEmpty
-            title="Couldn't load discipline"
-            body={
-              /session expired|401|unauthorized/i.test(error)
-                ? "School API session isn't accepted yet for this account. Stay here — Chat still works. Pull to retry."
-                : error
-            }
-            onRetry={() => void load()}
+      ) : (
+        <>
+          <ChipRow<Filter>
+            value={filter}
+            onChange={setFilter}
+            options={[
+              { key: 'all', label: 'All', count: counts.all },
+              { key: 'concern', label: 'Cases', count: counts.concern },
+              { key: 'positive', label: 'Commendations', count: counts.positive },
+            ]}
           />
-        ) : visible.length === 0 ? (
-          <ModuleEmpty
-            title="No cases on record"
-            body={
-              isStudent
-                ? 'When the school logs a discipline incident for you, it will show up here.'
-                : 'When the school logs a discipline incident for your child, it will show up here.'
-            }
-            onRetry={seeding ? undefined : () => void seed()}
-          />
-        ) : (
-          visible.map((item, index) => {
+          {filtered.length === 0 ? (
+            <StateCard icon="filter-outline" title="Nothing in this filter" body="Try another filter above." />
+          ) : null}
+          {pager.visible.map((item, index) => {
             const key = String(item.id ?? item.case_number ?? index);
             const open = expanded === key;
+            const positive = isPositive(item);
             const caseNo = String(item.case_number ?? '').trim();
-            const caseAnalysisKey = caseNo ? `case-${caseNo}` : '';
+            const caseKey = caseNo ? `case-${caseNo}` : '';
             const students = Array.isArray(item.students) ? item.students : [];
             const steps = asTextList(item.steps_taken);
             const recs = asTextList(item.recommendations);
-            const narrative = String(
-              item.case_narrative ?? item.description ?? item.case_summary ?? '',
-            ).trim();
-
+            const narrative = String(item.case_narrative ?? item.description ?? item.case_summary ?? '').trim();
+            const when = item.incident_date || item.created_at;
             return (
-              <Pressable key={key} onPress={() => setExpanded(open ? null : key)}>
-                <ModuleGlassCard>
-                  <View style={styles.cardTop}>
-                    <View style={styles.iconWrap}>
-                      <Ionicons name="shield-checkmark-outline" size={18} color={Colors.destructive} />
-                    </View>
-                    <View style={styles.cardBody}>
-                      <Text style={styles.cardTitle} numberOfLines={open ? 6 : 2}>
-                        {item.title ||
-                          item.case_summary ||
-                          item.case_number ||
-                          item.category_label ||
-                          'Incident'}
-                      </Text>
-                      <Text style={styles.meta} numberOfLines={open ? 4 : 1}>
-                        {[item.status, item.severity, item.category_label || item.category_name]
-                          .filter(Boolean)
-                          .join(' · ')}
-                      </Text>
-                    </View>
+              <SurfaceCard key={key} onPress={() => setExpanded(open ? null : key)}>
+                <View style={styles.cardTop}>
+                  <View
+                    style={[
+                      styles.iconWrap,
+                      { backgroundColor: positive ? 'rgba(6,118,71,0.10)' : 'rgba(180,35,24,0.08)' },
+                    ]}>
                     <Ionicons
-                      name={open ? 'chevron-up' : 'chevron-down'}
+                      name={positive ? 'ribbon-outline' : 'shield-outline'}
                       size={18}
-                      color={Colors.mutedForeground}
+                      color={positive ? '#067647' : '#B42318'}
                     />
                   </View>
-
-                  {open ? (
-                    <View style={styles.detail}>
-                      {caseNo ? (
-                        <Text style={styles.detailLine}>
-                          <Text style={styles.detailLabel}>Case # </Text>
-                          {caseNo}
-                        </Text>
+                  <View style={styles.cardBody}>
+                    <Text style={styles.cardTitle} numberOfLines={open ? 6 : 2}>
+                      {item.title || item.case_summary || item.category_label || item.case_number || 'Incident'}
+                    </Text>
+                    <Text style={styles.meta} numberOfLines={1}>
+                      {[when ? fmtDay(when) : null, item.category_label || item.category_name].filter(Boolean).join(' · ')}
+                    </Text>
+                    <View style={styles.pills}>
+                      {positive ? <StatusPill label="Commendation" tone="success" /> : null}
+                      {!positive && item.severity ? (
+                        <StatusPill label={cap(item.severity)} tone={severityTone(item.severity)} />
                       ) : null}
-                      {(item.incident_date || item.created_at) ? (
-                        <Text style={styles.detailLine}>
-                          <Text style={styles.detailLabel}>Date </Text>
-                          {String(item.incident_date ?? item.created_at ?? '').slice(0, 10)}
-                        </Text>
-                      ) : null}
-                      {item.sentiment ? (
-                        <Text style={styles.detailLine}>
-                          <Text style={styles.detailLabel}>Sentiment </Text>
-                          {item.sentiment}
-                        </Text>
-                      ) : null}
-                      {narrative ? (
-                        <>
-                          <Text style={styles.detailLabel}>Details</Text>
-                          <Text style={styles.desc}>{narrative}</Text>
-                        </>
-                      ) : null}
-                      {steps.length ? (
-                        <>
-                          <Text style={styles.detailLabel}>Steps taken</Text>
-                          {steps.map((s, i) => (
-                            <Text key={`${key}-step-${i}`} style={styles.bullet}>
-                              • {s}
-                            </Text>
-                          ))}
-                        </>
-                      ) : null}
-                      {recs.length ? (
-                        <>
-                          <Text style={styles.detailLabel}>Recommendations</Text>
-                          {recs.map((r, i) => (
-                            <Text key={`${key}-rec-${i}`} style={styles.bullet}>
-                              • {r}
-                            </Text>
-                          ))}
-                        </>
-                      ) : null}
-                      {students.length ? (
-                        <>
-                          <Text style={styles.detailLabel}>Students involved</Text>
-                          {students.map((s, i) => {
-                            const adm = String(s.admission_number ?? '').trim();
-                            const name = s.full_name || s.student_name || adm || 'Student';
-                            const sk = adm ? `student-${adm}` : '';
-                            return (
-                              <View key={`${key}-stu-${i}`} style={styles.studentRow}>
-                                <Text style={styles.studentName}>{name}</Text>
-                                {adm ? (
-                                  <Pressable
-                                    style={styles.aiBtn}
-                                    disabled={analyzingStudent === sk}
-                                    onPress={(e) => {
-                                      e.stopPropagation?.();
-                                      void runStudentAnalyze(adm);
-                                    }}>
-                                    {analyzingStudent === sk ? (
-                                      <ActivityIndicator size="small" color={Colors.brandGreenDark} />
-                                    ) : (
-                                      <>
-                                        <Ionicons name="sparkles-outline" size={14} color={Colors.brandGreenDark} />
-                                        <Text style={styles.aiBtnText}>AI student insight</Text>
-                                      </>
-                                    )}
-                                  </Pressable>
-                                ) : null}
-                                {sk && analysisByKey[sk] ? (
-                                  <Text style={styles.analysis}>{analysisByKey[sk]}</Text>
-                                ) : null}
-                                {sk && analysisError[sk] ? (
-                                  <Text style={styles.analysisErr}>{analysisError[sk]}</Text>
-                                ) : null}
-                              </View>
-                            );
-                          })}
-                        </>
-                      ) : null}
-
-                      {caseNo ? (
-                        <Pressable
-                          style={styles.aiBtnPrimary}
-                          disabled={analyzingCase === caseAnalysisKey}
-                          onPress={(e) => {
-                            e.stopPropagation?.();
-                            void runCaseAnalyze(item);
-                          }}>
-                          {analyzingCase === caseAnalysisKey ? (
-                            <ActivityIndicator size="small" color={Colors.white} />
-                          ) : (
-                            <>
-                              <Ionicons name="sparkles" size={16} color={Colors.white} />
-                              <Text style={styles.aiBtnPrimaryText}>AI case analysis</Text>
-                            </>
-                          )}
-                        </Pressable>
-                      ) : null}
-                      {caseAnalysisKey && analysisByKey[caseAnalysisKey] ? (
-                        <Text style={styles.analysis}>{analysisByKey[caseAnalysisKey]}</Text>
-                      ) : null}
-                      {caseAnalysisKey && analysisError[caseAnalysisKey] ? (
-                        <Text style={styles.analysisErr}>{analysisError[caseAnalysisKey]}</Text>
-                      ) : null}
+                      {item.status ? <StatusPill label={cap(item.status)} tone="primary" /> : null}
                     </View>
-                  ) : (
-                    <Text style={styles.tapHint}>Tap for full case detail</Text>
-                  )}
-                </ModuleGlassCard>
-              </Pressable>
+                  </View>
+                  <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={18} color={MUTED_INK} />
+                </View>
+                {open ? (
+                  <View style={styles.detail}>
+                    {caseNo ? (
+                      <Text style={styles.detailLine}>
+                        <Text style={styles.detailLabel}>Case # </Text>
+                        {caseNo}
+                      </Text>
+                    ) : null}
+                    {narrative ? (
+                      <>
+                        <Text style={styles.detailLabel}>Details</Text>
+                        <Text style={styles.desc}>{narrative}</Text>
+                      </>
+                    ) : null}
+                    {steps.length ? (
+                      <>
+                        <Text style={styles.detailLabel}>Steps taken</Text>
+                        {steps.map((s, i) => (
+                          <Text key={`${key}-step-${i}`} style={styles.bullet}>
+                            • {s}
+                          </Text>
+                        ))}
+                      </>
+                    ) : null}
+                    {recs.length ? (
+                      <>
+                        <Text style={styles.detailLabel}>Recommendations</Text>
+                        {recs.map((r, i) => (
+                          <Text key={`${key}-rec-${i}`} style={styles.bullet}>
+                            • {r}
+                          </Text>
+                        ))}
+                      </>
+                    ) : null}
+                    {students.length && (isStaff || !selfStudentId) ? (
+                      <>
+                        <Text style={styles.detailLabel}>Students involved</Text>
+                        {students.map((s, i) => {
+                          const adm = String(s?.admission_number ?? '').trim();
+                          const name = s?.full_name || s?.student_name || adm || 'Student';
+                          const sk = adm ? `student-${adm}` : '';
+                          return (
+                            <View key={`${key}-stu-${i}`} style={styles.studentRow}>
+                              <Text style={styles.studentName}>
+                                {name}
+                                {s?.class_label ? <Text style={styles.meta}>{`  ${s.class_label}`}</Text> : null}
+                              </Text>
+                              {isStaff && adm ? (
+                                <Pressable
+                                  style={[styles.aiBtn, { borderColor: rgba(palette.primary, 0.2) }]}
+                                  disabled={analyzingStudent === sk}
+                                  onPress={() => void runStudentAnalyze(adm)}>
+                                  {analyzingStudent === sk ? (
+                                    <ActivityIndicator size="small" color={palette.primary} />
+                                  ) : (
+                                    <>
+                                      <Ionicons name="sparkles-outline" size={14} color={palette.primary} />
+                                      <Text style={[styles.aiBtnText, { color: palette.primary }]}>AI student insight</Text>
+                                    </>
+                                  )}
+                                </Pressable>
+                              ) : null}
+                              {sk && analysisByKey[sk] ? <Text style={styles.analysis}>{analysisByKey[sk]}</Text> : null}
+                              {sk && analysisError[sk] ? <Text style={styles.analysisErr}>{analysisError[sk]}</Text> : null}
+                            </View>
+                          );
+                        })}
+                      </>
+                    ) : null}
+                    {isStaff && caseNo ? (
+                      <Pressable
+                        style={[styles.aiBtnPrimary, { backgroundColor: palette.primary }]}
+                        disabled={analyzingCase === caseKey}
+                        onPress={() => void runCaseAnalyze(item)}>
+                        {analyzingCase === caseKey ? (
+                          <ActivityIndicator size="small" color="#FFFFFF" />
+                        ) : (
+                          <>
+                            <Ionicons name="sparkles" size={16} color={palette.secondary} />
+                            <Text style={styles.aiBtnPrimaryText}>AI case analysis</Text>
+                          </>
+                        )}
+                      </Pressable>
+                    ) : null}
+                    {caseKey && analysisByKey[caseKey] ? <Text style={styles.analysis}>{analysisByKey[caseKey]}</Text> : null}
+                    {caseKey && analysisError[caseKey] ? (
+                      <Text style={styles.analysisErr}>{analysisError[caseKey]}</Text>
+                    ) : null}
+                  </View>
+                ) : null}
+              </SurfaceCard>
             );
-          })
-        )}
-      </ScrollView>
-    </View>
+          })}
+          {pager.hasMore ? <ShowMoreButton shown={pager.shown} total={pager.total} onPress={pager.showMore} /> : null}
+        </>
+      )}
+    </ModuleScrollPage>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#FFFFFF' },
-  content: { paddingHorizontal: 18 },
-  heading: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: Colors.ink,
-    marginBottom: 14,
-  },
-  loader: { paddingVertical: 40, alignItems: 'center' },
-  cardTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  iconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: 'rgba(239,68,68,0.12)',
+  recordBtn: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 4,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
-  cardBody: { flex: 1 },
-  cardTitle: { fontSize: 15, fontWeight: '700', color: Colors.brandGreenDark },
-  meta: { marginTop: 3, fontSize: 12, color: Colors.mutedForeground },
-  tapHint: { marginTop: 8, fontSize: 12, color: Colors.mutedForeground },
-  detail: { marginTop: 12, gap: 6 },
-  detailLabel: {
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-    color: Colors.mutedForeground,
-    marginTop: 4,
-  },
-  detailLine: { fontSize: 13, color: Colors.ink },
-  desc: { fontSize: 14, lineHeight: 20, color: Colors.mutedForeground },
-  bullet: { fontSize: 13, lineHeight: 18, color: Colors.ink, paddingLeft: 4 },
-  studentRow: { gap: 6, marginTop: 4 },
-  studentName: { fontSize: 14, fontWeight: '700', color: Colors.ink },
+  recordText: { color: '#FFFFFF', fontWeight: '800', fontSize: 13 },
+  cardTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  iconWrap: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  cardBody: { flex: 1, minWidth: 0 },
+  cardTitle: { fontSize: 15, fontWeight: '700', color: INK },
+  meta: { marginTop: 3, fontSize: 12, color: MUTED_INK },
+  pills: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
+  detail: { marginTop: 12, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: 'rgba(0,0,0,0.1)', gap: 4 },
+  detailLine: { fontSize: 13, color: INK },
+  detailLabel: { marginTop: 6, fontSize: 11, fontWeight: '800', color: MUTED_INK, textTransform: 'uppercase', letterSpacing: 0.4 },
+  desc: { fontSize: 14, lineHeight: 20, color: INK },
+  bullet: { fontSize: 13.5, lineHeight: 19, color: INK },
+  studentRow: { paddingVertical: 6, gap: 6 },
+  studentName: { fontSize: 14, fontWeight: '700', color: INK },
   aiBtn: {
+    alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    alignSelf: 'flex-start',
-    paddingVertical: 6,
+    borderWidth: 1,
+    borderRadius: 10,
     paddingHorizontal: 10,
-    borderRadius: 8,
-    backgroundColor: 'rgba(10,61,46,0.08)',
+    paddingVertical: 6,
+    minHeight: 32,
   },
-  aiBtnText: { fontSize: 12, fontWeight: '700', color: Colors.brandGreenDark },
+  aiBtnText: { fontSize: 12, fontWeight: '700' },
   aiBtnPrimary: {
+    marginTop: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    marginTop: 10,
-    paddingVertical: 12,
     borderRadius: 12,
-    backgroundColor: Colors.brandGreenDark,
+    paddingVertical: 11,
+    minHeight: 44,
   },
-  aiBtnPrimaryText: { color: Colors.white, fontWeight: '700', fontSize: 14 },
-  analysis: {
-    marginTop: 6,
-    fontSize: 13,
-    lineHeight: 19,
-    color: Colors.ink,
-    backgroundColor: 'rgba(10,61,46,0.05)',
-    padding: 10,
-    borderRadius: 10,
-  },
-  analysisErr: { marginTop: 4, fontSize: 12, color: Colors.orange },
-  recordFab: {
-    alignSelf: 'flex-start',
-    marginBottom: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
-    backgroundColor: Colors.brandGreenDark,
-  },
-  recordFabText: { color: Colors.white, fontWeight: '700', fontSize: 14 },
+  aiBtnPrimaryText: { color: '#FFFFFF', fontWeight: '800' },
+  analysis: { marginTop: 6, fontSize: 13, lineHeight: 19, color: INK, backgroundColor: 'rgba(0,0,0,0.03)', padding: 10, borderRadius: 10 },
+  analysisErr: { marginTop: 6, fontSize: 12.5, color: '#B42318' },
 });

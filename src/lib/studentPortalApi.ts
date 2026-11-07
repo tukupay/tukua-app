@@ -5,6 +5,7 @@
 import { deskFetch } from './deskApi';
 
 import type { DeskExam } from './teacherPortalApi';
+import { toAttendancePage } from './parentPortalApi';
 
 
 
@@ -377,6 +378,7 @@ export type StudentFeeBalance = {
   student_name?: string | null;
   student_number?: string | null;
   financial_year?: string | null;
+  financial_year_name?: string | null;
   balance?: number;
   total_invoiced?: number;
   total_receipts?: number;
@@ -393,4 +395,109 @@ export async function fetchStudentFees(): Promise<StudentFeeBalance | null> {
   } catch {
     return null;
   }
+}
+
+export type StudentBursaryApplication = {
+  id?: string;
+  student_id?: string | null;
+  program_id?: string | null;
+  program_name?: string | null;
+  provider_name?: string | null;
+  requested_amount?: number | string | null;
+  approved_amount?: number | string | null;
+  disbursed_amount?: number | string | null;
+  status?: string | null;
+  applied_on?: string | null;
+  notes?: string | null;
+  decision_notes?: string | null;
+};
+
+/** The learner's own bursary applications (the list is filtered to them here as well as on the API). */
+export async function fetchStudentBursaryApplications(studentId: string): Promise<StudentBursaryApplication[]> {
+  const data = await deskFetch<{ applications?: StudentBursaryApplication[] }>('/bursaries/applications');
+  const rows = Array.isArray(data?.applications) ? data.applications : [];
+  return rows.filter((a) => String(a.student_id ?? '') === studentId);
+}
+
+/** A learner applies to one of the school's open bursary programs for themself. */
+export async function applyStudentBursary(body: {
+  student_id: string;
+  program_id: string;
+  requested_amount: number;
+  notes?: string;
+}) {
+  return deskFetch<Record<string, unknown>>('/bursaries/applications', { method: 'POST', body });
+}
+
+/** The signed-in learner's own attendance, one page (newest first) with totals over every recorded day. */
+export async function fetchStudentAttendancePage(opts: { limit?: number; offset?: number } = {}) {
+  const params = new URLSearchParams({ limit: String(opts.limit ?? 30), offset: String(opts.offset ?? 0) });
+  const data = await deskFetch<unknown>(`/students/me/attendance?${params}`);
+  return toAttendancePage(data);
+}
+
+export type StudentOwnExam = {
+  id: string;
+  name?: string | null;
+  exam_type?: string | null;
+  academic_year?: string | null;
+  term?: string | null;
+  marking_status?: string | null;
+  is_current?: number | boolean | null;
+  created_at?: string | null;
+};
+
+/** Exams in the learner's own class scope (`GET /students/me/exams`), newest first. */
+export async function fetchStudentOwnExams(): Promise<{ exams: StudentOwnExam[]; currentExamId: string | null }> {
+  const data = await deskFetch<{ exams?: StudentOwnExam[]; current_exam_id?: string | null } | null>('/students/me/exams');
+  const exams = unwrapList<StudentOwnExam>(data, ['exams', 'items']).filter((e) => e && e.id);
+  const cur = (data as { current_exam_id?: string | null } | null)?.current_exam_id;
+  return { exams, currentExamId: cur ? String(cur) : null };
+}
+
+export type StudentTrend = {
+  exams: Array<{
+    exam_id?: string;
+    exam_name?: string;
+    overall_mean?: number | null;
+    class_mean?: number | null;
+  }>;
+  analysis?: {
+    trend_label?: string | null;
+    sittings?: number | null;
+    last_mean?: number | null;
+    vs_class_mean?: number | null;
+  } | null;
+};
+
+/** The learner's own mean per exam and a one-line trend (`GET /students/me/performance-trend`); null when unavailable. */
+export async function fetchStudentPerformanceTrend(): Promise<StudentTrend | null> {
+  try {
+    const data = await deskFetch<StudentTrend | null>('/students/me/performance-trend');
+    if (!data || typeof data !== 'object') return null;
+    return { exams: Array.isArray(data.exams) ? data.exams : [], analysis: data.analysis ?? null };
+  } catch {
+    return null;
+  }
+}
+
+/** The learner's own report form for one exam (no class rows: `?rows=none`, ignored by older APIs). */
+export async function fetchStudentReportForm(examId: string) {
+  const data = await deskFetch<Record<string, unknown> | null>(
+    `/students/me/exams/${encodeURIComponent(examId)}/marksheet?rows=none`,
+  );
+  const payload = ((data as { data?: Record<string, unknown> } | null)?.data ?? data ?? {}) as Record<string, unknown>;
+  const row = (payload.row && typeof payload.row === 'object' ? payload.row : null) as
+    | (StudentExamMarksheetRow & Record<string, unknown>)
+    | null;
+  const cols = Array.isArray(payload.subject_columns)
+    ? (payload.subject_columns as Array<{ id?: string; name?: string; code?: string; short_form?: string | null }>)
+    : [];
+  const agg = payload.aggregates && typeof payload.aggregates === 'object' ? payload.aggregates : null;
+  return {
+    row,
+    subjectColumns: cols,
+    exam: (payload.exam as Record<string, unknown> | null) ?? null,
+    aggregates: agg as { class_subjects?: Array<Record<string, unknown>> } | null,
+  };
 }

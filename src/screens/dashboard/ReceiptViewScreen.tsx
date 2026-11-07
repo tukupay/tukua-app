@@ -8,12 +8,13 @@ import {
   View,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { ThemedBackdrop } from '../../components/theme/ThemedPage';
-import { GlassPanel } from '../../components/dashboard/Glass';
-import { ModuleBackBar, ModuleScreenHeader, ModuleKicker } from './ModuleChrome';
-import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
+import { CARD_SURFACE, ThemedBackdrop, rgba } from '../../components/theme/ThemedPage';
+import {
+  MoneyHeader,
+} from '../../components/dashboard/MoneyKit';
+import { useBottomBarSpace } from '../../components/navigation/useBottomBarSpace';
+import { useAppTheme } from '../../context/AppThemeContext';
 import { useDialog } from '../../context/DialogContext';
 import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
@@ -21,8 +22,6 @@ import { log } from '../../lib/logger';
 import { receiptRowToPdfInput, shareReceiptPdfFromInput } from '../../lib/receiptPdf';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'ReceiptView'>;
-
-const HERO_GREEN = '#15411D';
 
 function kes(n: number | undefined | null): string {
   const v = Number(n ?? 0) || 0;
@@ -34,7 +33,8 @@ function kes(n: number | undefined | null): string {
  * Download builds a real PDF via expo-print HTML → PDF.
  */
 export function ReceiptViewScreen({ navigation, route }: Props) {
-  const insets = useSafeAreaInsets();
+  const bottomSpace = useBottomBarSpace();
+  const { palette } = useAppTheme();
   const { showDialog } = useDialog();
   const { receipt, studentName, schoolName, admissionNumber, className } = route.params;
   const [downloading, setDownloading] = useState(false);
@@ -80,22 +80,13 @@ export function ReceiptViewScreen({ navigation, route }: Props) {
     <View style={styles.root}>
       <ThemedBackdrop />
       <ScrollView
-        contentContainerStyle={[
-          styles.content,
-          {
-            paddingTop: floatingHeaderInset(insets.top),
-            paddingBottom: moduleScrollBottomPad(insets.bottom),
-          },
-        ]}
+        contentContainerStyle={[styles.content, { paddingBottom: bottomSpace + 16 }]}
         showsVerticalScrollIndicator={false}>
-        <ModuleBackBar onBack={() => navigation.goBack()} />
-        <ModuleKicker>Accounts</ModuleKicker>
-        <ModuleScreenHeader title="Receipt" description="Official fee receipt — download as PDF." />
-        <Text style={styles.sub}>Official fee receipt · download as PDF</Text>
+        <MoneyHeader title="Receipt" subtitle={`${num} · ${kes(amount)}`} onBack={() => navigation.goBack()} />
 
         <View style={styles.actions}>
           <Pressable
-            style={[styles.primaryBtn, downloading && { opacity: 0.65 }]}
+            style={[styles.primaryBtn, { backgroundColor: palette.primary }, downloading && { opacity: 0.65 }]}
             disabled={downloading}
             onPress={() => void onDownload()}
             accessibilityRole="button"
@@ -104,17 +95,17 @@ export function ReceiptViewScreen({ navigation, route }: Props) {
               <ActivityIndicator color={Colors.white} size="small" />
             ) : (
               <>
-                <Ionicons name="download-outline" size={18} color={Colors.white} />
+                <Ionicons name="download-outline" size={18} color={palette.secondary} />
                 <Text style={styles.primaryBtnText}>Download PDF</Text>
               </>
             )}
           </Pressable>
         </View>
 
-        <GlassPanel tone="frost" radius={16} style={styles.card}>
+        <View style={styles.card}>
           <View style={styles.receiptInner}>
-            <View style={styles.schoolHead}>
-              <Text style={styles.schoolName}>{pdfInput.schoolName || 'School'}</Text>
+            <View style={[styles.schoolHead, { borderBottomColor: palette.primary }]}>
+              <Text style={[styles.schoolName, { color: palette.primary }]}>{pdfInput.schoolName || 'School'}</Text>
               <Text style={styles.schoolMuted}>Official fee receipt</Text>
             </View>
 
@@ -163,7 +154,7 @@ export function ReceiptViewScreen({ navigation, route }: Props) {
             </View>
 
             <View style={styles.table}>
-              <View style={[styles.tr, styles.trHead]}>
+              <View style={[styles.tr, { backgroundColor: rgba(palette.primary, 0.06) }]}>
                 <Text style={[styles.th, styles.colDesc]}>Vote head / account</Text>
                 <Text style={[styles.th, styles.colAmt]}>Amount</Text>
               </View>
@@ -173,9 +164,9 @@ export function ReceiptViewScreen({ navigation, route }: Props) {
                   <Text style={[styles.td, styles.colAmt]}>{kes(line.amount)}</Text>
                 </View>
               ))}
-              <View style={[styles.tr, styles.trTotal]}>
-                <Text style={[styles.tdTotal, styles.colDesc, { textAlign: 'right' }]}>TOTAL</Text>
-                <Text style={[styles.tdTotal, styles.colAmt]}>{kes(amount)}</Text>
+              <View style={[styles.tr, styles.trTotal, { backgroundColor: rgba(palette.secondary, 0.16) }]}>
+                <Text style={[styles.tdTotal, styles.colDesc, { color: palette.primary }]}>Total</Text>
+                <Text style={[styles.tdTotal, styles.colAmt, { color: palette.primary }]}>{kes(amount)}</Text>
               </View>
             </View>
 
@@ -198,7 +189,7 @@ export function ReceiptViewScreen({ navigation, route }: Props) {
               <Text style={styles.footNote}>Powered by TukuPay · Banking Partner: Co-op Bank</Text>
             </View>
           </View>
-        </GlassPanel>
+        </View>
       </ScrollView>
     </View>
   );
@@ -206,24 +197,21 @@ export function ReceiptViewScreen({ navigation, route }: Props) {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  content: { paddingHorizontal: 20, gap: 12 },
-  title: { fontSize: 26, fontWeight: '800', color: Colors.ink, letterSpacing: -0.4 },
-  sub: { fontSize: 14, color: Colors.mutedForeground, marginBottom: 4 },
-  actions: { marginTop: 4 },
+  content: { paddingHorizontal: 16, gap: 12 },
+  actions: { marginTop: 0 },
   primaryBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: HERO_GREEN,
     paddingVertical: 14,
     borderRadius: 12,
   },
   primaryBtnText: { color: Colors.white, fontWeight: '700', fontSize: 15 },
-  card: { overflow: 'hidden', marginTop: 4 },
+  card: { ...CARD_SURFACE, overflow: 'hidden', marginTop: 4 },
   receiptInner: { padding: 18, gap: 14 },
-  schoolHead: { borderBottomWidth: 2, borderBottomColor: HERO_GREEN, paddingBottom: 12 },
-  schoolName: { fontSize: 20, fontWeight: '800', color: HERO_GREEN },
+  schoolHead: { borderBottomWidth: 2, paddingBottom: 12 },
+  schoolName: { fontSize: 20, fontWeight: '800' },
   schoolMuted: { marginTop: 2, fontSize: 12, color: Colors.mutedForeground },
   officialBanner: {
     alignItems: 'center',
@@ -256,8 +244,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: 'rgba(0,0,0,0.08)',
   },
-  trHead: { backgroundColor: 'rgba(21,65,29,0.06)' },
-  trTotal: { backgroundColor: 'rgba(21,65,29,0.08)', borderBottomWidth: 0 },
+  trTotal: { borderBottomWidth: 0 },
   th: {
     fontSize: 11,
     fontWeight: '800',
@@ -265,9 +252,9 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   td: { fontSize: 13, color: Colors.ink, fontWeight: '600' },
-  tdTotal: { fontSize: 14, fontWeight: '800', color: HERO_GREEN },
+  tdTotal: { fontSize: 14, fontWeight: '800' },
   colDesc: { flex: 1.4 },
-  colAmt: { flex: 1, textAlign: 'right' },
+  colAmt: { flex: 1, textAlign: 'right', fontVariant: ['tabular-nums'] },
   notes: { fontSize: 13, color: Colors.ink, lineHeight: 18 },
   footerBlock: { marginTop: 8, gap: 6 },
   sigLine: {

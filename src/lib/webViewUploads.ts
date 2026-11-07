@@ -30,9 +30,10 @@ export function getWebViewUploadProps(): Partial<WebViewProps> {
 }
 
 /** Request camera before ID / document uploads. Gallery uses the system photo picker (no READ_MEDIA_*). */
-export async function ensureWebViewUploadPermissions(): Promise<void> {
+export async function ensureWebViewUploadPermissions(opts: { ask?: boolean } = {}): Promise<void> {
   try {
-    const cam = await Camera.requestCameraPermissionsAsync();
+    // Opening a page must not pop a system dialog; the first-run wizard (or an explicit ask) requests the camera.
+    const cam = opts.ask ? await Camera.requestCameraPermissionsAsync() : await Camera.getCameraPermissionsAsync();
     if (!cam.granted) {
       log.warn('WebViewUpload', 'camera permission not granted');
     }

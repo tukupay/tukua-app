@@ -99,27 +99,15 @@ export function TukuaPayHomeScreen({ navigation }: Props) {
           <Pressable
             style={styles.kycBtn}
             onPress={() => navigation.navigate('TukuaPayKyc')}
-            hitSlop={8}>
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Set up and link TukuPay">
             <Ionicons
-              name="shield-checkmark-outline"
+              name={kycStatus === 'approved' ? 'shield-checkmark' : 'link-outline'}
               size={22}
-              color={
-                kycStatus === 'approved'
-                  ? '#059669'
-                  : kycStatus === 'pending'
-                    ? '#D97706'
-                    : Colors.primary
-              }
+              color={kycStatus === 'approved' ? '#059669' : Colors.primary}
             />
-            <Text style={styles.kycChip}>
-              {kycStatus === 'approved'
-                ? 'Verified'
-                : kycStatus === 'pending'
-                  ? 'Pending'
-                  : kycStatus === 'rejected'
-                    ? 'Rejected'
-                    : 'Verify'}
-            </Text>
+            <Text style={styles.kycChip}>{kycStatus === 'approved' ? 'Verified' : 'Set up'}</Text>
           </Pressable>
         </View>
 

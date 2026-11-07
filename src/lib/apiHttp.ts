@@ -122,6 +122,7 @@ export function messageForStatus(status: number, json: unknown): string {
   const fromServer = pickMessage(json);
   // Never show an HTML page or a stack dump.
   if (fromServer && fromServer.length <= 300 && !/<html|<!doctype/i.test(fromServer)) return fromServer;
+  if (status === 400 || status === 422) return 'Some details are not right. Check them and try again.';
   if (status === 401) return 'Session expired. Please sign in again.';
   if (status === 403) return 'You do not have access to this.';
   if (status === 404) return 'Not found.';
@@ -129,6 +130,75 @@ export function messageForStatus(status: number, json: unknown): string {
   if (status === 429) return 'Too many requests. Wait a moment and try again.';
   if (status >= 500) return 'The server had a problem. Please try again shortly.';
   return `Request failed (${status}).`;
+}
+
+export const BAD_ANSWER_MESSAGE =
+  'We got an unexpected answer from Tukua. Check your connection (some Wi-Fi needs a sign-in page first) and try again.';
+const GENERIC_MESSAGE = 'Something went wrong. Please try again.';
+
+/** Text that must never reach a user: empty, "undefined", "[object Object]", a JS TypeError, a stack or HTML. */
+function unshowable(msg: string): boolean {
+  if (!msg) return true;
+  if (/^(undefined|null|nan|error|\[object \w+\]|typeerror|syntaxerror)$/i.test(msg)) return true;
+  if (msg.length > 240) return true;
+  if (/<html|<!doctype|\n\s+at\s|\bat\s+\S+\s+\(|stack trace/i.test(msg)) return true;
+  if (/undefined is not|null is not an object|cannot read propert|is not a function|is not defined|of undefined|of null/i.test(msg)) {
+    return true;
+  }
+  if (/^\s*[{[]/.test(msg)) return true;
+  return false;
+}
+
+/**
+ * One clear sentence for any failure — an ApiError, a fetch TypeError, a JSON SyntaxError, a thrown string or
+ * object, or nothing at all. Never returns "undefined", a stack, or HTML. Status codes get their own wording.
+ */
+export function userMessageFromError(err: unknown, fallback: string = GENERIC_MESSAGE): string {
+  try {
+    if (err == null) return fallback;
+    const e = err as Partial<ApiError> & { status?: unknown; name?: unknown };
+    if (e.timeout) return TIMEOUT_MESSAGE;
+    if (e.network) return NETWORK_MESSAGE;
+    let msg = '';
+    if (typeof err === 'string') msg = err;
+    else if (typeof e.message === 'string') msg = e.message;
+    else if (Array.isArray(e.message)) msg = (e.message as unknown[]).filter((x) => typeof x === 'string').join('. ');
+    msg = msg.trim();
+    if (/network request failed|failed to fetch|network error|ECONN|ENOTFOUND|unable to resolve host|internet connection appears/i.test(msg)) {
+      return NETWORK_MESSAGE;
+    }
+    if (e.name === 'AbortError' || /\baborted\b|timed? ?out|timeout/i.test(msg)) return TIMEOUT_MESSAGE;
+    if (e.name === 'SyntaxError' || /JSON Parse error|Unexpected token|not valid JSON|Unexpected end of/i.test(msg)) {
+      return BAD_ANSWER_MESSAGE;
+    }
+    const status =
+      typeof e.statusCode === 'number' ? e.statusCode : typeof e.status === 'number' ? (e.status as number) : 0;
+    if (status === 429 || /too many|rate limit/i.test(msg)) return 'Too many tries. Wait a minute and try again.';
+    if (!unshowable(msg)) return msg;
+    if (status >= 400) return messageForStatus(status, null);
+    return fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/** Dev-only detail for a failure the user saw as a friendly sentence (never logs passwords — pass none). */
+export function warnDev(scope: string, err: unknown, extra?: Record<string, unknown>) {
+  if (typeof __DEV__ !== 'undefined' && !__DEV__) return;
+  try {
+    const e = err as Partial<ApiError> & { stack?: string };
+    console.warn(`[${scope}]`, {
+      message: typeof e?.message === 'string' ? e.message : String(err),
+      statusCode: e?.statusCode,
+      code: e?.code,
+      timeout: e?.timeout,
+      network: e?.network,
+      ...extra,
+      stack: typeof e?.stack === 'string' ? e.stack.split('\n').slice(0, 4).join('\n') : undefined,
+    });
+  } catch {
+    /* never let logging break a screen */
+  }
 }
 
 /** `{ data: T }` envelope → T; anything else as-is. */

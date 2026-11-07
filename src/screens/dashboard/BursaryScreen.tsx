@@ -1,90 +1,168 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Pressable,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { ThemedBackdrop } from '../../components/theme/ThemedPage';
+import { ThemedBackdrop, INK, rgba } from '../../components/theme/ThemedPage';
+import { KeyboardAwareScroll, useKeyboardReveal } from '../../components/auth/KeyboardAwareScroll';
+import { PaymentBottomSheet } from '../../components/dashboard/PaymentBottomSheet';
 import { PaymentProcessCard } from '../../components/dashboard/PaymentProcessCard';
-import { ModuleBackBar, ModuleScreenHeader, ModuleEmpty, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
-import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import {
+  AmountRow,
+  BalancePanel,
+  ListFooter,
+  ListSkeleton,
+  MoneyButton,
+  MoneyHeader,
+  MoneyTabs,
+  SectionTitle,
+  StateCard,
+} from '../../components/dashboard/MoneyKit';
+import { kes, shortDate, useWindowedList } from '../../lib/moneyFormat';
+import { useBottomBarSpace } from '../../components/navigation/useBottomBarSpace';
+import { useAuth } from '../../context/AuthContext';
+import { useAppTheme } from '../../context/AppThemeContext';
+import { useDeskAuth } from '../../context/DeskAuthContext';
+import { useDialog } from '../../context/DialogContext';
+import {
+  applyParentBursary,
   fetchParentBursary,
-  ParentBursaryContribution,
-  ParentBursaryProgram,
+  type BursaryApplication,
+  type ParentBursaryContribution,
+  type ParentBursaryProgram,
 } from '../../lib/parentPortalApi';
+import {
+  applyStudentBursary,
+  fetchStudentBursaryApplications,
+  resolveStudentRecordId,
+} from '../../lib/studentPortalApi';
 import { deskFetch } from '../../lib/deskApi';
+import { defaultMpesaPhone } from '../../lib/phoneUtils';
 import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
 import { log } from '../../lib/logger';
 import { humanizeError } from '../../lib/humanizeError';
-import { Loader } from '../../components/ui/Loader';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'Bursary'>;
 
-const HERO_GREEN = '#15411D';
-
 type ProgramRow = ParentBursaryProgram & {
   name?: string;
-  status?: string | null;
   closes_on?: string | null;
+  provider_name?: string | null;
+  source_type?: string | null;
 };
 
-function kes(n: number | undefined | null): string {
-  const v = Number(n ?? 0) || 0;
-  return `KES ${v.toLocaleString()}`;
+type Tab = 'contribute' | 'apply';
+
+const PAGE = 10;
+
+const STATUS_TONE: Record<string, { bg: string; fg: string; label: string }> = {
+  pending: { bg: '#FEF3C7', fg: '#92400E', label: 'Under review' },
+  approved: { bg: '#DCFCE7', fg: '#166534', label: 'Approved' },
+  disbursed: { bg: '#DBEAFE', fg: '#1E40AF', label: 'Paid to fees' },
+  posted: { bg: '#DBEAFE', fg: '#1E40AF', label: 'Paid to fees' },
+  rejected: { bg: '#F1F5F9', fg: '#475569', label: 'Not approved' },
+};
+
+function programTitle(p: ProgramRow): string {
+  return String(p.title || p.name || 'Bursary program');
 }
 
-export function BursaryScreen({ navigation }: Props) {
-  const insets = useSafeAreaInsets();
+/** Near the end of a scroll view: load the next batch of a windowed list. */
+function nearEnd(e: NativeSyntheticEvent<NativeScrollEvent>): boolean {
+  const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
+  return layoutMeasurement.height + contentOffset.y >= contentSize.height - 240;
+}
 
+/**
+ * Bursary: "Contribute" (anyone at the school gives to the bursary kitty by M-Pesa, the same STK flow as
+ * fees) and, for parents and learners only, "Apply" (ask one of the school's open programs for support).
+ */
+export function BursaryScreen({ navigation }: Props) {
+  const bottomSpace = useBottomBarSpace();
+  const { palette } = useAppTheme();
+  const { profile } = useAuth();
+  const { persona, deskUser, linkedStudents, selectedStudentId, selectedSchool } = useDeskAuth();
+  const { showDialog } = useDialog();
+  const canApply = persona === 'parent' || persona === 'student';
+  const ownStudentId = persona === 'student' ? resolveStudentRecordId(deskUser) : '';
+
+  const [tab, setTab] = useState<Tab>('contribute');
   const [programs, setPrograms] = useState<ProgramRow[]>([]);
   const [contributions, setContributions] = useState<ParentBursaryContribution[]>([]);
+  const [applications, setApplications] = useState<BursaryApplication[]>([]);
   const [kittyTotal, setKittyTotal] = useState(0);
-  const [selectedProgram, setSelectedProgram] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [showPay, setShowPay] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [ok, setOk] = useState<string | null>(null);
-  const [contribPage, setContribPage] = useState(0);
-  const CONTRIB_PAGE = 8;
+  const [showPay, setShowPay] = useState(false);
+
+  // Apply form
+  const children = useMemo(
+    () =>
+      persona === 'parent'
+        ? linkedStudents.filter((s) => !selectedSchool?.id || s.schoolId === selectedSchool.id)
+        : [],
+    [persona, linkedStudents, selectedSchool?.id],
+  );
+  const [applyChild, setApplyChild] = useState<string | null>(selectedStudentId ?? null);
+  const [applyProgram, setApplyProgram] = useState<string | null>(null);
+  const [applyAmount, setApplyAmount] = useState('');
+  const [applyNotes, setApplyNotes] = useState('');
+  const [applyError, setApplyError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const formRef = useRef<View>(null);
+
+  useEffect(() => {
+    if (!applyChild && children[0]) setApplyChild(children[0].id);
+  }, [children, applyChild]);
 
   const load = useCallback(
     async (soft = false) => {
       if (!soft) setLoading(true);
       setError(null);
       try {
-        const bursaryList = await deskFetch<{ programs?: ProgramRow[] }>('/bursaries/programs');
-        const fromNest = Array.isArray(bursaryList?.programs) ? bursaryList.programs : [];
-        setPrograms(
-          fromNest.map((p) => ({
-            ...p,
-            title: p.title || p.name || 'Bursary program',
-            description: p.description ?? null,
-            deadline: p.deadline || p.closes_on || null,
-          })),
-        );
-
-        // Kitty + contributions are the same for every school member (parent, staff,
-        // security) — the bursary module must look identical across personas.
-        try {
-          const data = await fetchParentBursary();
-          if (!fromNest.length && Array.isArray(data?.programs)) {
-            setPrograms(data.programs as ProgramRow[]);
+        const [progRes, kittyRes, studentApps] = await Promise.allSettled([
+          deskFetch<{ programs?: ProgramRow[] }>('/bursaries/programs'),
+          fetchParentBursary(),
+          persona === 'student' && ownStudentId
+            ? fetchStudentBursaryApplications(ownStudentId)
+            : Promise.resolve([] as BursaryApplication[]),
+        ]);
+        let list: ProgramRow[] =
+          progRes.status === 'fulfilled' && Array.isArray(progRes.value?.programs) ? progRes.value.programs : [];
+        if (kittyRes.status === 'fulfilled') {
+          const k = kittyRes.value;
+          if (!list.length && Array.isArray(k?.programs)) list = k.programs as ProgramRow[];
+          setContributions(k?.contributions ?? []);
+          setKittyTotal(Number(k?.kitty_total ?? 0) || 0);
+          if (persona === 'parent') {
+            setApplications([...(k?.applications ?? []), ...(k?.funder_applications ?? [])]);
           }
-          setContributions(data?.contributions ?? []);
-          setKittyTotal(Number(data?.kitty_total ?? 0) || 0);
-        } catch (kittyErr) {
-          log.warn('Bursary', 'kitty', String(kittyErr));
+        } else {
+          log.warn('Bursary', 'kitty', String(kittyRes.reason));
           setContributions([]);
           setKittyTotal(0);
+        }
+        if (persona === 'student') {
+          setApplications(studentApps.status === 'fulfilled' ? studentApps.value : []);
+        }
+        setPrograms(
+          list
+            .filter((p) => !p.status || String(p.status).toLowerCase() === 'open')
+            .map((p) => ({ ...p, title: programTitle(p), deadline: p.deadline || p.closes_on || null })),
+        );
+        if (progRes.status === 'rejected' && kittyRes.status === 'rejected') {
+          setError(humanizeError(progRes.reason));
         }
       } catch (e) {
         const msg = humanizeError(e);
@@ -95,25 +173,250 @@ export function BursaryScreen({ navigation }: Props) {
         setRefreshing(false);
       }
     },
-    [],
+    [persona, ownStudentId],
   );
 
   useEffect(() => {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (!applyProgram && programs[0]?.id) setApplyProgram(programs[0].id);
+  }, [programs, applyProgram]);
+
+  const contribWin = useWindowedList(contributions, PAGE);
+  const appsWin = useWindowedList(applications, PAGE);
+
+  const submitApplication = async () => {
+    const studentId = persona === 'student' ? ownStudentId : applyChild;
+    const amount = Math.round(Number(applyAmount));
+    if (!studentId) {
+      setApplyError(persona === 'student' ? 'Your learner profile is not linked yet.' : 'Choose which child this is for.');
+      return;
+    }
+    if (!applyProgram) {
+      setApplyError('Choose a bursary program.');
+      return;
+    }
+    if (!Number.isFinite(amount) || amount < 10) {
+      setApplyError('Enter the amount you are asking for (at least KES 10).');
+      return;
+    }
+    if (applyNotes.trim().length < 10) {
+      setApplyError('Tell the committee briefly why you need support (a sentence or two).');
+      return;
+    }
+    setApplyError(null);
+    setSubmitting(true);
+    try {
+      const body = { student_id: studentId, program_id: applyProgram, requested_amount: amount, notes: applyNotes.trim() };
+      if (persona === 'student') await applyStudentBursary(body);
+      else await applyParentBursary(body);
+      setApplyAmount('');
+      setApplyNotes('');
+      showDialog({
+        title: 'Application sent',
+        message: 'The school bursary committee will review it. You will see the decision here.',
+        variant: 'success',
+      });
+      await load(true);
+    } catch (e) {
+      setApplyError(humanizeError(e));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const revealRef = useRef<ReturnType<typeof useKeyboardReveal>>(null);
+  const reveal = () => {
+    // Keep the whole form (fields + Send button) above the keyboard.
+    revealRef.current?.focused(formRef.current);
+  };
+
+  const contributeTab = (
+    <>
+      <BalancePanel
+        kicker="Your gifts to the kitty"
+        value={kes(kittyTotal)}
+        line="Supports learners who cannot afford fees"
+        icon="heart">
+        <MoneyButton
+          label="Give with M-Pesa"
+          icon="phone-portrait"
+          variant="accent"
+          onPress={() => setShowPay(true)}
+          style={{ marginTop: 14 }}
+        />
+      </BalancePanel>
+      <Text style={styles.note}>
+        The school bursary committee reviews needs and shares the kitty. Every shilling is recorded.
+      </Text>
+      <SectionTitle>Your contributions</SectionTitle>
+      {contributions.length === 0 ? (
+        <StateCard icon="heart-outline" title="No contributions yet" body="Your gifts show here with their date." />
+      ) : (
+        <>
+          {contribWin.visible.map((c, i) => (
+            <View key={String(c.id ?? i)} style={styles.rowCard}>
+              <AmountRow
+                icon="heart"
+                iconTone="in"
+                title={String(c.note || 'Bursary kitty').replace(/\s*checkout=\S+/i, '').trim() || 'Bursary kitty'}
+                meta={[shortDate(c.created_at), String(c.status || 'recorded')].filter(Boolean).join(' · ')}
+                amount={kes(Number(c.amount ?? 0))}
+                last
+              />
+            </View>
+          ))}
+          <ListFooter hasMore={contribWin.hasMore} total={contribWin.total} noun="contributions" onMore={contribWin.loadMore} />
+        </>
+      )}
+    </>
+  );
+
+  const applyTab = (
+    <>
+      <SectionTitle>Open programs</SectionTitle>
+      {programs.length === 0 ? (
+        <StateCard icon="school-outline" title="No open programs" body="The school has no bursary program taking applications right now." />
+      ) : (
+        programs.map((p) => {
+          const on = applyProgram === p.id;
+          return (
+            <Pressable
+              key={String(p.id)}
+              onPress={() => setApplyProgram(p.id ?? null)}
+              style={[styles.programCard, on && { borderColor: palette.primary, backgroundColor: rgba(palette.primary, 0.04) }]}>
+              <Ionicons
+                name={on ? 'radio-button-on' : 'radio-button-off'}
+                size={20}
+                color={on ? palette.primary : Colors.mutedForeground}
+              />
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.programTitle}>{programTitle(p)}</Text>
+                {p.description ? <Text style={styles.programDesc}>{p.description}</Text> : null}
+                {p.deadline ? <Text style={styles.programMeta}>Closes {shortDate(p.deadline)}</Text> : null}
+              </View>
+            </Pressable>
+          );
+        })
+      )}
+
+      {programs.length ? (
+        <View style={styles.formCard}>
+          <Text style={styles.formTitle}>Apply for support</Text>
+          {persona === 'parent' ? (
+            children.length ? (
+              <>
+                <Text style={styles.label}>For</Text>
+                <View style={styles.chips}>
+                  {children.map((c) => {
+                    const on = applyChild === c.id;
+                    return (
+                      <Pressable
+                        key={c.id}
+                        onPress={() => setApplyChild(c.id)}
+                        style={[
+                          styles.chip,
+                          on ? { backgroundColor: palette.primary, borderColor: palette.primary } : { borderColor: rgba(palette.primary, 0.2) },
+                        ]}>
+                        <Text style={[styles.chipText, { color: on ? Colors.white : palette.primary }]} numberOfLines={1}>
+                          {c.name.split(/\s+/)[0] || c.name}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </>
+            ) : (
+              <Text style={styles.note}>Link your child on the dashboard first.</Text>
+            )
+          ) : null}
+          <RevealBridge bridge={revealRef} />
+          <View ref={formRef} collapsable={false} style={{ gap: 8 }}>
+            <Text style={styles.label}>Amount you need</Text>
+            <View style={styles.amountBox}>
+              <Text style={[styles.amountPrefix, { color: palette.primary }]}>KES</Text>
+              <TextInput
+                style={styles.amountInput}
+                value={applyAmount}
+                onChangeText={(v) => setApplyAmount(v.replace(/[^\d]/g, ''))}
+                keyboardType="number-pad"
+                placeholder="0"
+                placeholderTextColor={Colors.mutedForeground}
+                onFocus={reveal}
+              />
+            </View>
+            <Text style={styles.label}>Why do you need support?</Text>
+            <TextInput
+              style={styles.notes}
+              value={applyNotes}
+              onChangeText={setApplyNotes}
+              multiline
+              maxLength={1000}
+              placeholder="e.g. Lost income this term; two children in school."
+              placeholderTextColor={Colors.mutedForeground}
+              onFocus={reveal}
+              textAlignVertical="top"
+            />
+            {applyError ? <Text style={styles.err}>{applyError}</Text> : null}
+            {submitting ? (
+              <View style={[styles.busyBtn, { backgroundColor: palette.primary }]}>
+                <ActivityIndicator color={Colors.white} />
+              </View>
+            ) : (
+              <MoneyButton label="Send application" icon="send" onPress={() => void submitApplication()} />
+            )}
+          </View>
+        </View>
+      ) : null}
+
+      <SectionTitle>{persona === 'student' ? 'Your applications' : "Your children's applications"}</SectionTitle>
+      {applications.length === 0 ? (
+        <StateCard icon="document-text-outline" title="No applications yet" body="Applications you send show here with the committee's decision." />
+      ) : (
+        <>
+          {appsWin.visible.map((a, i) => {
+            const st = String(a.status || 'pending').toLowerCase();
+            const tone = STATUS_TONE[st] ?? { bg: '#F1F5F9', fg: '#475569', label: st.replace(/_/g, ' ') };
+            const approved = Number(a.approved_amount ?? 0);
+            const child = children.find((c) => c.id === a.student_id)?.name;
+            return (
+              <View key={String(a.id ?? i)} style={[styles.rowCard, { paddingVertical: 12, gap: 6 }]}>
+                <View style={styles.appTop}>
+                  <Text style={styles.programTitle} numberOfLines={1}>
+                    {a.program_name || a.funder_name || 'Bursary'}
+                  </Text>
+                  <Text style={[styles.pill, { backgroundColor: tone.bg, color: tone.fg }]}>{tone.label}</Text>
+                </View>
+                <Text style={styles.programMeta}>
+                  {[child, shortDate(a.applied_on ?? a.created_at)].filter(Boolean).join(' · ')}
+                </Text>
+                <View style={styles.appAmounts}>
+                  <Text style={styles.programMeta}>Asked {kes(Number(a.requested_amount ?? 0))}</Text>
+                  {approved > 0 ? <Text style={styles.approved}>Approved {kes(approved)}</Text> : null}
+                </View>
+                {a.decision_notes ? <Text style={styles.programDesc}>{a.decision_notes}</Text> : null}
+              </View>
+            );
+          })}
+          <ListFooter hasMore={appsWin.hasMore} total={appsWin.total} noun="applications" onMore={appsWin.loadMore} />
+        </>
+      )}
+    </>
+  );
+
   return (
     <View style={styles.root}>
       <ThemedBackdrop />
-      <ScrollView
-        contentContainerStyle={[
-          styles.content,
-          {
-            paddingTop: floatingHeaderInset(insets.top),
-            paddingBottom: moduleScrollBottomPad(insets.bottom),
-          },
-        ]}
-        keyboardShouldPersistTaps="handled"
+      <KeyboardAwareScroll
+        contentContainerStyle={[styles.content, { paddingBottom: bottomSpace + 16 }]}
+        showsVerticalScrollIndicator={false}
+        onScroll={(e) => {
+          if (!nearEnd(e)) return;
+          if (tab === 'contribute') contribWin.loadMore();
+          else appsWin.loadMore();
+        }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -121,238 +424,125 @@ export function BursaryScreen({ navigation }: Props) {
               setRefreshing(true);
               void load(true);
             }}
-            tintColor={Colors.brandGreenMid}
+            tintColor={palette.primary}
           />
-        }
-        showsVerticalScrollIndicator={false}>
-        <ModuleBackBar onBack={() => navigation.goBack()} />
-        <ModuleKicker>Bursary</ModuleKicker>
-        <ModuleScreenHeader
-          title="Vulnerable student kitty"
-          description="School bursary programs. Parents can contribute without a note."
+        }>
+        <MoneyHeader
+          title="Bursary"
+          subtitle={canApply ? 'Give to the kitty, or apply for support' : 'Give to the school bursary kitty'}
+          onBack={() => navigation.goBack()}
         />
-        <Text style={styles.sub}>
-          Funds are reviewed and distributed by the school’s bursary committee — not automatically by the app.
-        </Text>
-
+        {canApply ? (
+          <MoneyTabs
+            tabs={[
+              { key: 'contribute', label: 'Contribute', icon: 'heart' },
+              { key: 'apply', label: 'Apply', icon: 'document-text' },
+            ]}
+            value={tab}
+            onChange={setTab}
+          />
+        ) : null}
         {loading ? (
-          <Loader />
-        ) : error && programs.length === 0 ? (
-          <ModuleEmpty title="Could not load bursary" body={error} onRetry={() => void load()} />
+          <ListSkeleton withPanel rows={3} />
+        ) : error ? (
+          <StateCard tone="error" title="Could not load bursary" body={error} onRetry={() => void load()} />
+        ) : tab === 'apply' && canApply ? (
+          applyTab
         ) : (
-          <>
-            <ModuleGlassCard>
-              <Text style={styles.kittyLabel}>Your contributions total</Text>
-              <Text style={styles.kittyValue}>{kes(kittyTotal)}</Text>
-            </ModuleGlassCard>
-
-            <Text style={styles.section}>Open programs</Text>
-            {programs.length === 0 ? (
-              <Text style={styles.sub}>No open bursary programs right now.</Text>
-            ) : (
-              programs.map((p) => {
-                const open = selectedProgram === p.id;
-                return (
-                  <Pressable key={String(p.id)} onPress={() => setSelectedProgram(p.id ?? null)}>
-                    <ModuleGlassCard>
-                      <View style={styles.row}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.programTitle}>{p.title || p.name || 'Bursary program'}</Text>
-                          {p.description ? (
-                            <Text style={styles.programDesc}>{p.description}</Text>
-                          ) : null}
-                          {p.deadline || p.closes_on ? (
-                            <Text style={styles.programMeta}>
-                              Deadline · {String(p.deadline || p.closes_on).slice(0, 10)}
-                            </Text>
-                          ) : null}
-                        </View>
-                        {open ? (
-                          <Ionicons name="checkmark-circle" size={22} color={HERO_GREEN} />
-                        ) : null}
-                      </View>
-                    </ModuleGlassCard>
-                  </Pressable>
-                );
-              })
-            )}
-
-            <>
-              <Text style={styles.section}>Contribute</Text>
-              {selectedProgram ? (
-                <Text style={styles.programMeta}>
-                  Program ·{' '}
-                  {programs.find((p) => p.id === selectedProgram)?.title ||
-                    programs.find((p) => p.id === selectedProgram)?.name ||
-                    'Selected'}
-                </Text>
-              ) : (
-                <Text style={styles.programMeta}>General vulnerable student kitty</Text>
-              )}
-              {!showPay ? (
-                <Pressable style={styles.primaryBtn} onPress={() => setShowPay(true)}>
-                  <Ionicons name="heart" size={16} color={Colors.white} />
-                  <Text style={styles.primaryBtnText}>Contribute with M-Pesa</Text>
-                </Pressable>
-              ) : (
-                <PaymentProcessCard
-                  mode="bursary"
-                  title="Bursary contribution"
-                  subtitle="Pay via M-Pesa. Funds go to the school bursary kitty."
-                  defaultAmount="10"
-                  programId={selectedProgram}
-                  onRefresh={async () => {
-                    setOk('Thank you — M-Pesa contribution recorded.');
-                    await load(true);
-                  }}
-                  onClose={() => setShowPay(false)}
-                />
-              )}
-              {error ? <Text style={styles.err}>{error}</Text> : null}
-              {ok ? <Text style={styles.ok}>{ok}</Text> : null}
-            </>
-
-            {contributions.length > 0 ? (
-              <>
-                <Text style={styles.section}>Past contributions</Text>
-                <ModuleGlassCard>
-                  <View style={[styles.tr, styles.trHead]}>
-                    <Text style={[styles.th, styles.colDate]}>Date</Text>
-                    <Text style={[styles.th, styles.colAmt]}>Amount</Text>
-                    <Text style={[styles.th, styles.colStatus]}>Status</Text>
-                  </View>
-                  {contributions
-                    .slice(contribPage * CONTRIB_PAGE, contribPage * CONTRIB_PAGE + CONTRIB_PAGE)
-                    .map((c, i) => (
-                      <View key={String(c.id ?? `${contribPage}-${i}`)} style={styles.tr}>
-                        <Text style={[styles.td, styles.colDate]} numberOfLines={1}>
-                          {String(c.created_at ?? '').slice(0, 10) || '—'}
-                        </Text>
-                        <Text style={[styles.td, styles.colAmt]} numberOfLines={1}>
-                          {kes(Number(c.amount ?? 0))}
-                        </Text>
-                        <Text style={[styles.td, styles.colStatus]} numberOfLines={1}>
-                          {c.status || 'recorded'}
-                        </Text>
-                      </View>
-                    ))}
-                  {contributions.length > CONTRIB_PAGE ? (
-                    <View style={styles.pager}>
-                      <Pressable
-                        disabled={contribPage === 0}
-                        onPress={() => setContribPage((p) => Math.max(0, p - 1))}>
-                        <Text style={[styles.pagerText, contribPage === 0 && styles.pagerDisabled]}>
-                          Prev
-                        </Text>
-                      </Pressable>
-                      <Text style={styles.pagerMeta}>
-                        {contribPage + 1}/
-                        {Math.max(1, Math.ceil(contributions.length / CONTRIB_PAGE))}
-                      </Text>
-                      <Pressable
-                        disabled={(contribPage + 1) * CONTRIB_PAGE >= contributions.length}
-                        onPress={() => setContribPage((p) => p + 1)}>
-                        <Text
-                          style={[
-                            styles.pagerText,
-                            (contribPage + 1) * CONTRIB_PAGE >= contributions.length &&
-                              styles.pagerDisabled,
-                          ]}>
-                          Next
-                        </Text>
-                      </Pressable>
-                    </View>
-                  ) : null}
-                </ModuleGlassCard>
-              </>
-            ) : null}
-          </>
+          contributeTab
         )}
-      </ScrollView>
+      </KeyboardAwareScroll>
+
+      <PaymentBottomSheet visible={showPay} onClose={() => setShowPay(false)} bare>
+        {showPay ? (
+          <PaymentProcessCard
+            layout="sheet"
+            mode="bursary"
+            title="Give to the bursary kitty"
+            subtitle={selectedSchool?.name ? `${selectedSchool.name} bursary fund` : 'School bursary fund'}
+            defaultAmount="100"
+            defaultPhone={defaultMpesaPhone(profile?.phone)}
+            onRefresh={async () => {
+              await load(true);
+            }}
+            onClose={() => setShowPay(false)}
+          />
+        ) : null}
+      </PaymentBottomSheet>
     </View>
   );
 }
 
+/** Hands the nearest KeyboardAwareScroll's revealer to the screen (the hook only works inside it). */
+function RevealBridge({ bridge }: { bridge: React.RefObject<ReturnType<typeof useKeyboardReveal>> }) {
+  const revealer = useKeyboardReveal();
+  bridge.current = revealer;
+  return null;
+}
+
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  content: { paddingHorizontal: 20, gap: 12 },
-  sub: { fontSize: 14, color: Colors.mutedForeground, marginBottom: 4 },
-  section: {
-    marginTop: 8,
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-    color: Colors.mutedForeground,
-  },
-  kittyLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
-    color: Colors.mutedForeground,
-  },
-  kittyValue: { marginTop: 4, fontSize: 28, fontWeight: '800', color: HERO_GREEN },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  programTitle: { fontSize: 15, fontWeight: '700', color: Colors.ink },
-  programDesc: { marginTop: 4, fontSize: 13, color: Colors.mutedForeground },
-  programMeta: { marginTop: 4, fontSize: 12, color: Colors.mutedForeground },
-  fieldLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: Colors.mutedForeground,
-    marginBottom: 6,
-  },
-  input: {
+  content: { paddingHorizontal: 16, gap: 12 },
+  note: { fontSize: 12, lineHeight: 17, color: Colors.mutedForeground },
+  rowCard: {
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.1)',
-    borderRadius: 12,
+    borderColor: 'rgba(0,0,0,0.06)',
     paddingHorizontal: 12,
-    paddingVertical: 12,
-    marginBottom: 10,
-    fontSize: 16,
-    color: Colors.ink,
-    backgroundColor: 'rgba(255,255,255,0.9)',
   },
-  primaryBtn: {
-    marginTop: 8,
+  programCard: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'flex-start',
+    gap: 10,
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: 'rgba(0,0,0,0.06)',
+    padding: 14,
+  },
+  programTitle: { flexShrink: 1, fontSize: 15, fontWeight: '800', color: INK },
+  programDesc: { marginTop: 3, fontSize: 13, lineHeight: 18, color: Colors.mutedForeground },
+  programMeta: { fontSize: 12, color: Colors.mutedForeground },
+  formCard: {
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.06)',
+    padding: 14,
     gap: 8,
-    backgroundColor: HERO_GREEN,
-    paddingVertical: 12,
-    borderRadius: 12,
   },
-  primaryBtnText: { color: Colors.white, fontWeight: '700', fontSize: 14 },
-  err: { color: '#B91C1C', marginTop: 6, fontWeight: '600' },
-  ok: { color: HERO_GREEN, marginTop: 6, fontWeight: '600' },
-  tr: {
+  formTitle: { fontSize: 16, fontWeight: '800', color: INK },
+  label: { fontSize: 12, fontWeight: '700', color: Colors.mutedForeground, marginTop: 2 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1 },
+  chipText: { fontSize: 13, fontWeight: '700' },
+  amountBox: {
     flexDirection: 'row',
     alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(21,65,29,0.18)',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    backgroundColor: '#FFFFFF',
+  },
+  amountPrefix: { fontSize: 15, fontWeight: '800', marginRight: 8 },
+  amountInput: { flex: 1, fontSize: 22, fontWeight: '800', color: INK, paddingVertical: 10 },
+  notes: {
+    minHeight: 90,
+    borderWidth: 1.5,
+    borderColor: 'rgba(21,65,29,0.18)',
+    borderRadius: 14,
+    paddingHorizontal: 12,
     paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(0,0,0,0.06)',
+    fontSize: 15,
+    color: INK,
+    backgroundColor: '#FFFFFF',
   },
-  trHead: { borderBottomWidth: 1, borderBottomColor: 'rgba(0,0,0,0.08)' },
-  th: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
-    color: Colors.mutedForeground,
-  },
-  td: { fontSize: 13, color: Colors.ink },
-  colDate: { flex: 1.1 },
-  colAmt: { flex: 1, textAlign: 'right' },
-  colStatus: { flex: 1, textAlign: 'right' },
-  pager: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: 10,
-  },
-  pagerText: { fontSize: 13, fontWeight: '700', color: HERO_GREEN },
-  pagerDisabled: { color: Colors.mutedForeground },
-  pagerMeta: { fontSize: 12, color: Colors.mutedForeground },
+  err: { color: '#B91C1C', fontSize: 13, fontWeight: '600' },
+  busyBtn: { minHeight: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  appTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  appAmounts: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
+  approved: { fontSize: 13, fontWeight: '800', color: '#166534' },
+  pill: { fontSize: 11, fontWeight: '700', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, overflow: 'hidden' },
 });

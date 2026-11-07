@@ -10,7 +10,16 @@
  *   GET  /public/school-site/:slug/fees/pay/:checkout → { status: pending|completed|failed…, message?, receipt? }
  */
 import { getNestApiBaseUrl } from '../../lib/localHost';
-import { humanizeError } from '../../lib/humanizeError';
+import {
+  NETWORK_MESSAGE,
+  apiError,
+  fetchWithTimeout,
+  messageForStatus,
+  readJsonSafe,
+  userMessageFromError,
+  warnDev,
+  type ApiError,
+} from '../../lib/apiHttp';
 
 export type DirectorySchool = {
   name: string;
@@ -30,10 +39,14 @@ export type FoundLearner = {
   initials: string;
   class_name: string | null;
   admission: string | null;
+  /** One parent's full name (newer APIs). */
+  parent_name?: string | null;
 };
 
 export type FeeQuote = {
   balance_kes: number | null;
+  /** Each financial year still owing (from the school's ledgers), oldest first. Older APIs leave it out. */
+  balance_years?: Array<{ year: string; balance: number }>;
   amount_kes: number;
   bank_app_charge_kes: number;
   total_kes: number;
@@ -51,7 +64,7 @@ function base(): string {
 async function call<T>(path: string, init: { method?: 'GET' | 'POST'; json?: unknown } = {}): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`${base()}${path}`, {
+    res = await fetchWithTimeout(`${base()}${path}`, {
       method: init.method ?? 'GET',
       headers: {
         Accept: 'application/json',
@@ -60,13 +73,16 @@ async function call<T>(path: string, init: { method?: 'GET' | 'POST'; json?: unk
       body: init.json !== undefined ? JSON.stringify(init.json) : undefined,
     });
   } catch (e) {
-    throw new Error(humanizeError(e));
+    warnDev('PayFees', e, { path });
+    throw apiError(userMessageFromError(e, NETWORK_MESSAGE), {
+      network: Boolean((e as ApiError)?.network),
+      timeout: Boolean((e as ApiError)?.timeout),
+    });
   }
-  const json: any = await res.json().catch(() => null);
+  const json: any = await readJsonSafe(res);
   if (!res.ok || json?.status === 'error' || json?.success === false) {
-    const raw = json?.message;
-    const msg = Array.isArray(raw) ? raw.join(' ') : typeof raw === 'string' && raw ? raw : `Request failed (${res.status})`;
-    throw new Error(msg);
+    warnDev('PayFees', { message: json?.message, statusCode: res.status }, { path });
+    throw apiError(messageForStatus(res.status, json), { statusCode: res.status });
   }
   // Nest wraps answers as { statusCode, status, message, data }.
   return (json && typeof json === 'object' && 'data' in json ? json.data : json) as T;
