@@ -63,6 +63,9 @@ const ADD_ROLE_OPTIONS: Array<{
   { id: 'staff', title: 'Staff', hint: 'Accountant, librarian, and other roles', icon: 'briefcase' },
 ];
 
+/** Rows of the add-role list: schools (step 0), role options (step 1), students (step 2). */
+type AddListItem = JoinSchoolHit | (typeof ADD_ROLE_OPTIONS)[number] | JoinStudentHit;
+
 const HERO_GREEN = '#15411D';
 const PICKER_LOAD_TIMEOUT_MS = 8000;
 
@@ -682,7 +685,7 @@ export function SchoolPickerScreen() {
       <View style={[styles.root, { bottom: tabReserve }]}>
         <LiquidGlassBackdrop />
         <View style={styles.page}>
-          <FlatList
+          <FlatList<AddListItem>
             data={
               addStep === 0
                 ? schoolHits

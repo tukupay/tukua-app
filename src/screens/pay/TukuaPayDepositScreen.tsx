@@ -45,9 +45,10 @@ export function TukuaPayDepositScreen({ navigation }: Props) {
   const [kycOk, setKycOk] = useState<boolean | null>(null);
 
   useEffect(() => {
-    const fromProfile = String(profile?.phone || profile?.phone_number || '').trim();
+    // UserProfile.phone already falls back to the account's phone_number (lib/auth.ts).
+    const fromProfile = String(profile?.phone || '').trim();
     if (fromProfile && !phone) setPhone(fromProfile);
-  }, [profile?.phone, profile?.phone_number, phone]);
+  }, [profile?.phone, phone]);
 
   useEffect(() => {
     void (async () => {
