@@ -22,8 +22,10 @@ import { Colors } from '../../theme/yana';
 import { useAuth } from '../../context/AuthContext';
 import {
   MIN_TOPUP_KES,
+  MpesaTopUpError,
   pollMpesaTopUpStatus,
   tokensFromKes,
+  topUpOutcome,
   topUpViaMpesa,
   TOPUP_PRESETS,
 } from '../../lib/wallet';
@@ -83,22 +85,23 @@ export function TukuaPayDepositScreen({ navigation }: Props) {
         user_id: session?.user?.id,
         tokens,
       });
-      setStatus('Check your phone for the M-Pesa prompt…');
+      setStatus('Prompt sent — enter your M-Pesa PIN on your phone…');
       const result = await pollMpesaTopUpStatus(checkout_request_id, {
         onTick: (s) => {
           if (s.status === 'pending') setStatus('Waiting for M-Pesa confirmation…');
         },
       });
+      const outcome = topUpOutcome(result, tokens);
       if (result.status === 'completed') {
-        setStatus(result.message || 'Payment received — tokens added.');
+        setStatus(outcome.message);
       } else if (result.status === 'failed' || result.status === 'cancelled') {
-        setError(result.message || 'The M-Pesa payment was not completed.');
+        setError(`${outcome.title}. ${outcome.message}`);
         setStatus('');
       } else {
-        setStatus('Still processing — check Tukua Pay shortly.');
+        setStatus(outcome.message);
       }
     } catch (e) {
-      setError(humanizeError(e));
+      setError(e instanceof MpesaTopUpError ? e.message : humanizeError(e));
       setStatus('');
     } finally {
       setBusy(false);

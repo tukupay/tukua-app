@@ -5,6 +5,7 @@
 import { getNestApiBaseUrl } from './localHost';
 import { humanizeError } from './humanizeError';
 import { log } from './logger';
+import { fetchWithTimeout } from './apiHttp';
 
 function nestBase(): string {
   return getNestApiBaseUrl().replace(/\/$/, '');
@@ -174,10 +175,12 @@ export async function mpesaStk(body: Record<string, unknown>, bearer?: string | 
   return nestPost<Record<string, unknown>>('/payments/mpesa/stk', body, bearer);
 }
 
+/**
+ * Registration (PEA) prompt. Same Nest route as top-ups. No fallback to `/payments/mpesa/gw-init` on a
+ * network error or timeout: the first prompt may already be on the phone, and gw-init would send a second.
+ */
 export async function mpesaGwInit(body: Record<string, unknown>, bearer?: string | null) {
-  const stk = await mpesaStk(body, bearer);
-  if (stk.ok || stk.status > 0) return stk;
-  return nestPost<Record<string, unknown>>('/payments/mpesa/gw-init', body, bearer);
+  return mpesaStk(body, bearer);
 }
 
 export async function mpesaCheckStatus(checkout_request_id: string, bearer?: string | null) {
@@ -209,7 +212,7 @@ export async function peaCompleteSignup(body: Record<string, unknown>) {
 
 export async function getPeaConfig(role?: string) {
   const q = role ? `?role=${encodeURIComponent(role)}` : '';
-  const res = await fetch(`${nestBase()}/platform/registration/pea-config${q}`, {
+  const res = await fetchWithTimeout(`${nestBase()}/platform/registration/pea-config${q}`, {
     method: 'GET',
     headers: { Accept: 'application/json' },
   });
@@ -230,7 +233,7 @@ export async function getPeaConfig(role?: string) {
 export async function listRegistrationOrgTypes() {
   let res: Response;
   try {
-    res = await fetch(`${nestBase()}/platform/registration/org-types`, {
+    res = await fetchWithTimeout(`${nestBase()}/platform/registration/org-types`, {
       method: 'GET',
       headers: { Accept: 'application/json' },
     });
@@ -279,7 +282,7 @@ export async function searchRegistrationSchools(q: string) {
   }
   let res: Response;
   try {
-    res = await fetch(
+    res = await fetchWithTimeout(
       `${nestBase()}/platform/registration/schools?q=${encodeURIComponent(term)}`,
       { method: 'GET', headers: { Accept: 'application/json' } },
     );
@@ -320,7 +323,7 @@ export async function joinSchoolAfterRegister(
 ) {
   let res: Response;
   try {
-    res = await fetch(`${nestBase()}/platform/registration/school-join`, {
+    res = await fetchWithTimeout(`${nestBase()}/platform/registration/school-join`, {
       method: 'POST',
       headers: {
         Accept: 'application/json',

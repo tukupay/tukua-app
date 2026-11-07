@@ -9,6 +9,7 @@ import {
   platformRegister,
 } from './platformAuthApi';
 import { getDeskToken } from './deskApi';
+import { fetchWithTimeout } from './apiHttp';
 
 export type PeaStatus = 'idle' | 'sending' | 'pending' | 'completed' | 'failed';
 
@@ -34,7 +35,7 @@ async function nestAuthedPost(path: string, body: unknown, bearer?: string | nul
     'Content-Type': 'application/json',
   };
   if (bearer) headers.Authorization = `Bearer ${bearer}`;
-  const res = await fetch(`${getNestApiBaseUrl().replace(/\/$/, '')}${path}`, {
+  const res = await fetchWithTimeout(`${getNestApiBaseUrl().replace(/\/$/, '')}${path}`, {
     method: 'POST',
     headers,
     body: JSON.stringify(body ?? {}),
@@ -130,7 +131,9 @@ export async function initiatePeaPayment(
   if (!r.ok || !nested?.checkout_request_id) {
     const raw = r.message || (typeof payload.error === 'string' ? payload.error : '') || '';
     let error = raw || "We couldn't start M-Pesa. Please try again.";
-    if (r.error === 'network_error' || r.status === 0) {
+    if (r.error === 'timeout') {
+      error = 'M-Pesa is slow to answer. If a prompt reaches your phone, enter your PIN; otherwise wait a minute and tap Complete again.';
+    } else if (r.error === 'network_error' || r.status === 0) {
       error = 'M-Pesa did not start. Wait a moment and tap Complete again.';
     } else if (r.status === 401 || r.status === 403) {
       error = 'Could not start payment. Tap Complete again.';
@@ -162,10 +165,14 @@ export async function pollPeaPayment(
       const data = (r.data || {}) as Record<string, any>;
       const status = data.status || data.data?.status;
       if (status === 'completed') return { status: 'completed' };
-      if (status === 'failed') {
+      if (status === 'failed' || status === 'cancelled') {
         return {
           status: 'failed',
-          message: data.message || 'Payment failed or cancelled.',
+          message:
+            data.message ||
+            (status === 'cancelled' || Number(data.result_code) === 1032
+              ? 'You cancelled the M-Pesa prompt. Nothing was charged — tap Complete to try again.'
+              : 'Payment failed or cancelled.'),
           resultCode: data.result_code ?? undefined,
         };
       }

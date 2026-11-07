@@ -16,6 +16,7 @@ import {
   MIN_TOPUP_KES,
   pollMpesaTopUpStatus,
   tokensFromKes,
+  topUpOutcome,
   topUpViaMpesa,
 } from '../../lib/wallet';
 import { Colors } from '../../theme/yana';
@@ -64,41 +65,21 @@ export function ZeroTokenModal({
         amount: minKes,
         user_id: session?.user?.id,
       });
-      setStatus('Check your phone for the M-Pesa prompt…');
+      setStatus('Prompt sent — enter your M-Pesa PIN on your phone…');
       const result = await pollMpesaTopUpStatus(checkout_request_id, {
         onTick: (s) => {
           if (s.status === 'pending') setStatus('Waiting for M-Pesa confirmation…');
         },
       });
+      setStatus('');
+      showDialog(topUpOutcome(result, tokens));
       if (result.status === 'completed') {
-        setStatus('');
-        showDialog({
-          title: 'Top-up successful',
-          message:
-            result.message ||
-            `${(result.tokens || tokens).toLocaleString()} tokens have been added to your balance.`,
-          variant: 'success',
-        });
         onTopUpComplete?.();
         onDismiss();
-      } else if (result.status === 'failed' || result.status === 'cancelled') {
-        setStatus('');
-        showDialog({
-          title: 'Top-up not completed',
-          message: result.message || 'The M-Pesa payment was not completed.',
-          variant: 'warning',
-        });
-      } else {
-        setStatus('');
-        showDialog({
-          title: 'Still processing',
-          message: 'We could not confirm the payment yet — check Balances shortly.',
-          variant: 'warning',
-        });
       }
     } catch (e) {
       setStatus('');
-      showDialog({ title: 'Top-up failed', message: errorMessage(e), variant: 'danger' });
+      showDialog({ title: 'Could not start the top-up', message: errorMessage(e), variant: 'danger' });
     } finally {
       setBusy(false);
     }

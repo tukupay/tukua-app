@@ -5,7 +5,9 @@
  */
 import { getNestApiBaseUrl } from './localHost';
 import { mpesaCheckStatus, mpesaStk } from './platformAuthApi';
-import { resolveNestAccessTokenForWebView } from './platformNestAuth';
+import { recoverPlatformTokenAfter401, resolveNestAccessTokenForWebView } from './platformNestAuth';
+import { kenyaMobileNational } from './phoneUtils';
+import { fetchWithTimeout } from './apiHttp';
 
 export type Wallet = {
   id: number;
@@ -23,7 +25,7 @@ async function nestAuthedGet<T>(path: string, accessToken?: string): Promise<T> 
   const token = accessToken || (await resolveNestAccessTokenForWebView());
   if (!token) throw new Error('Sign in required');
   const base = getNestApiBaseUrl().replace(/\/$/, '');
-  const res = await fetch(`${base}${path.startsWith('/') ? path : `/${path}`}`, {
+  const res = await fetchWithTimeout(`${base}${path.startsWith('/') ? path : `/${path}`}`, {
     method: 'GET',
     headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
   });
@@ -124,8 +126,49 @@ export function tokensFromKes(amountKes: number, pricePer1mKes: number = DEFAULT
   return Math.floor((amountKes / pricePer1mKes) * 1_000_000);
 }
 
+/** Thrown by {@link topUpViaMpesa} with a message that is safe to show as-is. */
+export class MpesaTopUpError extends Error {
+  readonly code?: string;
+  constructor(message: string, code?: string) {
+    super(message);
+    this.name = 'MpesaTopUpError';
+    this.code = code;
+  }
+}
+
+/** 07XX / 01XX / +2547XX / 2547XX → 2547XXXXXXXX, or null when it is not a Kenyan mobile number. */
+export function mpesaMsisdn(input: string): string | null {
+  const national = kenyaMobileNational(input);
+  return national ? `254${national}` : null;
+}
+
+const SESSION_ENDED = 'Your session has ended. Sign in again, then retry the top-up.';
+
+/**
+ * The Nest JWT for payment calls. `/payments/mpesa/stk` and `/payments/mpesa/status` refuse a call
+ * without one (401 "Authentication required") — sending none is what made every in-app top-up fail.
+ */
+async function paymentBearer(): Promise<string> {
+  const token = await resolveNestAccessTokenForWebView().catch(() => null);
+  if (!token) throw new MpesaTopUpError(SESSION_ENDED, 'auth_required');
+  return token;
+}
+
+type NestPostResult = Awaited<ReturnType<typeof mpesaStk>>;
+
+/** Call with the Bearer token; on a 401 refresh the token once and retry (a 401 never sent a prompt). */
+async function withPaymentAuth(call: (bearer: string) => Promise<NestPostResult>): Promise<NestPostResult> {
+  const token = await paymentBearer();
+  const first = await call(token);
+  if (first.status !== 401) return first;
+  const next = await recoverPlatformTokenAfter401(token).catch(() => null);
+  if (!next || next === token) return first;
+  return call(next);
+}
+
 /** M-Pesa STK top-up via Nest (never /platform/edge). Computes `tokens` client-side so the STK
- * callback credits the wallet — the Nest `mpesa_transactions.tokens` column drives crediting. */
+ * callback credits the wallet — the Nest `mpesa_transactions.tokens` column drives crediting.
+ * Throws {@link MpesaTopUpError} with a user-facing message. */
 export async function topUpViaMpesa(body: {
   phone_number: string;
   amount: number;
@@ -136,27 +179,42 @@ export async function topUpViaMpesa(body: {
   account_reference?: string;
   metadata?: Record<string, unknown>;
 }): Promise<{ checkout_request_id: string; tokens: number }> {
-  const phone = String(body.phone_number || '').trim();
-  if (!phone) throw new Error('phone_number is required');
-  if (!(Number(body.amount) > 0)) throw new Error('amount must be > 0');
-  const tokens = body.tokens != null ? Math.max(0, Math.floor(body.tokens)) : tokensFromKes(Number(body.amount));
+  const phone = mpesaMsisdn(String(body.phone_number || ''));
+  if (!phone) throw new MpesaTopUpError('Enter a valid M-Pesa number, e.g. 0712 345 678.', 'invalid_phone');
+  const amount = Math.round(Number(body.amount));
+  if (!(amount >= 1)) throw new MpesaTopUpError('Enter an amount of at least KES 1.', 'invalid_amount');
+  const tokens = body.tokens != null ? Math.max(0, Math.floor(body.tokens)) : tokensFromKes(amount);
 
-  const res = await mpesaStk({
-    phone_number: phone,
-    amount: Number(body.amount),
-    user_id: body.user_id,
-    tokens,
-    purpose: body.purpose || 'tokens',
-    description: body.description || `${tokens.toLocaleString()} Tukua tokens`,
-    account_reference: body.account_reference,
-    metadata: body.metadata,
-  });
+  const res = await withPaymentAuth((bearer) =>
+    mpesaStk(
+      {
+        phone_number: phone,
+        amount,
+        user_id: body.user_id,
+        tokens,
+        purpose: body.purpose || 'tokens',
+        description: body.description || `${tokens.toLocaleString()} Tukua tokens`,
+        account_reference: body.account_reference,
+        metadata: body.metadata,
+      },
+      bearer,
+    ),
+  );
   if (!res.ok) {
-    throw new Error(res.message || res.error || 'M-Pesa STK failed — use Nest /payments/mpesa/stk');
+    if (res.status === 401 || res.status === 403) throw new MpesaTopUpError(SESSION_ENDED, 'auth_required');
+    if (res.status === 0) {
+      throw new MpesaTopUpError(
+        res.error === 'timeout'
+          ? 'M-Pesa is slow to answer. If a prompt reaches your phone, finish it there; otherwise try again in a minute.'
+          : 'No connection to Tukua. Check your internet and try again.',
+        res.error,
+      );
+    }
+    throw new MpesaTopUpError(res.message || 'Could not start the M-Pesa payment. Try again.', res.error);
   }
   const data = (res.data || {}) as { checkout_request_id?: string; data?: { checkout_request_id?: string } };
   const checkoutRequestId = String(data.checkout_request_id || data.data?.checkout_request_id || '');
-  if (!checkoutRequestId) throw new Error('M-Pesa did not return a checkout request id');
+  if (!checkoutRequestId) throw new MpesaTopUpError('M-Pesa did not confirm the prompt. Try again.', 'no_checkout_id');
   return { checkout_request_id: checkoutRequestId, tokens };
 }
 
@@ -167,32 +225,87 @@ export type MpesaTopUpStatus = {
   message?: string;
 };
 
-/** Poll a checkout request until it resolves, or maxAttempts is hit (default 5s interval, 3 min). */
+function normaliseStatus(raw: string, resultCode: unknown): MpesaTopUpStatus['status'] {
+  const s = raw.toLowerCase();
+  if (s === 'completed' || s === 'paid') return 'completed';
+  if (s === 'cancelled' || (s === 'failed' && Number(resultCode) === 1032)) return 'cancelled';
+  if (s === 'failed' || s === 'timeout' || s === 'expired') return 'failed';
+  if (s === 'pending') return 'pending';
+  return 'unknown';
+}
+
+/** Poll a checkout request until it resolves, or maxAttempts is hit (default 5s interval, 3 min).
+ * Never throws: network blips and token refreshes keep polling; the end of the wait is `unknown`. */
 export async function pollMpesaTopUpStatus(
   checkoutRequestId: string,
-  opts?: { intervalMs?: number; maxAttempts?: number; onTick?: (status: MpesaTopUpStatus) => void },
+  opts?: {
+    intervalMs?: number;
+    maxAttempts?: number;
+    onTick?: (status: MpesaTopUpStatus) => void;
+    /** Return true to stop polling (screen closed). */
+    isCancelled?: () => boolean;
+  },
 ): Promise<MpesaTopUpStatus> {
   const intervalMs = opts?.intervalMs ?? 5000;
   const maxAttempts = opts?.maxAttempts ?? 36;
 
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    const res = await mpesaCheckStatus(checkoutRequestId);
+    // The prompt takes a few seconds to reach the phone: wait first, then ask.
+    await new Promise((resolve) => setTimeout(resolve, attempt === 0 ? Math.min(intervalMs, 4000) : intervalMs));
+    if (opts?.isCancelled?.()) break;
+    let res: NestPostResult;
+    try {
+      res = await withPaymentAuth((bearer) => mpesaCheckStatus(checkoutRequestId, bearer));
+    } catch {
+      continue; // no token right now (e.g. offline refresh) — try again on the next tick
+    }
+    if (!res.ok) continue;
     const data = (res.data || {}) as Record<string, unknown>;
-    const rawStatus = String(data.status || '').toLowerCase();
     const status: MpesaTopUpStatus = {
-      status:
-        rawStatus === 'completed' || rawStatus === 'failed' || rawStatus === 'cancelled' || rawStatus === 'pending'
-          ? (rawStatus as MpesaTopUpStatus['status'])
-          : 'unknown',
+      status: normaliseStatus(String(data.status || ''), data.result_code),
       tokens: typeof data.tokens === 'number' ? data.tokens : undefined,
       mpesa_receipt: typeof data.mpesa_receipt === 'string' ? data.mpesa_receipt : undefined,
-      message: typeof data.user_message === 'string' ? data.user_message : (typeof data.message === 'string' ? data.message : undefined),
+      message:
+        typeof data.user_message === 'string'
+          ? data.user_message
+          : typeof data.message === 'string' && data.message !== 'Payment pending'
+            ? data.message
+            : undefined,
     };
     opts?.onTick?.(status);
-    if (status.status === 'completed' || status.status === 'failed' || status.status === 'cancelled') {
-      return status;
+    if (status.status === 'cancelled' && !status.message) {
+      status.message = 'You cancelled the M-Pesa prompt. Nothing was charged.';
     }
-    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    if (status.status === 'completed' || status.status === 'failed' || status.status === 'cancelled') return status;
   }
-  return { status: 'unknown', message: 'Payment status check timed out' };
+  return {
+    status: 'unknown',
+    message: 'We did not get M-Pesa’s answer in time. If you entered your PIN, your tokens will show in Balances shortly.',
+  };
+}
+
+/** Dialog copy for the end of a top-up, shared by Balances, the zero-token gate and Tukua Pay. */
+export function topUpOutcome(
+  result: MpesaTopUpStatus,
+  tokensRequested: number,
+): { title: string; message: string; variant: 'success' | 'warning' } {
+  if (result.status === 'completed') {
+    const tokens = result.tokens || tokensRequested;
+    return {
+      title: 'Top-up successful',
+      message: `${tokens.toLocaleString()} tokens have been added to your balance.${result.mpesa_receipt ? ` M-Pesa receipt ${result.mpesa_receipt}.` : ''}`,
+      variant: 'success',
+    };
+  }
+  if (result.status === 'cancelled') {
+    return { title: 'Payment cancelled', message: result.message || 'You cancelled the M-Pesa prompt. Nothing was charged.', variant: 'warning' };
+  }
+  if (result.status === 'failed') {
+    return { title: 'Top-up not completed', message: result.message || 'The M-Pesa payment was not completed. You can try again.', variant: 'warning' };
+  }
+  return {
+    title: 'Still processing',
+    message: result.message || 'We could not confirm the payment yet — check Balances shortly.',
+    variant: 'warning',
+  };
 }
