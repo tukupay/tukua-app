@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '../../theme/yana';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import { DashboardStackParamList } from '../../navigation/types';
-import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
+import { ThemedBackdrop } from '../../components/theme/ThemedPage';
 import { GlassPanel } from '../../components/dashboard/Glass';
 import { useDeskAuth } from '../../context/DeskAuthContext';
 
@@ -21,7 +21,7 @@ export function FeaturePlaceholderScreen({ route, navigation }: Props) {
 
   return (
     <View style={styles.root}>
-      <DashboardBackground patternOnly liquid />
+      <ThemedBackdrop />
       <View
         style={[
           styles.content,

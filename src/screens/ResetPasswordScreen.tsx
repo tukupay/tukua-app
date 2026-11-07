@@ -6,9 +6,6 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -18,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { AuthTextField } from '../components/auth/AuthTextField';
+import { KeyboardAwareScroll } from '../components/auth/KeyboardAwareScroll';
 import { AuthButton } from '../components/auth/AuthButton';
 import { GreenPattern } from '../components/dashboard/DashboardBackground';
 import { RootStackParamList } from '../navigation/types';
@@ -224,12 +222,9 @@ export function ResetPasswordScreen({ navigation, route }: Props) {
         <GreenPattern style={StyleSheet.absoluteFill} darker />
       </View>
       <SafeAreaView style={styles.safe}>
-        <KeyboardAvoidingView
-          style={styles.flex}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <ScrollView
+        <KeyboardAwareScroll
+            style={styles.flex}
             contentContainerStyle={styles.scroll}
-            keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}>
             <TouchableOpacity style={styles.backRow} onPress={goBackHome} hitSlop={12}>
               <Ionicons name="arrow-back" size={20} color={Colors.brandGreenDark} />
@@ -352,8 +347,7 @@ export function ResetPasswordScreen({ navigation, route }: Props) {
                 )}
               </View>
             )}
-          </ScrollView>
-        </KeyboardAvoidingView>
+        </KeyboardAwareScroll>
       </SafeAreaView>
     </View>
   );

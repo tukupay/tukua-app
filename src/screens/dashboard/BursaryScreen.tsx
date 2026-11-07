@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -12,7 +11,7 @@ import {
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
+import { ThemedBackdrop } from '../../components/theme/ThemedPage';
 import { PaymentProcessCard } from '../../components/dashboard/PaymentProcessCard';
 import { ModuleBackBar, ModuleScreenHeader, ModuleEmpty, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
@@ -26,6 +25,7 @@ import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
 import { log } from '../../lib/logger';
 import { humanizeError } from '../../lib/humanizeError';
+import { Loader } from '../../components/ui/Loader';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'Bursary'>;
 
@@ -105,7 +105,7 @@ export function BursaryScreen({ navigation }: Props) {
 
   return (
     <View style={styles.root}>
-      <DashboardBackground patternOnly liquid />
+      <ThemedBackdrop />
       <ScrollView
         contentContainerStyle={[
           styles.content,
@@ -137,7 +137,7 @@ export function BursaryScreen({ navigation }: Props) {
         </Text>
 
         {loading ? (
-          <ActivityIndicator color={Colors.brandGreenMid} style={{ marginTop: 24 }} />
+          <Loader />
         ) : error && programs.length === 0 ? (
           <ModuleEmpty title="Could not load bursary" body={error} onRetry={() => void load()} />
         ) : (

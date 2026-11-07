@@ -93,6 +93,20 @@ export type DashboardAction = {
 
 
 
+/**
+ * Pinned first tile on every dashboard: opens the AI chat tab (Tukua AI). Uses the existing `tukuaPath`
+ * route, which focuses the Chat tab. First position = solid dark-green tile with a yellow icon.
+ * Icon: Feather 'zap' until the dashboard's TILE_ICON map renders it as Ionicons 'sparkles'.
+ */
+export const TUKUA_AI_ACTION: DashboardAction = {
+  id: 'tukua-ai',
+  title: 'Tukua AI',
+  description: 'Ask anything · jobs, courses, exams, school',
+  icon: 'zap',
+  tukuaPath: '/chat',
+  accent: '#15411D',
+};
+
 /** True when a zero balance should block this dashboard tile. */
 export function isDashboardActionTokenGated(action: DashboardAction): boolean {
   if (action.tokenGated === false) return false;
@@ -155,6 +169,7 @@ export const PARENT_HERO: HeroStat[] = [
 ];
 
 export const PARENT_DASHBOARD_ACTIONS: DashboardAction[] = [
+  TUKUA_AI_ACTION,
   { id: 'tukua-pay', title: 'Tukua Pay', description: 'Wallets · deposit · send', icon: 'smartphone', nativeScreen: 'TukuaPayHome', tokenGated: false, accent: '#0A3D2E' },
   { id: 'school-fees', title: 'School Fees', description: 'Pay · invoices · bank slips', icon: 'credit-card', nativeScreen: 'Accounts', accent: '#059669' },
   { id: 'assessments', title: 'Exams & assessments', description: 'Exams, report cards & slips', icon: 'clipboard', nativeScreen: 'Assessments', accent: '#0EA5E9' },
@@ -270,6 +285,7 @@ export const STUDENT_HERO: HeroStat[] = [
 
 
 export const STUDENT_DASHBOARD_ACTIONS: DashboardAction[] = [
+  TUKUA_AI_ACTION,
   { id: 'tukua-pay', title: 'Tukua Pay', description: 'Balances · deposit · send', icon: 'credit-card', nativeScreen: 'TukuaPayHome', accent: '#0EA5E9', tokenGated: false },
   { id: 'face-enroll', title: 'My face', description: 'Enroll your face for boarding', icon: 'user', nativeScreen: 'FaceSelfEnroll', accent: '#0E7490' },
 
@@ -365,6 +381,7 @@ export const TEACHER_HERO: HeroStat[] = [
 
 
 export const TEACHER_DASHBOARD_ACTIONS: DashboardAction[] = [
+  TUKUA_AI_ACTION,
   { id: 'tukua-pay', title: 'Tukua Pay', description: 'Wallets · deposit · send', icon: 'smartphone', nativeScreen: 'TukuaPayHome', tokenGated: false, accent: '#0A3D2E' },
   { id: 'attendance-scanner', title: 'My gate check-in', description: 'Scan gate QR for yourself', icon: 'camera', nativeScreen: 'GateCheckIn', accent: '#0891B2' },
   { id: 'enter-marks', title: 'Enter Marks', description: 'Grade assessments', icon: 'edit-3', nativeScreen: 'EnterMarks', accent: '#1F8B4C' },
@@ -500,6 +517,7 @@ export const SECURITY_HERO: HeroStat[] = [
 
 
 export const SECURITY_DASHBOARD_ACTIONS: DashboardAction[] = [
+  TUKUA_AI_ACTION,
   { id: 'tukua-pay', title: 'Tukua Pay', description: 'Staff wallet & tokens', icon: 'credit-card', nativeScreen: 'TukuaPayHome', accent: '#0EA5E9', tokenGated: false },
   { id: 'daily-attendance', title: 'Daily attendance', description: 'Mark students · teachers · staff (face · QR · search)', icon: 'check-square', nativeScreen: 'SecurityDailyAttendance', accent: '#0891B2' },
 
@@ -528,10 +546,13 @@ const OFFICE_FIRST = ['approvals', 'school-overview', 'admin-accounts', 'admin-s
 const CLASSROOM = ['enter-marks', 'scan-marks', 'class-lists', 'my-timetable', 'reports'];
 const byId = (id: string) => TEACHER_DASHBOARD_ACTIONS.find((a) => a.id === id);
 export const SCHOOL_ADMIN_DASHBOARD_ACTIONS: DashboardAction[] = [
+  TUKUA_AI_ACTION,
   ...OFFICE_FIRST.map(byId).filter((a): a is DashboardAction => Boolean(a)),
   // Fleet map: the server's transport roles (TRANSPORT_BOARDING_ROLES) — not a deputy or a bursar alone.
   { id: 'fleet-map', title: 'Fleet map', description: 'Every vehicle · live position · paths', icon: 'map-pin', nativeScreen: 'FleetMap', accent: '#2563EB', requireAnyRole: ['school_admin', 'principal', 'admin', 'staff', 'security'] },
-  ...TEACHER_DASHBOARD_ACTIONS.filter((a) => !OFFICE_FIRST.includes(a.id) && !CLASSROOM.includes(a.id)),
+  ...TEACHER_DASHBOARD_ACTIONS.filter(
+    (a) => a.id !== TUKUA_AI_ACTION.id && !OFFICE_FIRST.includes(a.id) && !CLASSROOM.includes(a.id),
+  ),
   ...CLASSROOM.map(byId)
     .filter((a): a is DashboardAction => Boolean(a))
     .map((a) => ({ ...a, requireAnyRole: ['teacher', 'class_teacher'] })),
@@ -545,6 +566,7 @@ export const SCHOOL_ADMIN_HERO: HeroStat[] = [
 
 /** Super-admin on mobile: switch into a school + hat (no company hub). */
 export const SUPER_ADMIN_DASHBOARD_ACTIONS: DashboardAction[] = [
+  TUKUA_AI_ACTION,
   {
     id: 'switch-school-role',
     title: 'Switch school & role',
@@ -565,6 +587,8 @@ export const SUPER_ADMIN_DASHBOARD_ACTIONS: DashboardAction[] = [
 
 
 export const INDIVIDUAL_DASHBOARD_ACTIONS: DashboardAction[] = [
+
+  TUKUA_AI_ACTION,
 
   { id: 'tukua-pay', title: 'Tukua Pay', description: 'Wallets · deposit · send', icon: 'smartphone', nativeScreen: 'TukuaPayHome', tokenGated: false, accent: '#0A3D2E' },
 

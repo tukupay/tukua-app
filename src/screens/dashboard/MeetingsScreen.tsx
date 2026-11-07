@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
+import { ThemedBackdrop } from '../../components/theme/ThemedPage';
 import { ModuleBackBar, ModuleScreenHeader, ModuleEmpty, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import {
@@ -29,6 +29,7 @@ import { useDeskAuth } from '../../context/DeskAuthContext';
 import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
 import { log } from '../../lib/logger';
+import { Loader } from '../../components/ui/Loader';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'Meetings'>;
 
@@ -221,7 +222,7 @@ export function MeetingsScreen({ navigation }: Props) {
 
   return (
     <View style={styles.root}>
-      <DashboardBackground patternOnly liquid />
+      <ThemedBackdrop />
       <ScrollView
         contentContainerStyle={{
           paddingTop: floatingHeaderInset(insets.top),
@@ -302,7 +303,7 @@ export function MeetingsScreen({ navigation }: Props) {
         ) : null}
 
         {loading ? (
-          <ActivityIndicator color={Colors.primary} style={{ marginTop: 40 }} />
+          <Loader />
         ) : error && items.length === 0 ? (
           <ModuleEmpty title="Could not load meetings" body={error} onRetry={() => void load()} />
         ) : items.length === 0 ? (

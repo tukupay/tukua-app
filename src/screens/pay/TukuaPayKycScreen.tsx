@@ -24,6 +24,7 @@ import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
 import { fetchMyKyc, submitMyKyc, type KycStatus } from '../../lib/profileApi';
 import { humanizeError } from '../../lib/humanizeError';
+import { Loader } from '../../components/ui/Loader';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'TukuaPayKyc'>;
 
@@ -137,7 +138,7 @@ export function TukuaPayKycScreen({ navigation }: Props) {
         />
 
         {loading ? (
-          <ActivityIndicator color={Colors.primary} style={{ marginTop: 24 }} />
+          <Loader />
         ) : (
           <>
             <ModuleGlassCard>

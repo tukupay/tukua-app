@@ -30,6 +30,7 @@ import {
 } from '../lib/joinRequestApi';
 import { useDialog } from '../context/DialogContext';
 import { SafeRemoteImage } from '../components/SafeRemoteImage';
+import { Loader } from '../components/ui/Loader';
 
 type DeskChild = {
   student_id?: string;
@@ -170,7 +171,7 @@ export function ContextPickLoader({ message = 'Preparing your school…' }: { me
     <View style={[styles.root, { bottom: tabReserve }]}>
       <LiquidGlassBackdrop />
       <View style={styles.loaderWrap}>
-        <ActivityIndicator color={HERO_GREEN} size="large" />
+        <Loader />
         <Text style={styles.loaderText}>{message}</Text>
       </View>
     </View>

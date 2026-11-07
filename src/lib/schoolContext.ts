@@ -117,6 +117,25 @@ export function activeRolesForHat(schoolRoles: unknown, hat: string | null | und
   return mine.length ? mine : [mapRoleToMobileHat(hat)];
 }
 
+/**
+ * Is a remembered context (last school + role the user opened as) still one the user holds?
+ * Individual (skipped) is always available; a school must still list the user and still grant the hat.
+ */
+export function rememberedContextUsable(
+  schools: UserSchool[],
+  remembered: { schoolId: string | null; role: string | null; skipped?: boolean } | null | undefined,
+): boolean {
+  if (!remembered) return false;
+  if (remembered.skipped) return true;
+  if (!remembered.schoolId) return false;
+  const school = schools.find((s) => s.id === remembered.schoolId);
+  if (!school) return false;
+  const hats = uniqueSchoolRoles(school.roles);
+  if (!remembered.role) return hats.length <= 1;
+  const raw = String(remembered.role).toLowerCase().trim();
+  return hats.includes(raw) || hats.includes(mapRoleToMobileHat(raw));
+}
+
 export function resolveContext(
   schools: UserSchool[],
   linked: LinkedStudent[],

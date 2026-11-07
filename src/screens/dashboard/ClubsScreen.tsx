@@ -3,7 +3,7 @@ import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, T
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
+import { ThemedBackdrop } from '../../components/theme/ThemedPage';
 import { ModuleBackBar, ModuleEmpty, ModuleGlassCard, ModuleKicker, ModuleScreenHeader } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import { useDeskAuth } from '../../context/DeskAuthContext';
@@ -22,6 +22,7 @@ import {
 import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
 import { log } from '../../lib/logger';
+import { Loader } from '../../components/ui/Loader';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'Clubs'>;
 
@@ -213,7 +214,7 @@ export function ClubsScreen({ navigation }: Props) {
 
   return (
     <View style={styles.root}>
-      <DashboardBackground patternOnly liquid />
+      <ThemedBackdrop />
       <ScrollView
         contentContainerStyle={[styles.content, { paddingTop: floatingHeaderInset(insets.top), paddingBottom: moduleScrollBottomPad(insets.bottom) }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} />}
@@ -226,7 +227,7 @@ export function ClubsScreen({ navigation }: Props) {
         />
 
         {loading ? (
-          <ActivityIndicator color={Colors.brandGreenMid} style={{ marginTop: 28 }} />
+          <Loader />
         ) : error ? (
           <ModuleEmpty title="Clubs could not load" body={error} onRetry={() => void load()} />
         ) : (

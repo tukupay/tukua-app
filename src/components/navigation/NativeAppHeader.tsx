@@ -10,7 +10,6 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { useDialog } from '../../context/DialogContext';
@@ -26,12 +25,17 @@ import { Colors } from '../../theme/yana';
 import { FLOATING_HEADER_BODY as NATIVE_HEADER_BODY_HEIGHT } from '../../constants/layout';
 import { navigateDashboard, navigateProfile } from '../../navigation/rootNavigation';
 import { useAppTheme } from '../../context/AppThemeContext';
+import { AppTopBar } from './AppTopBar';
 
 export { NATIVE_HEADER_BODY_HEIGHT };
 
 const SAVAGE_ON_OPACITY = 1;
 const SAVAGE_OFF_OPACITY = 0.35;
 
+/**
+ * Bar look (owner, 2026-11-07: "the theme you have used in landing"): the shared AppTopBar shell (flat
+ * palette.primary, whitened maths pattern, wave lip inside FLOATING_HEADER_GAP, then the one allowed fade).
+ */
 function hexToRgba(hex: string, alpha: number): string {
   const h = hex.replace('#', '');
   if (h.length !== 6) return `rgba(4,31,24,${alpha})`;
@@ -52,9 +56,7 @@ export function NativeAppHeader() {
   const [chatsOpen, setChatsOpen] = useState(false);
   const savageOpacity = useRef(new Animated.Value(SAVAGE_OFF_OPACITY)).current;
   const showSavageToggle = activeTabPath === '/chat';
-  const fadeTop = hexToRgba(palette.primary, 0.92);
-  const fadeMid = hexToRgba(palette.primary, 0.72);
-  const fadeLow = hexToRgba(palette.primary, 0.35);
+  const accent = palette.secondary;
 
   useEffect(() => {
     if (!session?.user) {
@@ -258,61 +260,51 @@ export function NativeAppHeader() {
 
   return (
     <>
-      <View pointerEvents="box-none" style={styles.floatWrap}>
-        {/* Soft top fade — content scrolls underneath (compact chrome) */}
-        <LinearGradient
-          pointerEvents="none"
-          colors={[fadeTop, fadeMid, fadeLow, 'transparent']}
-          locations={[0, 0.35, 0.72, 1]}
-          style={[styles.fade, { height: insets.top + NATIVE_HEADER_BODY_HEIGHT + 28 }]}
-        />
-        <View style={[styles.bar, { paddingTop: insets.top + 4 }]}>
+      <AppTopBar>
+        <TouchableOpacity
+          style={styles.chatsBtn}
+          onPress={() => setChatsOpen(true)}
+          accessibilityLabel="Open chats">
+          <Ionicons name="menu" size={20} color={Colors.white} />
+        </TouchableOpacity>
+
+        <TokenBalancePill />
+
+        <View style={styles.actions}>
+          {showSavageToggle ? (
+            <TouchableOpacity
+              style={[
+                styles.savageBtn,
+                savageMode && { borderColor: accent, backgroundColor: hexToRgba(accent, 0.22) },
+              ]}
+              onPress={() => void handleSavageToggle()}
+              accessibilityLabel={savageMode ? 'Savage mode on' : 'Savage mode off'}
+              accessibilityRole="button">
+              <Animated.Text style={[styles.savageEmoji, { opacity: savageOpacity }]}>😏</Animated.Text>
+            </TouchableOpacity>
+          ) : null}
+
           <TouchableOpacity
-            style={[
-              styles.chatsBtn,
-              {
-                borderColor: hexToRgba('#ffffff', 0.28),
-                backgroundColor: hexToRgba(palette.primary, 0.4),
-              },
-            ]}
-            onPress={() => setChatsOpen(true)}
-            accessibilityLabel="Open chats">
-            <Ionicons name="menu" size={20} color={Colors.white} />
+            style={styles.menuTrigger}
+            onPress={() => setOpen(true)}
+            accessibilityLabel="Open menu">
+            <View style={[styles.avatarRing, { borderColor: accent }]}>
+              <ProfileAvatar name={displayName} uri={avatarUrl} size={22} />
+            </View>
+            <Text style={styles.userName} numberOfLines={1}>
+              {displayName}
+            </Text>
+            <Ionicons name="chevron-down" size={16} color={accent} />
           </TouchableOpacity>
 
-          <TokenBalancePill />
-
-          <View style={styles.actions}>
-            {showSavageToggle ? (
-              <TouchableOpacity
-                style={[styles.savageBtn, savageMode && styles.savageBtnActive]}
-                onPress={() => void handleSavageToggle()}
-                accessibilityLabel={savageMode ? 'Savage mode on' : 'Savage mode off'}
-                accessibilityRole="button">
-                <Animated.Text style={[styles.savageEmoji, { opacity: savageOpacity }]}>😏</Animated.Text>
-              </TouchableOpacity>
-            ) : null}
-
-            <TouchableOpacity
-              style={styles.menuTrigger}
-              onPress={() => setOpen(true)}
-              accessibilityLabel="Open menu">
-              <ProfileAvatar name={displayName} uri={avatarUrl} size={24} />
-              <Text style={styles.userName} numberOfLines={1}>
-                {displayName}
-              </Text>
-              <Ionicons name="chevron-down" size={16} color={Colors.white} />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.signOutBtn}
-              onPress={handleLogout}
-              accessibilityLabel="Sign out">
-              <Ionicons name="log-out-outline" size={18} color={Colors.white} />
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity
+            style={styles.signOutBtn}
+            onPress={handleLogout}
+            accessibilityLabel="Sign out">
+            <Ionicons name="log-out-outline" size={18} color={Colors.white} />
+          </TouchableOpacity>
         </View>
-      </View>
+      </AppTopBar>
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <Pressable style={[styles.overlay, { paddingTop: insets.top + 48 }]} onPress={() => setOpen(false)}>
@@ -367,29 +359,13 @@ export function NativeAppHeader() {
 }
 
 const styles = StyleSheet.create({
-  floatWrap: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 50,
-    elevation: 50,
-  },
-  fade: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-  },
-  bar: {
-    flexDirection: 'row',
+  avatarRing: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 1.5,
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingBottom: 5,
-    minHeight: NATIVE_HEADER_BODY_HEIGHT,
-    backgroundColor: 'transparent',
-    gap: 8,
+    justifyContent: 'center',
   },
   chatsBtn: {
     width: 30,
@@ -398,8 +374,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.28)',
-    backgroundColor: 'rgba(4,31,24,0.4)',
+    borderColor: 'rgba(255,255,255,0.24)',
+    backgroundColor: 'rgba(255,255,255,0.10)',
     flexShrink: 0,
   },
   actions: {
@@ -417,13 +393,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.28)',
-    backgroundColor: 'rgba(4,31,24,0.4)',
+    borderColor: 'rgba(255,255,255,0.24)',
+    backgroundColor: 'rgba(255,255,255,0.10)',
     flexShrink: 0,
-  },
-  savageBtnActive: {
-    borderColor: 'rgba(244,140,6,0.75)',
-    backgroundColor: 'rgba(232,93,4,0.38)',
   },
   savageEmoji: {
     fontSize: 14,
@@ -434,12 +406,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 9,
-    paddingVertical: 4,
+    paddingLeft: 3,
+    paddingRight: 9,
+    paddingVertical: 3,
     borderRadius: 999,
-    backgroundColor: 'rgba(4,31,24,0.4)',
+    backgroundColor: 'rgba(255,255,255,0.10)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.28)',
+    borderColor: 'rgba(255,255,255,0.24)',
     maxWidth: 150,
     minWidth: 0,
   },
@@ -450,8 +423,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.28)',
-    backgroundColor: 'rgba(4,31,24,0.35)',
+    borderColor: 'rgba(255,255,255,0.24)',
+    backgroundColor: 'rgba(255,255,255,0.10)',
     flexShrink: 0,
   },
   userName: {

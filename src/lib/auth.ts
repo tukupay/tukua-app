@@ -125,15 +125,27 @@ function sessionFromNestLogin(
 /** Restore Nest JWT session from SecureStore + /platform/auth/me. */
 export async function refreshSessionIfNeeded(): Promise<Session | null> {
   try {
-    const { resolveNestAccessTokenForWebView } = await import('./platformNestAuth');
+    const { resolveNestAccessTokenForWebView, getStoredPlatformTokens, jwtExpiry, isPlatformAuthRejected } =
+      await import('./platformNestAuth');
     const nestTok = await resolveNestAccessTokenForWebView();
+    // The server rejected the refresh token and no other sign-in worked: the session is over.
+    if (!nestTok && isPlatformAuthRejected()) return null;
     const stored = await getStoredSession();
     const access = nestTok || stored?.access_token;
     if (!access) return null;
 
     const profile = (await fetchProfileFromNest(access)) || (await getCachedProfile());
     if (!profile?.id) return null;
-    const session = nestSessionFromProfile(access, stored?.refresh_token || access, profile);
+    // The real refresh token lives with the platform tokens (rotated on every refresh).
+    const platform = await getStoredPlatformTokens();
+    const refresh = platform?.refreshToken || stored?.refresh_token || access;
+    const exp = jwtExpiry(access);
+    const session = nestSessionFromProfile(
+      access,
+      refresh,
+      profile,
+      exp ? Math.max(0, exp - Math.floor(Date.now() / 1000)) : undefined,
+    );
     await persistSession(session);
     return session;
   } catch (e) {

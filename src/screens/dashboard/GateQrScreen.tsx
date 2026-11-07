@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
+import { ThemedBackdrop } from '../../components/theme/ThemedPage';
 import { ModuleBackBar, ModuleScreenHeader, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import { DashboardStackParamList } from '../../navigation/types';
@@ -105,7 +105,7 @@ export function GateQrScreen({ navigation }: Props) {
 
   return (
     <View style={styles.root}>
-      <DashboardBackground patternOnly liquid />
+      <ThemedBackdrop />
       <ScrollView
         contentContainerStyle={[
           styles.content,

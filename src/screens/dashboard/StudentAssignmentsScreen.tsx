@@ -2,8 +2,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 
 import {
 
-  ActivityIndicator,
-
   RefreshControl,
 
   ScrollView,
@@ -20,7 +18,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
+import { ThemedBackdrop } from '../../components/theme/ThemedPage';
 
 import { ModuleBackBar, ModuleEmpty, ModuleKicker, ModuleScreenHeader } from './ModuleChrome';
 
@@ -33,6 +31,7 @@ import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
 
 import { fetchStudentAssignments } from '../../lib/studentPortalApi';
+import { Loader } from '../../components/ui/Loader';
 
 
 
@@ -92,7 +91,7 @@ export function StudentAssignmentsScreen({ navigation }: Props) {
 
     <View style={styles.root}>
 
-      <DashboardBackground patternOnly liquid />
+      <ThemedBackdrop />
 
       <ScrollView
 
@@ -144,7 +143,7 @@ export function StudentAssignmentsScreen({ navigation }: Props) {
 
           <View style={styles.loader}>
 
-            <ActivityIndicator color={Colors.brandGreenMid} />
+            <Loader />
 
           </View>
 

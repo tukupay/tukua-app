@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,6 +15,7 @@ import { buildPreloadSessionScript } from '../../lib/webviewAuth';
 import { log } from '../../lib/logger';
 import { useAppTheme } from '../../context/AppThemeContext';
 import { ModuleScreenHeader } from './ModuleChrome';
+import { Loader } from '../../components/ui/Loader';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'DeskModule'>;
 
@@ -148,7 +149,7 @@ export function DeskModuleWebScreen({ route, navigation }: Props) {
       ) : null}
       {loading ? (
         <View style={styles.loader}>
-          <ActivityIndicator color={Colors.primary} />
+          <Loader />
         </View>
       ) : null}
       {error ? (

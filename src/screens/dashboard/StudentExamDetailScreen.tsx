@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -9,7 +8,7 @@ import {
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
+import { ThemedBackdrop } from '../../components/theme/ThemedPage';
 import {
   ModuleBackBar,
   ModuleEmpty,
@@ -25,6 +24,7 @@ import {
   fetchStudentExamMarksheet,
   type StudentExamMarksheetRow,
 } from '../../lib/studentPortalApi';
+import { Loader } from '../../components/ui/Loader';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'StudentExamDetail'>;
 
@@ -76,7 +76,7 @@ export function StudentExamDetailScreen({ route, navigation }: Props) {
 
   return (
     <View style={styles.root}>
-      <DashboardBackground patternOnly liquid />
+      <ThemedBackdrop />
       <ScrollView
         contentContainerStyle={[
           styles.content,
@@ -105,7 +105,7 @@ export function StudentExamDetailScreen({ route, navigation }: Props) {
 
         {loading ? (
           <View style={styles.loader}>
-            <ActivityIndicator color={Colors.brandGreenMid} />
+            <Loader />
           </View>
         ) : error ? (
           <ModuleEmpty title="Couldn't load exam" body={error} onRetry={() => void load()} />

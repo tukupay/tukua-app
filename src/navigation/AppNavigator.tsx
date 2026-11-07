@@ -52,7 +52,10 @@ const linking = {
 };
 
 function RootNavigator() {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated: hasSession, sessionUnlocked, loading } = useAuth();
+  // No auto login (owner, 2026-11-07): a stored session waits on the front door until the user unlocks it
+  // (biometrics / "Continue as") or signs in. Tokens stay stored and refreshed meanwhile.
+  const isAuthenticated = hasSession && sessionUnlocked;
   // Desk (Nest) is optional — only Dashboard uses it. Chat login is Nest JWT (+ optional WebViews).
   // School picker overlays inside MainTabs so header + bottom nav stay mounted.
   const { deskReady, schoolsReady } = useDeskAuth();

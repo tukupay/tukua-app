@@ -14,7 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
-import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
+import { ThemedBackdrop } from '../../components/theme/ThemedPage';
 import { ModuleBackBar, ModuleGlassCard, ModuleKicker, ModuleScreenHeader } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import { DashboardStackParamList } from '../../navigation/types';
@@ -34,6 +34,7 @@ import {
 } from '../../lib/transportApi';
 import { useDialog } from '../../context/DialogContext';
 import { BoardStudentPanel } from './BoardStudentPanel';
+import { Loader } from '../../components/ui/Loader';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'SecurityHome'>;
 
@@ -329,7 +330,7 @@ export function SecurityHomeScreen({ navigation }: Props) {
 
   return (
     <View style={styles.root}>
-      <DashboardBackground patternOnly liquid />
+      <ThemedBackdrop />
       <ModuleBackBar label="Trips & board" onBack={() => navigation.goBack()} />
       <FlatList
         data={dailyRecords}
@@ -363,7 +364,7 @@ export function SecurityHomeScreen({ navigation }: Props) {
             />
 
             {loading ? (
-              <ActivityIndicator color={Colors.brandGreenDark} style={{ marginTop: 24 }} />
+              <Loader />
             ) : (
               <>
                 <Pressable

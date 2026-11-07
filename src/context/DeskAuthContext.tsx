@@ -45,6 +45,7 @@ import {
   activeRolesForHat,
   linkedStudentsAtSchool,
   prefersSchoolPicker,
+  rememberedContextUsable,
   resolveContext,
   shouldForcePickAfterLogin,
   uniqueSchoolRoles,
@@ -54,9 +55,21 @@ import { fetchParentChildren } from '../lib/parentPortalApi';
 import {
   clearSelectedContext,
   getSelectedContext,
-  setSelectedContext,
+  setSelectedContext as writeSelectedContext,
   StoredContext,
 } from '../lib/selectedContext';
+import { getLastContext, lastContextAsStored, rememberLastContext } from '../lib/lastContext';
+
+/**
+ * Save the context the user lands on, and remember it as their last user type (survives logout and
+ * an abandoned "Switch profile", so the next login opens as it). A role-less mid-pick save is not remembered.
+ */
+async function setSelectedContext(userId: string, ctx: StoredContext): Promise<void> {
+  await writeSelectedContext(userId, ctx);
+  if (ctx.skipped || (ctx.schoolId && ctx.activeRole)) {
+    await rememberLastContext(userId, ctx);
+  }
+}
 import { log } from '../lib/logger';
 import { refreshPlatformNestToken } from '../lib/platformNestAuth';
 import { navigateDashboard } from '../navigation/rootNavigation';
@@ -349,7 +362,10 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
   ]);
 
   const applySchoolsForUser = useCallback(
-    async (userId: string, opts?: { quiet?: boolean; forcePick?: boolean }) => {
+    async (
+      userId: string,
+      opts?: { quiet?: boolean; forcePick?: boolean; rememberedFirst?: boolean },
+    ) => {
       // Keep existing list visible — only flash spinner on first load for this user.
       if (!opts?.quiet && authUserIdRef.current !== userId) setSchoolsReady(false);
       const [rows] = await Promise.all([fetchUserSchools(userId), awaitDeskLoginInFlight()]);
@@ -357,16 +373,37 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
       const list = withTokenRoles(rows, await getDeskTokenClaims());
       const linked = flattenLinkedStudents(list);
 
-      if (opts?.forcePick) {
+      // The last user type this person opened as (kept across logout). On login it wins over the
+      // forced picker while that school + role is still theirs; otherwise it fills in when the
+      // selected context is gone (logout, an abandoned switch).
+      let forcePick = Boolean(opts?.forcePick);
+      const last = forcePick && !opts?.rememberedFirst ? null : await getLastContext(userId);
+      const remembered = last && rememberedContextUsable(list, last) ? lastContextAsStored(last) : null;
+      if (forcePick && opts?.rememberedFirst && remembered) {
+        forcePick = false;
+        log.info('DeskAuth', 'login → last user type', {
+          schoolId: remembered.schoolId,
+          role: remembered.activeRole,
+          skipped: remembered.skipped,
+        });
+      }
+
+      if (forcePick) {
         await clearSelectedContext(userId);
       }
-      const stored = opts?.forcePick ? null : await getSelectedContext(userId);
+      let stored = forcePick ? null : await getSelectedContext(userId);
+      let fromRemembered = false;
+      if (!forcePick && remembered && (opts?.rememberedFirst || !stored)) {
+        stored = remembered;
+        fromRemembered = true;
+      }
       const { schoolId, studentId, activeRole, needsPick, pickerMode: mode, schoolRoleOptions: roleOpts } =
-        resolveContext(list, linked, stored, { forcePick: opts?.forcePick });
+        resolveContext(list, linked, stored, { forcePick });
 
       if (!needsPick && schoolId) {
         const next: StoredContext = { schoolId, studentId, activeRole, skipped: false };
         const same =
+          !fromRemembered &&
           stored?.schoolId === next.schoolId &&
           stored?.studentId === next.studentId &&
           stored?.activeRole === next.activeRole &&
@@ -381,8 +418,10 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
           activeRole: 'student',
           skipped: true,
         };
-        if (!stored?.skipped || stored?.activeRole !== 'student') {
-          await setSelectedContext(userId, next);
+        if (fromRemembered || !stored?.skipped || stored?.activeRole !== 'student') {
+          // No school at all is the default, not a choice: keep it out of the remembered user type.
+          if (list.length) await setSelectedContext(userId, next);
+          else await writeSelectedContext(userId, next);
         }
       }
 
@@ -814,6 +853,7 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
       const membership = await applySchoolsForUser(session.user.id, {
         quiet,
         forcePick: opts?.forceSchoolPick,
+        rememberedFirst: true,
       });
       const activeRole = membership.activeRole;
       const roles = activeRole
@@ -1003,6 +1043,8 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
           await applySchoolsForUser(uid, {
             quiet: false,
             forcePick: shouldForcePickAfterLogin(list),
+            // Open as the last user type when it is still theirs; picker only when it is gone.
+            rememberedFirst: true,
           });
         }
         return result;

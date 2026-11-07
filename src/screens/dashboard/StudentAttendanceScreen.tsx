@@ -2,8 +2,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 
 import {
 
-  ActivityIndicator,
-
   RefreshControl,
 
   ScrollView,
@@ -22,7 +20,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Ionicons } from '@expo/vector-icons';
 
-import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
+import { ThemedBackdrop } from '../../components/theme/ThemedPage';
 
 import { ModuleBackBar, ModuleEmpty, ModuleGlassCard, ModuleKicker, ModuleScreenHeader } from './ModuleChrome';
 
@@ -37,6 +35,7 @@ import { Colors } from '../../theme/yana';
 import { log } from '../../lib/logger';
 
 import { fetchStudentRecentAttendance, type StudentDayMark } from '../../lib/studentPortalApi';
+import { Loader } from '../../components/ui/Loader';
 
 
 
@@ -120,7 +119,7 @@ export function StudentAttendanceScreen({ navigation }: Props) {
 
     <View style={styles.root}>
 
-      <DashboardBackground patternOnly liquid />
+      <ThemedBackdrop />
 
       <ScrollView
 
@@ -172,7 +171,7 @@ export function StudentAttendanceScreen({ navigation }: Props) {
 
           <View style={styles.loader}>
 
-            <ActivityIndicator color={Colors.brandGreenMid} />
+            <Loader />
 
           </View>
 

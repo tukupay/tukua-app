@@ -2,9 +2,6 @@ import React, { useCallback, useState } from 'react';
 
 import {
   Image,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -22,6 +19,8 @@ import { TopWave, TukuaPatternLayer, topWaveHeight } from '../components/auth/To
 import { CertifyingAgenciesCarousel } from '../components/auth/CertifyingAgenciesCarousel';
 import { AuthTextField } from '../components/auth/AuthTextField';
 import { AuthButton } from '../components/auth/AuthButton';
+import { KeyboardAwareScroll } from '../components/auth/KeyboardAwareScroll';
+import { MadeInBadges } from '../components/auth/MadeInBadges';
 
 import { RootStackParamList } from '../navigation/types';
 
@@ -31,7 +30,12 @@ import { useDeskAuth } from '../context/DeskAuthContext';
 
 import { useDialog } from '../context/DialogContext';
 
-import { isBiometricLoginAvailable, unlockBiometricCredentials } from '../lib/biometrics';
+import {
+  authenticateDevice,
+  checkBiometricSupport,
+  isBiometricLoginAvailable,
+  unlockBiometricCredentials,
+} from '../lib/biometrics';
 import { hideSystemStatusBar } from '../components/ImmersiveSystemBars';
 import { captureUserLocation } from '../lib/location';
 
@@ -66,7 +70,18 @@ export function LoginScreen({ embedded = false, bottomSpace = 0, onCreateAccount
   const waveH = topWaveHeight(layout.width);
   const canGoBack = !embedded && navigation.canGoBack();
 
-  const { refreshProfile, adoptSession } = useAuth();
+  const { refreshProfile, adoptSession, session, profile, sessionUnlocked, unlockSession } = useAuth();
+  // A session kept from last time, waiting on the front door (no auto login): offer "Continue as <name>".
+  const storedUser = session?.user && !sessionUnlocked ? session.user : null;
+  const storedEmail = storedUser?.email ? String(storedUser.email) : '';
+  const storedName =
+    (profile?.id === storedUser?.id ? profile?.fullName?.trim() : '') ||
+    String((storedUser?.user_metadata as { full_name?: string } | undefined)?.full_name || '').trim() ||
+    storedEmail.split('@')[0] ||
+    '';
+  const storedFirstName = storedName.split(/\s+/)[0] || 'you';
+  const [useOtherAccount, setUseOtherAccount] = useState(false);
+  const [deviceAuth, setDeviceAuth] = useState(false);
   const { connectDesk } = useDeskAuth();
 
   const [email, setEmail] = useState('');
@@ -80,23 +95,17 @@ export function LoginScreen({ embedded = false, bottomSpace = 0, onCreateAccount
   const [loading, setLoading] = useState(false);
 
   const [bioAvailable, setBioAvailable] = useState(false);
-  const bioPromptedRef = React.useRef(false);
-  const handleBiometricRef = React.useRef<() => Promise<void>>(async () => {});
 
+  // No auto prompt (owner: "dont auto login. let them click the biometrics or the form fill").
   useFocusEffect(
     useCallback(() => {
       hideSystemStatusBar();
       let cancelled = false;
       (async () => {
-        const ok = await isBiometricLoginAvailable();
+        const [ok, device] = await Promise.all([isBiometricLoginAvailable(), checkBiometricSupport()]);
         if (cancelled) return;
         setBioAvailable(ok);
-        if (ok && !bioPromptedRef.current) {
-          bioPromptedRef.current = true;
-          setTimeout(() => {
-            if (!cancelled) void handleBiometricRef.current();
-          }, 450);
-        }
+        setDeviceAuth(device);
       })();
       return () => {
         cancelled = true;
@@ -215,9 +224,49 @@ export function LoginScreen({ embedded = false, bottomSpace = 0, onCreateAccount
 
   };
 
-  const handleBiometric = async () => {
+  /** Enter with the stored session after a device check (fingerprint/face/PIN); null when it is gone. */
+  const unlockStored = async (): Promise<boolean | null> => {
+    const ok = await authenticateDevice(`Continue as ${storedFirstName}`);
+    hideSystemStatusBar();
+    if (!ok) return false;
+    const next = await unlockSession();
+    return next ? true : null;
+  };
+
+  const handleContinueAs = async () => {
+    if (!deviceAuth) {
+      // No fingerprint/face on this phone: confirm with the password instead.
+      setEmail(storedEmail);
+      showDialog({
+        title: `Continue as ${storedFirstName}`,
+        message: 'Enter your password to continue.',
+        variant: 'info',
+        icon: 'lock-closed-outline',
+      });
+      return;
+    }
+    let res: boolean | null = false;
     try {
       setLoading(true);
+      res = await unlockStored();
+    } finally {
+      setLoading(false);
+      hideSystemStatusBar();
+    }
+    if (res === null) {
+      // The stored session ended (e.g. refresh rejected): fall back to a sign-in.
+      if (bioAvailable) await handleBiometric(true);
+      else setEmail(storedEmail);
+    }
+  };
+
+  const handleBiometric = async (skipStored = false) => {
+    try {
+      setLoading(true);
+      if (!skipStored && storedUser && !useOtherAccount && deviceAuth) {
+        const res = await unlockStored();
+        if (res !== null) return; // unlocked, or the user cancelled
+      }
       const unlocked = await unlockBiometricCredentials();
       hideSystemStatusBar();
       if (!unlocked) {
@@ -244,7 +293,6 @@ export function LoginScreen({ embedded = false, bottomSpace = 0, onCreateAccount
       hideSystemStatusBar();
     }
   };
-  handleBiometricRef.current = handleBiometric;
 
   const handleForgot = async () => {
     const raw = email.trim();
@@ -293,10 +341,8 @@ export function LoginScreen({ embedded = false, bottomSpace = 0, onCreateAccount
           <Ionicons name="chevron-back" size={s(24)} color={Colors.white} />
         </TouchableOpacity>
       ) : null}
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView
+      <KeyboardAwareScroll
+          style={styles.flex}
           contentContainerStyle={[
             styles.scroll,
             {
@@ -305,8 +351,6 @@ export function LoginScreen({ embedded = false, bottomSpace = 0, onCreateAccount
               paddingHorizontal: layout.padH,
             },
           ]}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
           showsVerticalScrollIndicator={false}>
           <View style={styles.centerBlock}>
             {/* Logo badge sitting on the wave's edge */}
@@ -322,10 +366,46 @@ export function LoginScreen({ embedded = false, bottomSpace = 0, onCreateAccount
               />
             </View>
 
-            <Text style={[styles.loginTitle, { fontSize: font(22), marginTop: s(14) }]}>Welcome back</Text>
+            <Text style={[styles.loginTitle, { fontSize: font(28), marginTop: s(14) }]}>Tukua</Text>
             <Text style={[styles.loginSub, { fontSize: font(13), marginBottom: s(22) }]}>
-              Sign in to your Tukua account
+              Sign in to continue
             </Text>
+
+            {storedUser && !useOtherAccount ? (
+              <View style={{ width: layout.formWidth, marginBottom: s(18) }}>
+                <TouchableOpacity
+                  style={[styles.continueCard, { paddingVertical: s(12), paddingHorizontal: s(14), gap: s(12) }]}
+                  onPress={() => void handleContinueAs()}
+                  disabled={loading}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Continue as ${storedName || storedFirstName}`}>
+                  <View style={[styles.continueIcon, { width: s(40), height: s(40), borderRadius: s(20) }]}>
+                    <Ionicons name={deviceAuth ? 'finger-print' : 'person'} size={s(22)} color={Colors.white} />
+                  </View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={[styles.continueTitle, { fontSize: font(15) }]} numberOfLines={1}>
+                      Continue as {storedFirstName}
+                    </Text>
+                    <Text style={[styles.continueSub, { fontSize: font(12) }]} numberOfLines={1}>
+                      {deviceAuth ? 'Unlock with fingerprint, face or PIN' : storedEmail || 'Enter your password below'}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={s(20)} color={Colors.primary} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => {
+                    setUseOtherAccount(true);
+                    setEmail('');
+                  }}
+                  hitSlop={8}
+                  accessibilityRole="link"
+                  style={{ alignSelf: 'center', marginTop: s(10) }}>
+                  <Text style={[styles.rememberText, { fontSize: font(12) }]}>
+                    Not {storedFirstName}? <Text style={styles.registerLinkEm}>Use another account</Text>
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
 
             <View style={{ width: layout.formWidth }}>
               <AuthTextField
@@ -376,10 +456,10 @@ export function LoginScreen({ embedded = false, bottomSpace = 0, onCreateAccount
 
               <View style={[styles.loginRow, { marginTop: s(22) }]}>
                 <AuthButton text="Log in" enabled={canLogin} loading={loading} onPress={handleLogin} />
-                {bioAvailable && !loading ? (
+                {(bioAvailable || (storedUser && !useOtherAccount && deviceAuth)) && !loading ? (
                   <TouchableOpacity
                     style={[styles.fingerprint, { width: s(50), height: s(50), borderRadius: s(25) }]}
-                    onPress={handleBiometric}
+                    onPress={() => void handleBiometric()}
                     accessibilityRole="button"
                     accessibilityLabel="Sign in with biometrics">
                     <Ionicons name="finger-print" size={s(26)} color={Colors.primary} />
@@ -401,9 +481,9 @@ export function LoginScreen({ embedded = false, bottomSpace = 0, onCreateAccount
           <View style={[styles.institutionFooter, { marginTop: s(20) }]}>
             <Text style={[styles.partnerLabel, { fontSize: font(10) }]}>Partner institutions</Text>
             <CertifyingAgenciesCarousel compact={layout.compact} />
+            <MadeInBadges style={{ marginTop: s(8) }} />
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScroll>
     </View>
   );
 }
@@ -451,7 +531,33 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontFamily: 'Poppins_700Bold',
     textAlign: 'center',
-    color: Colors.primary,
+    /** Brand wordmark green. */
+    color: '#15411D',
+    letterSpacing: 0.3,
+  },
+  continueCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.white,
+  },
+  continueIcon: {
+    backgroundColor: '#15411D',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  continueTitle: {
+    fontWeight: '700',
+    fontFamily: 'Poppins_600SemiBold',
+    color: '#15411D',
+  },
+  continueSub: {
+    fontFamily: 'Inter_400Regular',
+    color: Colors.mutedForeground,
+    marginTop: 1,
   },
   loginSub: {
     fontFamily: 'Inter_400Regular',

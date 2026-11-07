@@ -7,10 +7,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -19,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AuthButton } from '../../components/auth/AuthButton';
 import { AuthTextField } from '../../components/auth/AuthTextField';
+import { KeyboardAwareScroll } from '../../components/auth/KeyboardAwareScroll';
 import { useAuthScale } from '../../components/auth/useAuthScale';
 import { PagerSafeStrip } from '../../components/BookPager';
 import { Colors } from '../../theme/yana';
@@ -226,10 +224,8 @@ export function PayFeesScreen({ bottomSpace = 0 }: { bottomSpace?: number }) {
 
   return (
     <View style={styles.root}>
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
+      <KeyboardAwareScroll
+          style={styles.flex}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{
             paddingBottom: bottomSpace + insets.bottom + s(24),
@@ -476,8 +472,7 @@ export function PayFeesScreen({ bottomSpace = 0 }: { bottomSpace?: number }) {
               )}
             </View>
           ) : null}
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScroll>
     </View>
   );
 }

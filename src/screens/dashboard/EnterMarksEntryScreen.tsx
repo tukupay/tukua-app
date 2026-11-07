@@ -8,8 +8,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
 
-  ActivityIndicator,
-
   FlatList,
 
   Pressable,
@@ -27,8 +25,9 @@ import {
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { floatingTabBarSpace } from '../../components/navigation/FloatingTabBar';
 
-import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
+import { ThemedBackdrop } from '../../components/theme/ThemedPage';
 
 import {
 
@@ -69,6 +68,7 @@ import {
   type TeacherWorkload,
 
 } from '../../lib/teacherPortalApi';
+import { Loader } from '../../components/ui/Loader';
 
 
 
@@ -420,7 +420,7 @@ export function EnterMarksEntryScreen({ route, navigation }: Props) {
 
     <View style={styles.root}>
 
-      <DashboardBackground patternOnly liquid />
+      <ThemedBackdrop />
 
       <View style={{ paddingTop: floatingHeaderInset(insets.top) }}>
 
@@ -494,7 +494,7 @@ export function EnterMarksEntryScreen({ route, navigation }: Props) {
 
       {loading ? (
 
-        <ActivityIndicator style={{ marginTop: 24 }} color={Colors.primary} />
+        <Loader />
 
       ) : noWorkload ? (
 
@@ -660,7 +660,7 @@ export function EnterMarksEntryScreen({ route, navigation }: Props) {
 
       <Pressable
 
-        style={[styles.saveBtn, (saving || !subjectId) && { opacity: 0.7 }]}
+        style={[styles.saveBtn, { bottom: floatingTabBarSpace(insets.bottom) + 8 }, (saving || !subjectId) && { opacity: 0.7 }]}
 
         onPress={() => void onSave()}
 

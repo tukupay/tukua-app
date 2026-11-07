@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -9,7 +8,7 @@ import {
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
+import { ThemedBackdrop } from '../../components/theme/ThemedPage';
 import { ModuleBackBar, ModuleEmpty, ModuleGlassCard, ModuleKicker, ModuleScreenHeader } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import { useDeskAuth } from '../../context/DeskAuthContext';
@@ -17,6 +16,7 @@ import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
 import { log } from '../../lib/logger';
 import { fetchSchoolDashboardAnalytics, type SchoolDashboardTotals } from '../../lib/adminPortalApi';
+import { Loader } from '../../components/ui/Loader';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'SchoolOverview'>;
 
@@ -80,7 +80,7 @@ export function SchoolOverviewScreen({ navigation }: Props) {
 
   return (
     <View style={styles.root}>
-      <DashboardBackground patternOnly liquid />
+      <ThemedBackdrop />
       <ScrollView
         contentContainerStyle={[
           styles.content,
@@ -108,7 +108,7 @@ export function SchoolOverviewScreen({ navigation }: Props) {
         />
 
         {loading ? (
-          <ActivityIndicator color={Colors.brandGreenMid} style={styles.loader} />
+          <Loader />
         ) : error ? (
           <ModuleEmpty title="Couldn't load overview" body={error} onRetry={() => void load()} />
         ) : rows.length === 0 ? (

@@ -12,8 +12,9 @@ import {
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { floatingTabBarSpace } from '../../components/navigation/FloatingTabBar';
 import { Ionicons } from '@expo/vector-icons';
-import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
+import { ThemedBackdrop } from '../../components/theme/ThemedPage';
 import {
   ModuleBackBar,
   ModuleEmpty,
@@ -34,6 +35,7 @@ import {
   type AssessmentMarkRow,
   type TeacherWorkload,
 } from '../../lib/teacherPortalApi';
+import { Loader } from '../../components/ui/Loader';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'TeacherMarksheet'>;
 
@@ -163,7 +165,7 @@ export function TeacherMarksheetScreen({ route, navigation }: Props) {
 
   return (
     <View style={styles.root}>
-      <DashboardBackground patternOnly liquid />
+      <ThemedBackdrop />
       <View style={{ flex: 1, paddingTop: floatingHeaderInset(insets.top) }}>
         <View style={styles.headerPad}>
           <ModuleBackBar onBack={() => navigation.goBack()} />
@@ -182,7 +184,7 @@ export function TeacherMarksheetScreen({ route, navigation }: Props) {
 
         {loading ? (
           <View style={styles.loader}>
-            <ActivityIndicator color={Colors.brandGreenMid} />
+            <Loader />
           </View>
         ) : error && allRows.length === 0 ? (
           <View style={styles.headerPad}>
@@ -256,7 +258,8 @@ export function TeacherMarksheetScreen({ route, navigation }: Props) {
           />
         )}
 
-        <View style={[styles.saveBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+        {/* Sits on top of the floating tab bar, not under it. */}
+        <View style={[styles.saveBar, { bottom: floatingTabBarSpace(insets.bottom), paddingBottom: 10 }]}>
           <Pressable
             style={[styles.saveBtn, (saving || dirtyCount === 0) && { opacity: 0.55 }]}
             disabled={saving || dirtyCount === 0}

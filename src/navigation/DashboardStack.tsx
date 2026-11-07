@@ -1,7 +1,5 @@
 import React from 'react';
-import { StyleSheet, TouchableOpacity } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { Ionicons } from '@expo/vector-icons';
 import { DashboardHomeScreen } from '../screens/dashboard/DashboardHomeScreen';
 import { NotificationsScreen } from '../screens/dashboard/NotificationsScreen';
 import { DeskModuleWebScreen } from '../screens/dashboard/DeskModuleWebScreen';
@@ -53,8 +51,8 @@ import { TeacherTimetableScreen } from '../screens/dashboard/TeacherTimetableScr
 import { RecordDisciplineScreen } from '../screens/dashboard/RecordDisciplineScreen';
 import { TeacherProgressScreen } from '../screens/dashboard/TeacherProgressScreen';
 import { DashboardStackParamList } from './types';
-import { Colors } from '../theme/yana';
 import { useAppTheme } from '../context/AppThemeContext';
+import { AppTopBar } from '../components/navigation/AppTopBar';
 
 const Stack = createNativeStackNavigator<DashboardStackParamList>();
 
@@ -75,23 +73,20 @@ export function DashboardStack() {
   const { palette } = useAppTheme();
   return (
     <Stack.Navigator
-      screenOptions={({ navigation }) => ({
-        headerStyle: { backgroundColor: Colors.white },
-        headerTintColor: Colors.foreground,
-        headerTitleStyle: { fontWeight: '700', fontSize: 17 },
-        headerShadowVisible: false,
+      screenOptions={{
+        // Module screens draw their own back bar under the floating app header (headerShown: false). A screen
+        // that shows a header gets the app's top bar (same green, pattern and curve), taking its own height.
+        header: ({ navigation, route, options, back }) => (
+          <AppTopBar
+            variant="stack"
+            underAppHeader
+            title={typeof options.title === 'string' ? options.title : route.name}
+            onBack={back ? () => navigation.goBack() : undefined}
+            pageColor={palette.muted}
+          />
+        ),
         contentStyle: { backgroundColor: palette.muted },
-        headerLeft: navigation.canGoBack()
-          ? () => (
-              <TouchableOpacity
-                onPress={() => navigation.goBack()}
-                hitSlop={10}
-                style={styles.back}>
-                <Ionicons name="chevron-back" size={24} color={palette.primary} />
-              </TouchableOpacity>
-            )
-          : undefined,
-      })}>
+      }}>
       <Stack.Screen
         name="DashboardHome"
         component={DashboardHomeScreen}
@@ -226,6 +221,7 @@ export function DashboardStack() {
       <Stack.Screen
         name="TeacherMarksheet"
         component={TeacherMarksheetScreen}
+        options={{ title: 'Marksheet', headerShown: false }}
       />
       <Stack.Screen
         name="EnterMarksEntry"
@@ -365,7 +361,3 @@ export function DashboardStack() {
     </Stack.Navigator>
   );
 }
-
-const styles = StyleSheet.create({
-  back: { marginRight: 4, padding: 4 },
-});

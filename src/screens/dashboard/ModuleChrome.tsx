@@ -34,10 +34,14 @@ export function ModuleScreenHeader({
   title: string;
   description?: string;
 }) {
+  const { palette } = useAppTheme();
   return (
     <View style={styles.headerBlock}>
-      <Text style={styles.title}>{title}</Text>
-      {description ? <Text style={styles.moduleDesc}>{description}</Text> : null}
+      <View style={styles.titleRow}>
+        <View style={[styles.titleMarker, { backgroundColor: palette.secondary }]} />
+        <Text style={styles.title}>{title}</Text>
+      </View>
+      {description ? <Text style={[styles.moduleDesc, { marginLeft: 14 }]}>{description}</Text> : null}
     </View>
   );
 }
@@ -76,7 +80,7 @@ export function ModuleGlassCard({
   style?: StyleProp<ViewStyle>;
 }) {
   return (
-    <GlassPanel tone="frost" intensity={40} radius={16} style={[styles.moduleCard, style]}>
+    <GlassPanel tone="frost" intensity={40} radius={16} style={StyleSheet.flatten([styles.moduleCard, style])}>
       <View style={styles.cardInner}>{children}</View>
     </GlassPanel>
   );
@@ -92,7 +96,9 @@ const styles = StyleSheet.create({
   },
   backText: { fontWeight: '600', fontSize: 15 },
   headerBlock: { marginBottom: 12 },
-  title: { fontSize: 22, fontWeight: '800', color: Colors.ink },
+  titleRow: { flexDirection: 'row', alignItems: 'center' },
+  titleMarker: { width: 4, height: 20, borderRadius: 2, marginRight: 10 },
+  title: { fontSize: 22, fontWeight: '800', color: Colors.ink, flexShrink: 1 },
   moduleDesc: {
     marginTop: 4,
     fontSize: 11,

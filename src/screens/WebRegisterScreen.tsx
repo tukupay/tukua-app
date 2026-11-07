@@ -1,5 +1,5 @@
 import React, { useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { WebView } from 'react-native-webview';
@@ -19,6 +19,7 @@ import {
 import { isAppWebHost } from '../lib/localHost';
 import { getWebViewMediaProps, WEBVIEW_MEDIA_INJECT_JS } from '../lib/webViewMedia';
 import { log } from '../lib/logger';
+import { Loader } from '../components/ui/Loader';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Register'>;
 
@@ -82,7 +83,7 @@ export function WebRegisterScreen({ navigation }: Props) {
       <View style={styles.body}>
         {loading && (
           <View style={styles.loaderOverlay} pointerEvents="none">
-            <ActivityIndicator size="large" color={Colors.primary} />
+            <Loader />
             <Text style={styles.loaderText}>Loading registration…</Text>
           </View>
         )}

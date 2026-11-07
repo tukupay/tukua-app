@@ -24,6 +24,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '../../theme/yana';
 import { floatingHeaderInset, TAB_BAR_BODY_HEIGHT } from '../../constants/layout';
+import { floatingTabBarSpace } from '../../components/navigation/FloatingTabBar';
 import { useDialog } from '../../context/DialogContext';
 import { useDeskAuth } from '../../context/DeskAuthContext';
 import { useAppTheme } from '../../context/AppThemeContext';
@@ -131,7 +132,8 @@ export function JoinSchoolScreen() {
   const { showDialog } = useDialog();
   const { palette } = useAppTheme();
   const { selectSchool, refreshSchools } = useDeskAuth();
-  const bottomPad = TAB_BAR_BODY_HEIGHT + insets.bottom + 24;
+  // Ends above the floating tab bar.
+  const bottomPad = Math.max(TAB_BAR_BODY_HEIGHT + insets.bottom + 24, floatingTabBarSpace(insets.bottom) + 16);
   const hero = palette.primary;
 
   const [step, setStep] = useState<Step>(preferRole ? 'school' : 'role');

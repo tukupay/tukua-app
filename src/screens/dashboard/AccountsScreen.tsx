@@ -17,7 +17,8 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from '../../components/FlatFill'; // flat fill: no gradients
-import { DashboardBackground, GreenPattern } from '../../components/dashboard/DashboardBackground';
+import { GreenPattern } from '../../components/dashboard/DashboardBackground';
+import { ThemedBackdrop } from '../../components/theme/ThemedPage';
 import { GlassPanel } from '../../components/dashboard/Glass';
 import { ModuleTabPager } from '../../components/dashboard/ModuleTabPager';
 import { PaymentBottomSheet } from '../../components/dashboard/PaymentBottomSheet';
@@ -40,6 +41,7 @@ import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
 import { log } from '../../lib/logger';
 import { fetchStudentFees, type StudentFeeBalance } from '../../lib/studentPortalApi';
+import { Loader } from '../../components/ui/Loader';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'Accounts'>;
 
@@ -409,7 +411,7 @@ export function AccountsScreen({ navigation }: Props) {
     const balance = Number(studentFees?.balance ?? 0);
     return (
       <View style={styles.root}>
-        <DashboardBackground patternOnly liquid />
+        <ThemedBackdrop />
         <ScrollView
           contentContainerStyle={[
             styles.content,
@@ -426,7 +428,7 @@ export function AccountsScreen({ navigation }: Props) {
             description="Read-only balance from the school ledger. M-Pesa pay stays on the parent app or office."
           />
           {studentFeesLoading ? (
-            <ActivityIndicator color={Colors.brandGreenMid} style={{ marginTop: 24 }} />
+            <Loader />
           ) : studentFees ? (
             <GlassPanel tone="frost" radius={16} style={styles.tableCard}>
               <View style={styles.tableInner}>
@@ -466,7 +468,7 @@ export function AccountsScreen({ navigation }: Props) {
 
   return (
     <View style={styles.root}>
-      <DashboardBackground patternOnly liquid />
+      <ThemedBackdrop />
       <ScrollView
         contentContainerStyle={[
           styles.content,
@@ -506,7 +508,7 @@ export function AccountsScreen({ navigation }: Props) {
           minHeight={320}
           renderPage={(key) => {
         if (loading) {
-          return <ActivityIndicator color={Colors.brandGreenMid} style={{ marginTop: 24 }} />;
+          return <Loader />;
         }
         if (error) {
           return <ModuleEmpty title="Could not load accounts" body={error} onRetry={() => void load()} />;

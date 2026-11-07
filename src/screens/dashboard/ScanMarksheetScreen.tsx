@@ -3,7 +3,6 @@
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   FlatList,
   Image,
   Pressable,
@@ -15,7 +14,8 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
+import { floatingTabBarSpace } from '../../components/navigation/FloatingTabBar';
+import { ThemedBackdrop } from '../../components/theme/ThemedPage';
 import {
   ModuleBackBar,
   ModuleEmpty,
@@ -37,6 +37,7 @@ import {
   type ScanMarkRow,
   type TeacherWorkload,
 } from '../../lib/teacherPortalApi';
+import { Loader } from '../../components/ui/Loader';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'ScanMarksheet'>;
 
@@ -224,7 +225,7 @@ export function ScanMarksheetScreen({ navigation }: Props) {
 
   return (
     <View style={styles.root}>
-      <DashboardBackground patternOnly liquid />
+      <ThemedBackdrop />
       <View style={{ paddingTop: floatingHeaderInset(insets.top), paddingHorizontal: 16 }}>
         <ModuleBackBar onBack={() => navigation.goBack()} />
         <ModuleKicker>Assessments</ModuleKicker>
@@ -235,7 +236,7 @@ export function ScanMarksheetScreen({ navigation }: Props) {
       </View>
 
       {loading ? (
-        <ActivityIndicator style={{ marginTop: 24 }} color={Colors.primary} />
+        <Loader />
       ) : (
         <FlatList
           data={rows}
@@ -334,7 +335,7 @@ export function ScanMarksheetScreen({ navigation }: Props) {
 
       {rows.length > 0 ? (
         <Pressable
-          style={[styles.saveBtn, saving && { opacity: 0.7 }]}
+          style={[styles.saveBtn, { bottom: floatingTabBarSpace(insets.bottom) + 8 }, saving && { opacity: 0.7 }]}
           onPress={() => void save()}
           disabled={saving}
         >

@@ -79,7 +79,7 @@ const HSL_CONFIGS: Record<SchoolThemeId, Record<keyof ThemePalette, string>> = {
   },
   emeraldGold: {
     primary: 'hsl(155, 55%, 28%)',
-    secondary: 'hsl(42, 85%, 52%)',
+    secondary: 'hsl(45, 95%, 56%)',
     tertiary: 'hsl(175, 60%, 40%)',
     primaryForeground: 'hsl(0, 0%, 100%)',
     secondaryForeground: 'hsl(155, 55%, 15%)',
@@ -125,7 +125,7 @@ const HSL_CONFIGS: Record<SchoolThemeId, Record<keyof ThemePalette, string>> = {
   },
   sunsetCoral: {
     primary: 'hsl(15, 65%, 35%)',
-    secondary: 'hsl(35, 90%, 55%)',
+    secondary: 'hsl(42, 95%, 58%)',
     tertiary: 'hsl(195, 70%, 45%)',
     primaryForeground: 'hsl(0, 0%, 100%)',
     secondaryForeground: 'hsl(15, 65%, 15%)',
@@ -134,7 +134,7 @@ const HSL_CONFIGS: Record<SchoolThemeId, Record<keyof ThemePalette, string>> = {
   },
   oceanTeal: {
     primary: 'hsl(195, 55%, 30%)',
-    secondary: 'hsl(165, 60%, 50%)',
+    secondary: 'hsl(165, 65%, 60%)',
     tertiary: 'hsl(45, 85%, 55%)',
     primaryForeground: 'hsl(0, 0%, 100%)',
     secondaryForeground: 'hsl(195, 55%, 15%)',
@@ -143,7 +143,7 @@ const HSL_CONFIGS: Record<SchoolThemeId, Record<keyof ThemePalette, string>> = {
   },
   slateSteel: {
     primary: 'hsl(215, 25%, 28%)',
-    secondary: 'hsl(210, 40%, 58%)',
+    secondary: 'hsl(205, 60%, 70%)',
     tertiary: 'hsl(45, 70%, 55%)',
     primaryForeground: 'hsl(0, 0%, 100%)',
     secondaryForeground: 'hsl(0, 0%, 100%)',

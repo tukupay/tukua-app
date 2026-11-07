@@ -13,7 +13,6 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { LinearGradient } from '../components/FlatFill'; // flat fill: no gradients
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -23,10 +22,11 @@ import { resolveNestAccessTokenForWebView } from '../lib/platformNestAuth';
 import { humanizeError } from '../lib/humanizeError';
 import { Colors } from '../theme/yana';
 import { floatingHeaderInset } from '../constants/layout';
+import { useBottomBarSpace } from '../components/navigation/useBottomBarSpace';
 import { log } from '../lib/logger';
 import type { CoursesStackParamList } from '../navigation/CoursesStack';
-import { GreenPattern } from '../components/dashboard/DashboardBackground';
 import { useAppTheme } from '../context/AppThemeContext';
+import { CARD, CARD_SURFACE, INK, ThemedBackdrop, rgba } from '../components/theme/ThemedPage';
 
 async function nestAuthGet<T>(path: string): Promise<T> {
   const token = await resolveNestAccessTokenForWebView();
@@ -150,10 +150,21 @@ function formatPrice(c: CatalogCourse): {
 }
 
 function CourseMedia({ uri }: { uri?: string | null }) {
+  const { palette } = useAppTheme();
   if (uri) return <Image source={{ uri }} style={styles.thumb} />;
   return (
-    <View style={[styles.thumb, styles.thumbPh]}>
-      <Ionicons name="book-outline" size={26} color={Colors.primary} />
+    <View style={[styles.thumb, styles.thumbPh, { backgroundColor: rgba(palette.secondary, 0.16) }]}>
+      <Ionicons name="book-outline" size={26} color={palette.primary} />
+    </View>
+  );
+}
+
+/** Section heading in the dashboard style: a short accent bar before the label. */
+function SectionTitle({ label, accent, style }: { label: string; accent: string; style?: object }) {
+  return (
+    <View style={[styles.sectionRow, style]}>
+      <View style={[styles.sectionMarker, { backgroundColor: accent }]} />
+      <Text style={styles.section}>{label}</Text>
     </View>
   );
 }
@@ -217,6 +228,7 @@ function CertifierLabels({ entries }: { entries: CertifierEntry[] }) {
 
 export function CoursesScreen() {
   const insets = useSafeAreaInsets();
+  const bottomBarSpace = useBottomBarSpace();
   const navigation = useNavigation<NativeStackNavigationProp<CoursesStackParamList>>();
   const { palette } = useAppTheme();
   const [enrolled, setEnrolled] = useState<Enrolled[]>([]);
@@ -361,16 +373,11 @@ export function CoursesScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: palette.muted }]}>
-      <LinearGradient
-        colors={[palette.primary, palette.tertiary || palette.primary, palette.muted]}
-        locations={[0, 0.22, 0.48]}
-        style={StyleSheet.absoluteFill}
-      />
-      <GreenPattern style={{ height: headerPad + 120 }} darker />
+      <ThemedBackdrop />
       <FlatList
         data={loading ? ([{ id: '__sk1' }, { id: '__sk2' }, { id: '__sk3' }] as CatalogCourse[]) : browse}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={[styles.listContent, { paddingTop: headerPad }]}
+        contentContainerStyle={[styles.listContent, { paddingTop: headerPad, paddingBottom: bottomBarSpace + 16 }]}
         showsVerticalScrollIndicator={false}
         decelerationRate="normal"
         scrollEventThrottle={16}
@@ -391,7 +398,10 @@ export function CoursesScreen() {
         onEndReachedThreshold={0.35}
         ListHeaderComponent={
           <View>
-            <Text style={styles.h1}>Courses and eLearning</Text>
+            <View style={styles.titleRow}>
+              <View style={[styles.titleMarker, { backgroundColor: palette.secondary }]} />
+              <Text style={styles.h1}>Courses and eLearning</Text>
+            </View>
             <Text style={styles.sub}>Browse, enroll, learn, and get certificates — same as web.</Text>
             {error ? (
               <View style={styles.errBox}>
@@ -402,7 +412,7 @@ export function CoursesScreen() {
 
             {enrolled.length > 0 ? (
               <View style={{ marginBottom: 8 }}>
-                <Text style={styles.section}>Continue learning</Text>
+                <SectionTitle label="Continue learning" accent={palette.secondary} />
                 {enrolled.map((item) => {
                   const orgBrand = orgBrandByCourse[item.course_id] || null;
                   const school = orgBrand?.name?.trim() || offeringLabel(item);
@@ -416,7 +426,7 @@ export function CoursesScreen() {
                       <Text style={styles.cardTitleFull} numberOfLines={2}>
                         {item.title}
                       </Text>
-                      {!orgBrand?.name && school ? <Text style={styles.school}>{school}</Text> : null}
+                      {!orgBrand?.name && school ? <Text style={[styles.school, { color: palette.primary }]}>{school}</Text> : null}
                       <View style={styles.cardBodyRow}>
                         <CourseMedia uri={item.thumbnail_url} />
                         <View style={styles.cardBodyRight}>
@@ -425,11 +435,24 @@ export function CoursesScreen() {
                               {item.short_description}
                             </Text>
                           ) : null}
+                          <View style={[styles.progressTrack, { backgroundColor: rgba(palette.primary, 0.1) }]}>
+                            <View
+                              style={[
+                                styles.progressFill,
+                                {
+                                  backgroundColor: palette.secondary,
+                                  width: `${Math.max(2, Math.min(100, Math.round(Number(item.progress_percent || 0))))}%`,
+                                },
+                              ]}
+                            />
+                          </View>
                           <Text style={styles.meta}>
                             {Math.round(Number(item.progress_percent || 0))}% · Continue
                           </Text>
                         </View>
-                        <Ionicons name="play-circle" size={28} color={Colors.primary} style={styles.cardChevron} />
+                        <View style={[styles.playTile, { backgroundColor: palette.primary }]}>
+                          <Ionicons name="play" size={16} color={palette.secondary} />
+                        </View>
                       </View>
                     </Pressable>
                   );
@@ -464,15 +487,15 @@ export function CoursesScreen() {
                       setFilter(f.key);
                       setVisibleCount(20);
                     }}
-                    style={[styles.chip, on && styles.chipOn]}
+                    style={[styles.chip, on && { backgroundColor: palette.primary, borderColor: palette.primary }]}
                   >
-                    <Text style={[styles.chipText, on && styles.chipTextOn]}>{f.label}</Text>
+                    <Text style={[styles.chipText, on && { color: palette.secondary }]}>{f.label}</Text>
                   </Pressable>
                 );
               })}
             </View>
 
-            <Text style={[styles.section, { marginTop: 12 }]}>Browse</Text>
+            <SectionTitle label="Browse" accent={palette.secondary} style={{ marginTop: 12 }} />
           </View>
         }
         renderItem={({ item }) =>
@@ -500,7 +523,7 @@ export function CoursesScreen() {
                   <Text style={styles.cardTitleFull} numberOfLines={2}>
                     {item.title || 'Course'}
                   </Text>
-                  {!orgBrand?.name && school ? <Text style={styles.school}>{school}</Text> : null}
+                  {!orgBrand?.name && school ? <Text style={[styles.school, { color: palette.primary }]}>{school}</Text> : null}
                   <View style={styles.cardBodyRow}>
                     <CourseMedia uri={item.thumbnail_url} />
                     <View style={styles.cardBodyRight}>
@@ -513,8 +536,8 @@ export function CoursesScreen() {
                         <Text style={styles.price}>{pricing.label}</Text>
                         {pricing.strike ? <Text style={styles.strike}>{pricing.strike}</Text> : null}
                         {pricing.discount ? (
-                          <View style={styles.discountBadge}>
-                            <Text style={styles.discountText}>{pricing.discount}</Text>
+                          <View style={[styles.discountBadge, { backgroundColor: rgba(palette.secondary, 0.18) }]}>
+                            <Text style={[styles.discountText, { color: palette.primary }]}>{pricing.discount}</Text>
                           </View>
                         ) : null}
                         {item.is_certified ? <Text style={styles.certified}> · Certified</Text> : null}
@@ -559,22 +582,34 @@ export function CoursesScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.background },
   listContent: { paddingBottom: 100, paddingHorizontal: 16 },
-  h1: { fontSize: 28, fontWeight: '700', color: '#fff', marginBottom: 4 },
-  sub: { color: 'rgba(255,255,255,0.75)', marginBottom: 16, fontSize: 14 },
-  section: { fontSize: 16, fontWeight: '700', color: Colors.foreground, marginBottom: 10, marginTop: 8 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4, marginTop: 4 },
+  titleMarker: { width: 4, height: 22, borderRadius: 2, marginRight: 10 },
+  h1: { fontSize: 24, fontFamily: 'Roboto_700Bold', color: INK, flexShrink: 1 },
+  sub: { color: Colors.mutedForeground, marginBottom: 16, fontSize: 14, marginLeft: 14 },
+  sectionRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6, marginTop: 8 },
+  sectionMarker: { width: 3, height: 14, borderRadius: 2, marginRight: 8 },
+  section: { fontSize: 16, fontFamily: 'Roboto_700Bold', color: INK },
+  playTile: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+  },
+  progressTrack: { height: 6, borderRadius: 3, overflow: 'hidden', marginTop: 6 },
+  progressFill: { height: 6, borderRadius: 3 },
   empty: { color: Colors.mutedForeground, marginBottom: 12, fontSize: 14 },
   muted: { color: Colors.mutedForeground },
   searchWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#fff',
+    ...CARD_SURFACE,
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
     marginBottom: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Colors.border,
   },
   searchInput: { flex: 1, fontSize: 15, color: Colors.foreground, padding: 0 },
   filters: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 4 },
@@ -582,25 +617,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.85)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Colors.border,
+    backgroundColor: 'rgba(255,255,255,0.94)',
+    borderWidth: 1,
+    borderColor: CARD.border,
   },
-  chipOn: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  chipText: { fontSize: 13, fontWeight: '600', color: Colors.foreground },
-  chipTextOn: { color: '#fff' },
+  chipText: { fontSize: 13, fontFamily: 'Inter_600SemiBold', color: INK },
   cardLarge: {
     flexDirection: 'column',
-    backgroundColor: '#fff',
-    borderRadius: 18,
-    padding: 16,
-    marginBottom: 14,
-    marginTop: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Colors.border,
+    ...CARD_SURFACE,
+    padding: CARD.padding,
+    marginBottom: 12,
+    marginTop: 6,
     gap: 8,
   },
-  cardTitleFull: { fontSize: 17, fontWeight: '700', color: Colors.foreground, lineHeight: 22 },
+  cardTitleFull: { fontSize: 16, fontFamily: 'Roboto_700Bold', color: INK, lineHeight: 21 },
   cardBodyRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -634,8 +664,8 @@ const styles = StyleSheet.create({
     gap: 10,
     alignSelf: 'flex-start',
     backgroundColor: Colors.primaryLight,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Colors.border,
+    borderWidth: 1,
+    borderColor: CARD.border,
     borderRadius: 14,
     paddingHorizontal: 10,
     paddingVertical: 8,

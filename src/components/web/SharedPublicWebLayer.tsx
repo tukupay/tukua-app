@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import { WebView, WebViewNavigation } from 'react-native-webview';
 import { useAuth } from '../../context/AuthContext';
 import { useAboutWeb } from '../../context/AboutWebContext';
@@ -15,6 +15,7 @@ import { log } from '../../lib/logger';
 import { getWebViewMediaProps, WEBVIEW_MEDIA_INJECT_JS } from '../../lib/webViewMedia';
 import { isAppWebHost } from '../../lib/localHost';
 import { Colors } from '../../theme/yana';
+import { Loader } from '../../components/ui/Loader';
 
 const TOP_BAR_HEIGHT = 56;
 
@@ -102,7 +103,7 @@ export function SharedPublicWebLayer() {
       collapsable={false}>
       {loading && visible && (
         <View style={styles.loaderOverlay} pointerEvents="none">
-          <ActivityIndicator size="large" color={Colors.primary} />
+          <Loader />
         </View>
       )}
       <WebView

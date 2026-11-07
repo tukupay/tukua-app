@@ -28,6 +28,8 @@ import { resolveNestAccessTokenForWebView } from '../lib/platformNestAuth';
 import { useDeskAuth } from '../context/DeskAuthContext';
 import { useTokenGate } from '../context/TokenGateContext';
 import { useAppTheme } from '../context/AppThemeContext';
+import { INK, ThemedBackdrop } from '../components/theme/ThemedPage';
+import { floatingTabBarSpace } from '../components/navigation/FloatingTabBar';
 import { Colors } from '../theme/yana';
 import {
   CONTENT_CONTROLS_BAR_H,
@@ -44,6 +46,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NavigationProp } from '@react-navigation/native';
 import type { MainTabParamList } from '../navigation/types';
 import type { CoursesStackParamList } from '../navigation/CoursesStack';
+import { Loader } from '../components/ui/Loader';
 
 type FeedItem = {
   id: string;
@@ -324,7 +327,9 @@ export function ContentScreen() {
     safeBottom: insets.bottom,
     isDesktopWeb,
   });
-  const { frameW, headerClearance, shortUnderNav, topPad, bottomClear } = chrome;
+  const { frameW, headerClearance, shortUnderNav, topPad } = chrome;
+  // The floating tab bar floats over the page: keep the feed frame above it.
+  const bottomClear = isDesktopWeb ? chrome.bottomClear : Math.max(chrome.bottomClear, floatingTabBarSpace(insets.bottom));
   const itemH = listH > 0 ? listH : 560;
 
   const openUnit = useCallback(
@@ -521,8 +526,9 @@ export function ContentScreen() {
 
   if (loading && !items.length) {
     return (
-      <View style={[styles.center, { backgroundColor: '#0a0a0a', paddingTop: headerClearance }]}>
-        <ActivityIndicator color={palette.primary} size="large" />
+      <View style={[styles.center, { backgroundColor: palette.muted, paddingTop: headerClearance }]}>
+        <ThemedBackdrop />
+        <Loader />
         <Text style={styles.hint}>Loading content…</Text>
       </View>
     );
@@ -530,7 +536,8 @@ export function ContentScreen() {
 
   if (error && !items.length) {
     return (
-      <View style={[styles.center, { backgroundColor: '#0a0a0a', paddingTop: headerClearance }]}>
+      <View style={[styles.center, { backgroundColor: palette.muted, paddingTop: headerClearance }]}>
+        <ThemedBackdrop />
         <Text style={styles.err}>{error}</Text>
         <Text style={styles.hint} onPress={() => void loadPage(null, false)}>
           Tap to retry
@@ -541,7 +548,8 @@ export function ContentScreen() {
 
   if (!items.length) {
     return (
-      <View style={[styles.center, { backgroundColor: '#0a0a0a', paddingTop: headerClearance }]}>
+      <View style={[styles.center, { backgroundColor: palette.muted, paddingTop: headerClearance }]}>
+        <ThemedBackdrop />
         <Text style={styles.emptyTitle}>No videos for this level yet</Text>
         <Text style={styles.hint}>
           {persona === 'parent' && levelLabel
@@ -851,9 +859,9 @@ export function ContentScreen() {
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 10 },
-  hint: { color: '#aaa', fontSize: 13, textAlign: 'center' },
-  err: { color: '#f87171', fontSize: 14, textAlign: 'center' },
-  emptyTitle: { color: '#fff', fontSize: 18, fontWeight: '700', textAlign: 'center' },
+  hint: { color: Colors.mutedForeground, fontSize: 13, textAlign: 'center' },
+  err: { color: '#B91C1C', fontSize: 14, textAlign: 'center' },
+  emptyTitle: { color: INK, fontSize: 18, fontFamily: 'Roboto_700Bold', textAlign: 'center' },
   phoneFrame: { backgroundColor: '#000', maxWidth: PHONE_FRAME_MAX, flexDirection: 'column' },
   titleBand: {
     width: '100%',

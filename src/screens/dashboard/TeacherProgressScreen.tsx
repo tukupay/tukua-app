@@ -3,7 +3,6 @@
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -14,7 +13,7 @@ import {
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
+import { ThemedBackdrop } from '../../components/theme/ThemedPage';
 import {
   ModuleBackBar,
   ModuleEmpty,
@@ -27,6 +26,7 @@ import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
 import { log } from '../../lib/logger';
 import { fetchMarksEntryStatus, fetchTeacherExams, type DeskExam } from '../../lib/teacherPortalApi';
+import { Loader } from '../../components/ui/Loader';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'TeacherProgress'>;
 
@@ -94,7 +94,7 @@ export function TeacherProgressScreen({ navigation }: Props) {
 
   return (
     <View style={styles.root}>
-      <DashboardBackground patternOnly liquid />
+      <ThemedBackdrop />
       <ScrollView
         contentContainerStyle={{
           paddingTop: floatingHeaderInset(insets.top),
@@ -119,7 +119,7 @@ export function TeacherProgressScreen({ navigation }: Props) {
         />
 
         {loading ? (
-          <ActivityIndicator color={Colors.primary} style={{ marginTop: 40 }} />
+          <Loader />
         ) : error ? (
           <ModuleEmpty title="Couldn't load progress" body={error} onRetry={() => void load()} />
         ) : rows.length === 0 ? (

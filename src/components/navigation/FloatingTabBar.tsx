@@ -140,7 +140,7 @@ export function FloatingTabBar({ state, descriptors, navigation, insets }: Botto
             });
             if (!focused && !event.defaultPrevented) {
               navigation.dispatch({
-                ...CommonActions.navigate(route),
+                ...CommonActions.navigate(route.name, route.params),
                 target: state.key,
               });
             }

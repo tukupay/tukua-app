@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
+import { ThemedBackdrop } from '../../components/theme/ThemedPage';
 import { ModuleBackBar, ModuleEmpty, ModuleGlassCard, ModuleKicker, ModuleScreenHeader } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import { DashboardStackParamList } from '../../navigation/types';
@@ -19,6 +19,7 @@ import { Colors } from '../../theme/yana';
 import { log } from '../../lib/logger';
 import { fetchAdminParents, type AdminParentRow } from '../../lib/adminPortalApi';
 import { isDeskWebModuleAvailable } from '../../lib/localHost';
+import { Loader } from '../../components/ui/Loader';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'AdminParents'>;
 
@@ -86,7 +87,7 @@ export function AdminParentsScreen({ navigation }: Props) {
 
   return (
     <View style={styles.root}>
-      <DashboardBackground patternOnly liquid />
+      <ThemedBackdrop />
       <ScrollView
         contentContainerStyle={[
           styles.content,
@@ -129,7 +130,7 @@ export function AdminParentsScreen({ navigation }: Props) {
 
         {loading ? (
           <View style={styles.loader}>
-            <ActivityIndicator color={Colors.brandGreenMid} />
+            <Loader />
           </View>
         ) : error ? (
           <ModuleEmpty title="Couldn't load parents" body={error} onRetry={() => void load()} />

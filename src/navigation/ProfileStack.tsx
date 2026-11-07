@@ -1,7 +1,5 @@
 import React from 'react';
-import { StyleSheet, TouchableOpacity } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { Ionicons } from '@expo/vector-icons';
 import {
   BalancesScreen,
   DeleteAccountScreen,
@@ -14,8 +12,8 @@ import {
   ProfileHomeScreen,
   ThemesScreen,
 } from '../screens/profile/ProfileScreens';
-import { Colors } from '../theme/yana';
 import { useAppTheme } from '../context/AppThemeContext';
+import { AppTopBar } from '../components/navigation/AppTopBar';
 
 export type ProfileStackParamList = {
   ProfileHome: undefined;
@@ -37,26 +35,23 @@ export function ProfileStack() {
   const { palette } = useAppTheme();
   return (
     <Stack.Navigator
-      screenOptions={({ navigation }) => ({
+      screenOptions={{
         animation: 'fade_from_bottom',
         animationDuration: 220,
-        headerStyle: { backgroundColor: Colors.white },
-        headerTintColor: Colors.foreground,
-        headerTitleStyle: { fontWeight: '700', fontSize: 17 },
-        headerShadowVisible: false,
+        // The app's own top bar (same green, pattern and curve as NativeAppHeader), taking its height in
+        // layout. The floating app header stays on top, so the back + title row sits right under it.
+        header: ({ navigation, route, options, back }) => (
+          <AppTopBar
+            variant="stack"
+            underAppHeader
+            title={typeof options.title === 'string' ? options.title : route.name}
+            // Opened straight from the app menu (no screen under it): back goes to the profile hub.
+            onBack={() => (back ? navigation.goBack() : navigation.navigate('ProfileHome'))}
+            pageColor={palette.muted}
+          />
+        ),
         contentStyle: { backgroundColor: palette.muted },
-        headerLeft: navigation.canGoBack()
-          ? () => (
-              <TouchableOpacity
-                onPress={() => navigation.goBack()}
-                hitSlop={10}
-                style={styles.back}
-              >
-                <Ionicons name="chevron-back" size={24} color={palette.primary} />
-              </TouchableOpacity>
-            )
-          : undefined,
-      })}
+      }}
     >
       <Stack.Screen name="ProfileHome" component={ProfileHomeScreen} options={{ headerShown: false }} />
       <Stack.Screen name="ProfileEdit" component={ProfileEditScreen} options={{ title: 'Edit profile' }} />
@@ -71,7 +66,3 @@ export function ProfileStack() {
     </Stack.Navigator>
   );
 }
-
-const styles = StyleSheet.create({
-  back: { marginLeft: 4, padding: 4 },
-});

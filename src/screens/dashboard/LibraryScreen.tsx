@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -9,7 +8,7 @@ import {
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
+import { ThemedBackdrop } from '../../components/theme/ThemedPage';
 import { ModuleTabPager } from '../../components/dashboard/ModuleTabPager';
 import { ModuleBackBar, ModuleScreenHeader, ModuleEmpty, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
@@ -18,6 +17,7 @@ import { fetchParentLibraryStatement, seedParentDemoData } from '../../lib/paren
 import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
 import { log } from '../../lib/logger';
+import { Loader } from '../../components/ui/Loader';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'Library'>;
 
@@ -147,7 +147,7 @@ export function LibraryScreen({ navigation }: Props) {
 
   return (
     <View style={styles.root}>
-      <DashboardBackground patternOnly liquid />
+      <ThemedBackdrop />
       <ScrollView
         contentContainerStyle={[
           styles.content,
@@ -183,7 +183,7 @@ export function LibraryScreen({ navigation }: Props) {
           minHeight={240}
           renderPage={(key) => {
             if (loading) {
-              return <ActivityIndicator color={Colors.brandGreenMid} style={{ marginTop: 24 }} />;
+              return <Loader />;
             }
             if (error) {
               return <ModuleEmpty title="Could not load library" body={error} onRetry={() => void load()} />;

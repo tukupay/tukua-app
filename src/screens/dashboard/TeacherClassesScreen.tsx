@@ -2,8 +2,6 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
 
-  ActivityIndicator,
-
   Pressable,
 
   RefreshControl,
@@ -24,7 +22,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Ionicons } from '@expo/vector-icons';
 
-import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
+import { ThemedBackdrop } from '../../components/theme/ThemedPage';
 
 import { ModuleBackBar, ModuleEmpty, ModuleGlassCard, ModuleKicker, ModuleScreenHeader } from './ModuleChrome';
 
@@ -40,6 +38,7 @@ import { log } from '../../lib/logger';
 
 import { fetchClassEnrollments, fetchMyTeacherWorkloads, type TeacherWorkload } from '../../lib/teacherPortalApi';
 import { isDeskWebModuleAvailable } from '../../lib/localHost';
+import { Loader } from '../../components/ui/Loader';
 
 
 
@@ -236,7 +235,7 @@ export function TeacherClassesScreen({ navigation }: Props) {
 
     <View style={styles.root}>
 
-      <DashboardBackground patternOnly liquid />
+      <ThemedBackdrop />
 
       <ScrollView
 
@@ -294,7 +293,7 @@ export function TeacherClassesScreen({ navigation }: Props) {
 
           <View style={styles.loader}>
 
-            <ActivityIndicator color={Colors.brandGreenMid} />
+            <Loader />
 
           </View>
 

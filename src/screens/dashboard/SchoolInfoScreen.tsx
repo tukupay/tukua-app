@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   Image,
   Linking,
   Pressable,
@@ -12,7 +11,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
+import { ThemedBackdrop } from '../../components/theme/ThemedPage';
 import { GlassPanel } from '../../components/dashboard/Glass';
 import { ModuleBackBar, ModuleEmpty, ModuleKicker, ModuleScreenHeader } from './ModuleChrome';
 import { useDeskAuth } from '../../context/DeskAuthContext';
@@ -21,6 +20,7 @@ import { deskFetch } from '../../lib/deskApi';
 import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
 import { log } from '../../lib/logger';
+import { Loader } from '../../components/ui/Loader';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'SchoolInfo'>;
 
@@ -237,7 +237,7 @@ export function SchoolInfoScreen({ navigation }: Props) {
 
   return (
     <View style={styles.root}>
-      <DashboardBackground patternOnly liquid />
+      <ThemedBackdrop />
       <ScrollView
         contentContainerStyle={[
           styles.content,
@@ -252,7 +252,7 @@ export function SchoolInfoScreen({ navigation }: Props) {
         <ModuleScreenHeader title="About your school" description="Contact, location and school details." />
 
         {loading ? (
-          <ActivityIndicator color={Colors.brandGreenMid} style={{ marginTop: 28 }} />
+          <Loader />
         ) : error ? (
           <ModuleEmpty title="Couldn’t load school" body={error} onRetry={() => void load()} />
         ) : school ? (

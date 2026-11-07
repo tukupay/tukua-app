@@ -1,6 +1,6 @@
 import { getNestApiBaseUrl } from './localHost';
 
-import { resolveNestAccessTokenForWebView } from './platformNestAuth';
+import { fetchWithPlatformAuth, resolveNestAccessTokenForWebView } from './platformNestAuth';
 
 
 
@@ -182,7 +182,7 @@ async function nestPlatformFetch<T>(
 
 
 
-  const response = await fetch(url, {
+  const response = await fetchWithPlatformAuth(url, {
 
     method: opts.method ?? 'GET',
 

@@ -3,7 +3,6 @@
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -13,7 +12,7 @@ import {
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
+import { ThemedBackdrop } from '../../components/theme/ThemedPage';
 import {
   ModuleBackBar,
   ModuleEmpty,
@@ -28,6 +27,7 @@ import { Colors } from '../../theme/yana';
 import { log } from '../../lib/logger';
 import { fetchTeacherTimetable } from '../../lib/teacherPortalApi';
 import { deskFetch } from '../../lib/deskApi';
+import { Loader } from '../../components/ui/Loader';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'TeacherTimetable'>;
 
@@ -155,7 +155,7 @@ export function TeacherTimetableScreen({ navigation }: Props) {
 
   return (
     <View style={styles.root}>
-      <DashboardBackground patternOnly liquid />
+      <ThemedBackdrop />
       <ScrollView
         contentContainerStyle={{
           paddingTop: floatingHeaderInset(insets.top),
@@ -210,7 +210,7 @@ export function TeacherTimetableScreen({ navigation }: Props) {
         ) : null}
 
         {loading ? (
-          <ActivityIndicator color={Colors.primary} style={{ marginTop: 40 }} />
+          <Loader />
         ) : error ? (
           <ModuleEmpty title="Couldn't load timetable" body={error} onRetry={() => void load()} />
         ) : visible.length === 0 ? (

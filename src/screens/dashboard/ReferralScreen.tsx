@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   Linking,
   Pressable,
   RefreshControl,
@@ -16,7 +15,7 @@ import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from '../../components/FlatFill'; // flat fill: no gradients
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
+import { ThemedBackdrop } from '../../components/theme/ThemedPage';
 import { ModuleBackBar, ModuleEmpty, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import { DashboardStackParamList } from '../../navigation/types';
@@ -31,6 +30,7 @@ import {
   type MyReferrals,
   type ReferralCourse,
 } from '../../lib/referralApi';
+import { Loader } from '../../components/ui/Loader';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'Referral'>;
 type Tab = 'refer' | 'courses' | 'earnings';
@@ -95,7 +95,7 @@ export function ReferralScreen({ navigation }: Props) {
 
   return (
     <View style={styles.root}>
-      <DashboardBackground patternOnly liquid />
+      <ThemedBackdrop />
       <ScrollView
         contentContainerStyle={[styles.content, { paddingTop: floatingHeaderInset(insets.top), paddingBottom: moduleScrollBottomPad(insets.bottom) }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); void load(); }} tintColor={Colors.brandGreenMid} />}
@@ -119,7 +119,7 @@ export function ReferralScreen({ navigation }: Props) {
         {error && !data ? (
           <ModuleEmpty title="Couldn't load refer & earn" body={error} onRetry={() => void load()} />
         ) : !data ? (
-          <View style={styles.loader}><ActivityIndicator color={Colors.brandGreenMid} /></View>
+          <View style={styles.loader}><Loader /></View>
         ) : tab === 'refer' ? (
           <>
             <LinearGradient colors={['#065F46', '#0F766E']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.hero}>
@@ -192,7 +192,7 @@ export function ReferralScreen({ navigation }: Props) {
             </ModuleGlassCard>
             <TextInput style={styles.search} placeholder="Find a course" placeholderTextColor={Colors.mutedForeground} value={q} onChangeText={setQ} />
             {!courses ? (
-              <View style={styles.loader}><ActivityIndicator color={Colors.brandGreenMid} /></View>
+              <View style={styles.loader}><Loader /></View>
             ) : shownCourses.length === 0 ? (
               <ModuleEmpty title="No course found" body={courses.length ? 'No course matches that.' : 'There are no paid courses to share yet.'} />
             ) : (

@@ -15,7 +15,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useIsFocused } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
+import { ThemedBackdrop } from '../../components/theme/ThemedPage';
 import { ModuleTabPager } from '../../components/dashboard/ModuleTabPager';
 import { PaymentProcessCard } from '../../components/dashboard/PaymentProcessCard';
 import { ModuleBackBar, ModuleEmpty, ModuleGlassCard, ModuleKicker, ModuleScreenHeader } from './ModuleChrome';
@@ -38,6 +38,7 @@ import { GateDirection } from '../../lib/gateScanDirection';
 import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
 import { log } from '../../lib/logger';
+import { Loader } from '../../components/ui/Loader';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'Events'>;
 
@@ -285,7 +286,7 @@ export function EventsScreen({ navigation }: Props) {
 
   return (
     <View style={styles.root}>
-      <DashboardBackground patternOnly liquid />
+      <ThemedBackdrop />
       <ScrollView
         contentContainerStyle={[
           styles.content,
@@ -504,7 +505,7 @@ export function EventsScreen({ navigation }: Props) {
 
         {key !== 'scan' && loading ? (
           <View style={styles.loader}>
-            <ActivityIndicator color={Colors.brandGreenMid} />
+            <Loader />
           </View>
         ) : key !== 'scan' && error ? (
           <ModuleEmpty

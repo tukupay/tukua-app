@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,6 +10,7 @@ import { floatingHeaderInset } from '../../constants/layout';
 import { getWebViewMediaProps, WEBVIEW_MEDIA_INJECT_JS } from '../../lib/webViewMedia';
 import { heartbeatMeeting, leaveMeeting } from '../../lib/meetingsApi';
 import { log } from '../../lib/logger';
+import { Loader } from '../../components/ui/Loader';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'MeetingRoom'>;
 
@@ -62,7 +63,7 @@ export function MeetingRoomScreen({ route, navigation }: Props) {
       </View>
       {loading ? (
         <View style={styles.loader}>
-          <ActivityIndicator color={Colors.primary} />
+          <Loader />
           <Text style={styles.loaderText}>Opening Tukua Meet…</Text>
         </View>
       ) : null}

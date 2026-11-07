@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -11,7 +10,8 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from '../../components/FlatFill'; // flat fill: no gradients
-import { DashboardBackground, GreenPattern } from '../../components/dashboard/DashboardBackground';
+import { GreenPattern } from '../../components/dashboard/DashboardBackground';
+import { ThemedBackdrop } from '../../components/theme/ThemedPage';
 import { GlassPanel } from '../../components/dashboard/Glass';
 import { ModuleBackBar, ModuleScreenHeader, ModuleEmpty, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
@@ -24,6 +24,7 @@ import {
 import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
 import { log } from '../../lib/logger';
+import { Loader } from '../../components/ui/Loader';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'Attendance'>;
 
@@ -96,7 +97,7 @@ export function AttendanceScreen({ navigation }: Props) {
 
   return (
     <View style={styles.root}>
-      <DashboardBackground patternOnly liquid />
+      <ThemedBackdrop />
       <ScrollView
         contentContainerStyle={[
           styles.content,
@@ -126,7 +127,7 @@ export function AttendanceScreen({ navigation }: Props) {
         </Text>
 
         {loading ? (
-          <ActivityIndicator color={Colors.brandGreenMid} style={{ marginTop: 24 }} />
+          <Loader />
         ) : error ? (
           <ModuleEmpty title="Could not load attendance" body={error} onRetry={() => void load()} />
         ) : (

@@ -138,10 +138,15 @@ export function MenuItem({
 }
 
 /** The gold contact chip of a bank card, drawn flat (tinted with the theme's accent). */
-export function CardChip({ color }: { color: string }) {
+export function CardChip({ color, scale = 1 }: { color: string; scale?: number }) {
   const line = 'rgba(60,40,0,0.35)';
+  // Scaled down in place; negative margins give back the space the full-size chip would take.
+  const s =
+    scale === 1
+      ? null
+      : { transform: [{ scale }], marginHorizontal: -(38 * (1 - scale)) / 2, marginVertical: -(28 * (1 - scale)) / 2 };
   return (
-    <View style={[styles.chip, { backgroundColor: color }]}>
+    <View style={[styles.chip, { backgroundColor: color }, s]}>
       <View style={[styles.chipV, { borderColor: line }]} />
       <View style={[styles.chipH, { borderColor: line }]} />
     </View>

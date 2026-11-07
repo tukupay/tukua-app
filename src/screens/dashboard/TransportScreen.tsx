@@ -15,7 +15,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
+import { ThemedBackdrop } from '../../components/theme/ThemedPage';
 import { ModuleTabPager } from '../../components/dashboard/ModuleTabPager';
 import { ModuleBackBar, ModuleScreenHeader, ModuleEmpty, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
@@ -39,6 +39,7 @@ import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
 import { log } from '../../lib/logger';
 import { fleetMapHtml, pinMapHtml } from '../../lib/fleetMap';
+import { Loader } from '../../components/ui/Loader';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'Transport'>;
 
@@ -365,7 +366,7 @@ export function TransportScreen({ navigation }: Props) {
 
   return (
     <View style={styles.root}>
-      <DashboardBackground patternOnly liquid />
+      <ThemedBackdrop />
       <ScrollView
         contentContainerStyle={[
           styles.content,
@@ -395,7 +396,7 @@ export function TransportScreen({ navigation }: Props) {
         </Text>
 
         {loading ? (
-          <ActivityIndicator color={Colors.brandGreenMid} style={{ marginTop: 24 }} />
+          <Loader />
         ) : error && !trips.length ? (
           <ModuleEmpty title="Could not load transport" body={error} onRetry={() => void load()} />
         ) : (

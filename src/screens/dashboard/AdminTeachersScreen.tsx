@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
+import { ThemedBackdrop } from '../../components/theme/ThemedPage';
 import { ModuleBackBar, ModuleEmpty, ModuleGlassCard, ModuleKicker, ModuleScreenHeader } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import { DashboardStackParamList } from '../../navigation/types';
@@ -19,6 +19,7 @@ import { Colors } from '../../theme/yana';
 import { log } from '../../lib/logger';
 import { fetchAdminTeachers, type AdminTeacherRow } from '../../lib/adminPortalApi';
 import { isDeskWebModuleAvailable } from '../../lib/localHost';
+import { Loader } from '../../components/ui/Loader';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'AdminTeachers'>;
 
@@ -88,7 +89,7 @@ export function AdminTeachersScreen({ navigation }: Props) {
 
   return (
     <View style={styles.root}>
-      <DashboardBackground patternOnly liquid />
+      <ThemedBackdrop />
       <ScrollView
         contentContainerStyle={[
           styles.content,
@@ -150,7 +151,7 @@ export function AdminTeachersScreen({ navigation }: Props) {
         />
 
         {loading ? (
-          <ActivityIndicator color={Colors.brandGreenMid} style={styles.loader} />
+          <Loader />
         ) : error ? (
           <ModuleEmpty title="Couldn't load teachers" body={error} onRetry={() => void load()} />
         ) : teachers.length === 0 ? (

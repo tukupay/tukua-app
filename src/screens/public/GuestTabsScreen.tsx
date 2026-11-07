@@ -14,6 +14,7 @@ import { BookPager } from '../../components/BookPager';
 import { AuthButton } from '../../components/auth/AuthButton';
 import { TopWave, TukuaPatternLayer, topWaveHeight } from '../../components/auth/TopWave';
 import { useAuthScale } from '../../components/auth/useAuthScale';
+import { useKeyboardState } from '../../components/auth/KeyboardAwareScroll';
 import { LoginScreen } from '../LoginScreen';
 import { PayFeesScreen } from './PayFeesScreen';
 import { Colors } from '../../theme/yana';
@@ -40,6 +41,8 @@ export function GuestTabsScreen() {
   const route = useRoute<RouteProp<{ Guest: GuestTabsParams }, 'Guest'>>();
   const asked = route.params?.tab;
   const [tab, setTab] = useState(() => tabIndex(asked));
+  // The floating bar would sit over the fields while typing: it steps aside while the keyboard is up.
+  const keyboard = useKeyboardState();
 
   // A link opened while the front door is up switches the tab.
   useEffect(() => {
@@ -64,7 +67,7 @@ export function GuestTabsScreen() {
           )
         }
       />
-      <FloatingTabs tab={tab} onTab={setTab} />
+      {keyboard.visible ? null : <FloatingTabs tab={tab} onTab={setTab} />}
     </View>
   );
 }

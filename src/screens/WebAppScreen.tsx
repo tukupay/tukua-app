@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   BackHandler,
+  Keyboard,
   Platform,
   StyleSheet,
   Text,
@@ -15,7 +16,8 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { hideSystemStatusBar } from '../components/ImmersiveSystemBars';
 import { Colors, TukuaWeb } from '../theme/yana';
-import { TAB_BAR_BODY_HEIGHT, floatingHeaderInset } from '../constants/layout';
+import { floatingHeaderInset } from '../constants/layout';
+import { floatingTabBarSpace } from '../components/navigation/FloatingTabBar';
 import {
   buildFastTabNavigateScript,
   buildMobileChatTabBarStylesScript,
@@ -239,20 +241,41 @@ export function WebAppScreen({ path, label }: Props) {
   const chatMode = isChatPath(path);
   const webOnlyTab = path === '/courses' || path === '/profile';
   const loadingLabel = (label ?? path.replace('/', '')) || 'page';
-  const tabBarInsetPx = TAB_BAR_BODY_HEIGHT + insets.bottom;
+  /**
+   * Android: the floating tab bar steps aside while the keyboard is open (the window resizes), so the page's
+   * bottom bars (chat composer, course action bar) should then sit flush above the keyboard instead.
+   */
+  const [androidKeyboardOpen, setAndroidKeyboardOpen] = useState(false);
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const show = Keyboard.addListener('keyboardDidShow', () => setAndroidKeyboardOpen(true));
+    const hide = Keyboard.addListener('keyboardDidHide', () => setAndroidKeyboardOpen(false));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+  /** Room the floating bottom tab bar takes over the page (bar + margin + safe-area inset). */
+  const tabBarInsetPx = androidKeyboardOpen ? 0 : floatingTabBarSpace(insets.bottom);
   /** Native top pad clears floating header; keep it light so the fade stays transparent. */
   const webTopClearance = Platform.OS === 'web' ? 0 : floatingHeaderInset(insets.top);
 
   const injectChatComposerInsets = useCallback(() => {
     if (Platform.OS === 'web' || !webRef.current) return;
-    // top=0: WebView is already padded below the floating nav
-    // --tukua-native-tab-bar: lets fixed bottom bars on web pages (course action bar) sit above the native tab bar.
-    const tabBarPx = Math.max(48, Math.round(tabBarInsetPx));
+    // top=0: WebView is already padded below the floating nav.
+    // --tukua-native-tab-bar: the real floating-bar room (0 while the Android keyboard is open). The chat
+    // composer and the course action bar sit on it; the legacy style block keeps older web builds clear of the bar.
+    const tabBarPx = Math.max(0, Math.round(tabBarInsetPx));
     webRef.current.injectJavaScript(
-      `${buildMobileChatTabBarStylesScript(tabBarInsetPx, 0)}\n` +
+      `${buildMobileChatTabBarStylesScript(tabBarPx, 0)}\n` +
         `try{document.documentElement.style.setProperty('--tukua-native-tab-bar','${tabBarPx}px')}catch(e){}\ntrue;`,
     );
   }, [tabBarInsetPx]);
+
+  // Keep the page in step when the keyboard opens/closes or the safe-area inset changes.
+  useEffect(() => {
+    injectChatComposerInsets();
+  }, [injectChatComposerInsets]);
 
   const sessionInjectKey = session ? `${session.user.id}:${session.access_token}:${nestTok || ''}` : null;
   const preInject = useMemo(() => {

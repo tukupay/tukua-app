@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Platform, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { useIsFocused } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import * as NavigationBar from 'expo-navigation-bar';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -88,6 +89,37 @@ function BiometricGate({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** How long after the Dashboard first renders before the AI chat WebView starts loading in the background. */
+const CHAT_PRELOAD_DELAY_MS = 900;
+
+/**
+ * AI tab: mounted in the background shortly after the Dashboard (the default tab) has rendered, so the
+ * chat WebView has already loaded and signed in by the time the user taps AI. Mounts at once if opened first.
+ */
+function ChatTabScreen() {
+  const focused = useIsFocused();
+  const [mounted, setMounted] = useState(focused);
+
+  useEffect(() => {
+    if (mounted) return;
+    if (focused) {
+      setMounted(true);
+      return;
+    }
+    // A short delay lets the Dashboard paint first (InteractionManager is deprecated in this RN).
+    const timer = setTimeout(() => setMounted(true), CHAT_PRELOAD_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [focused, mounted]);
+
+  if (!mounted) return <View style={styles.chatPlaceholder} />;
+  return (
+    <>
+      <WebViewTabBridge />
+      <WebAppScreen path="/chat" label="AI" />
+    </>
+  );
+}
+
 function MainTabNavigator({
   onTabChange,
 }: {
@@ -110,6 +142,11 @@ function MainTabNavigator({
     [guardTab],
   );
 
+  // Dashboard is the first tab: the shared web-tab state starts on '/chat', so point it at the dashboard.
+  useEffect(() => {
+    setActiveTabPath('/dashboard');
+  }, [setActiveTabPath]);
+
   useEffect(() => {
     hideSystemStatusBar();
     if (Platform.OS !== 'android') return;
@@ -127,7 +164,7 @@ function MainTabNavigator({
 
   return (
     <Tab.Navigator
-      initialRouteName="Chat"
+      initialRouteName="Dashboard"
       tabBar={(p) => <FloatingTabBar {...p} />}
       screenListeners={{
         state: (e) => {
@@ -140,10 +177,14 @@ function MainTabNavigator({
           if (webPath) {
             setActiveTabPath(webPath);
             notifyTabFocused(webPath);
+          } else {
+            // Native tabs (Dashboard, Content): clear the web tab so chat-only header controls hide.
+            setActiveTabPath(`/${String(route).toLowerCase()}`);
           }
         },
       }}
       screenOptions={({ route }) => ({
+        // Chat preloads itself in the background (ChatTabScreen); the other web tabs load on first open.
         lazy: route.name !== 'Chat',
         unmountOnBlur: false,
         headerShown: false,
@@ -182,18 +223,12 @@ function MainTabNavigator({
           return <Ionicons name={icons[route.name] ?? 'ellipse'} size={size} color={color} />;
         },
       })}>
-      <Tab.Screen name="Chat" options={{ title: 'AI' }} listeners={tabPressGuard('Chat')}>
-        {() => (
-          <>
-            <WebViewTabBridge />
-            <WebAppScreen path="/chat" label="AI" />
-          </>
-        )}
-      </Tab.Screen>
+      {/* Dashboard first and default; AI second (preloaded in the background), then Courses & Exams. */}
+      <Tab.Screen name="Dashboard" options={{ title: 'Dashboard' }} component={DashboardStack} listeners={tabPressGuard('Dashboard')} />
+      <Tab.Screen name="Chat" options={{ title: 'AI' }} component={ChatTabScreen} listeners={tabPressGuard('Chat')} />
       {/* Tukua Connect parked for next release — tab hidden */}
       <Tab.Screen name="Courses" options={{ title: 'Courses & Exams' }} component={CoursesStack} listeners={tabPressGuard('Courses')} />
       <Tab.Screen name="Content" options={{ title: 'Content' }} component={ContentScreen} listeners={tabPressGuard('Content')} />
-      <Tab.Screen name="Dashboard" options={{ title: 'Dashboard' }} component={DashboardStack} listeners={tabPressGuard('Dashboard')} />
       <Tab.Screen name="Profile" options={{ title: 'Profile' }} component={ProfileStack} listeners={tabPressGuard('Profile')} />
     </Tab.Navigator>
   );
@@ -214,7 +249,7 @@ export function MainTabs() {
   const { palette } = useAppTheme();
   const { showDialog } = useDialog();
   const gating = Boolean(session) && (!deskReady || !schoolsReady);
-  const [focusedTab, setFocusedTab] = useState<keyof MainTabParamList>('Chat');
+  const [focusedTab, setFocusedTab] = useState<keyof MainTabParamList>('Dashboard');
   const onboardingPrompted = useRef(false);
 
   useEffect(() => {
@@ -364,6 +399,7 @@ const styles = StyleSheet.create({
   scene: {
     backgroundColor: Colors.background,
   },
+  chatPlaceholder: { flex: 1 },
   tabLabel: {
     fontSize: 11,
     fontWeight: '600',

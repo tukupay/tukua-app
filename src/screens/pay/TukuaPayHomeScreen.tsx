@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -25,6 +24,7 @@ import { Colors } from '../../theme/yana';
 import { listWallets, totalSavings, type Wallet } from '../../lib/wallet';
 import { fetchMyKyc, type KycStatus } from '../../lib/profileApi';
 import { log } from '../../lib/logger';
+import { Loader } from '../../components/ui/Loader';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'TukuaPayHome'>;
 
@@ -155,7 +155,7 @@ export function TukuaPayHomeScreen({ navigation }: Props) {
 
         {loading ? (
           <View style={styles.loader}>
-            <ActivityIndicator color={Colors.primary} />
+            <Loader />
           </View>
         ) : error ? (
           <ModuleEmpty title="Couldn't load wallets" body={error} onRetry={() => void load()} />

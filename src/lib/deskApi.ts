@@ -257,6 +257,67 @@ function unwrapData<T>(json: unknown): T {
   return json as T;
 }
 
+/** `exp` of the token is (nearly) past. Unknown expiry → false. */
+function deskTokenExpired(token: string, skewSec = 60): boolean {
+  try {
+    const part = token.split('.')[1];
+    if (!part) return false;
+    let b64 = part.replace(/-/g, '+').replace(/_/g, '/');
+    while (b64.length % 4) b64 += '=';
+    const exp = Number((JSON.parse(atob(b64)) as { exp?: unknown }).exp);
+    return Number.isFinite(exp) && exp > 0 && exp < Math.floor(Date.now() / 1000) + skewSec;
+  } catch {
+    return false;
+  }
+}
+
+let deskRecoverInFlight: Promise<string | null> | null = null;
+let deskRecoverFailedAt = 0;
+
+/**
+ * A usable token in place of `rejected` (expired or answered 401): another call's fresh token,
+ * a new school-API sign-in with the stored password, or the platform token (refreshed). Single
+ * flight; after a failure, waits a minute before trying again on the proactive (pre-request) path.
+ */
+async function recoverDeskAuth(
+  rejected: string | null,
+  opts: { after401?: boolean } = {},
+): Promise<string | null> {
+  if (!opts.after401 && Date.now() - deskRecoverFailedAt < 60_000) return null;
+  if (!deskRecoverInFlight) {
+    deskRecoverInFlight = (async () => {
+      const current = await getDeskToken();
+      if (current && current !== rejected && !deskTokenExpired(current)) return current;
+
+      const creds = await getDeskCredentials();
+      if (creds && noDeskProfileEmail !== creds.email) {
+        try {
+          log.info('DeskApi', 'school-API token expired — signing in again', { email: creds.email });
+          const r = await deskLogin(creds.email, creds.password);
+          if (r.token && r.token !== rejected) return r.token;
+        } catch (e) {
+          log.warn('DeskApi', 'sign-in again failed', String(e));
+        }
+      }
+
+      const platform = await import('./platformNestAuth');
+      const tok = opts.after401
+        ? await platform.recoverPlatformTokenAfter401(rejected)
+        : await platform.resolveNestAccessTokenForWebView();
+      return tok && tok !== rejected && !deskTokenExpired(tok) ? tok : null;
+    })()
+      .catch(() => null)
+      .then((t) => {
+        deskRecoverFailedAt = t ? 0 : Date.now();
+        return t;
+      })
+      .finally(() => {
+        deskRecoverInFlight = null;
+      });
+  }
+  return deskRecoverInFlight;
+}
+
 export async function deskFetch<T = unknown>(
   path: string,
   opts: {
@@ -270,6 +331,11 @@ export async function deskFetch<T = unknown>(
   const base = getDeskApiBaseUrl();
   const url = `${base}${path.startsWith('/') ? path : `/${path}`}`;
   let token = opts.token === undefined ? await getDeskToken() : opts.token;
+  // The school-API token from /auth/login lives 7 days and has no refresh token: renew it before
+  // sending a request that would only come back 401.
+  if (token && opts.token === undefined && !opts._retriedNest && deskTokenExpired(token)) {
+    token = (await recoverDeskAuth(token)) || token;
+  }
   if (!token && opts.token === undefined) {
     // No school-API sign-in (someone who joined from the phone has no Desk staff profile, so
     // /auth/login answers 404): the platform token carries their schools and roles and the same
@@ -325,17 +391,12 @@ export async function deskFetch<T = unknown>(
 
   if (!res.ok) {
     const isLogin = path.includes('/auth/login');
-    // Missing Nest JWT → 401 on /parents/*; reconnect Nest once if we have password.
-    if (
-      res.status === 401 &&
-      !isLogin &&
-      !opts._retriedNest &&
-      opts.token === undefined &&
-      !(await hasNestDeskToken())
-    ) {
-      const reconnected = await ensureNestDeskSession();
-      if (reconnected) {
-        return deskFetch<T>(path, { ...opts, _retriedNest: true });
+    // 401 = missing or expired token: sign in again with the stored password, else refresh the
+    // platform token, and retry the request once. Never signs anyone out here.
+    if (res.status === 401 && !isLogin && !opts._retriedNest && opts.token === undefined) {
+      const next = await recoverDeskAuth(token, { after401: true });
+      if (next && next !== token) {
+        return deskFetch<T>(path, { ...opts, token: next, _retriedNest: true });
       }
     }
     const errCode =

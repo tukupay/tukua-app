@@ -20,9 +20,18 @@ import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { GreenPattern } from '../../components/dashboard/DashboardBackground';
+import {
+  CARD,
+  CARD_SURFACE,
+  INK,
+  PrimaryPatternPanel,
+  ThemedBackdrop,
+  WaveHero,
+  rgba,
+} from '../../components/theme/ThemedPage';
 import { ProfileAvatar } from '../../components/navigation/ProfileAvatar';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
+import { floatingTabBarSpace } from '../../components/navigation/FloatingTabBar';
 import { useAuth } from '../../context/AuthContext';
 import { useDialog } from '../../context/DialogContext';
 import {
@@ -167,11 +176,14 @@ function ScreenShell({
 }) {
   const insets = useSafeAreaInsets();
   return (
-    <ScrollView
-      style={styles.screen}
+    <View style={styles.screen}>
+      <ThemedBackdrop />
+      <ScrollView
+      style={styles.scrollClear}
       contentContainerStyle={[
         styles.content,
-        { paddingTop: floatingHeaderInset(insets.top), paddingBottom: moduleScrollBottomPad(insets.bottom) },
+        // The stack header (AppTopBar) takes its own height, curve and fade included; end above the floating tab bar.
+        { paddingTop: 8, paddingBottom: Math.max(moduleScrollBottomPad(insets.bottom), floatingTabBarSpace(insets.bottom) + 16) },
       ]}
       showsVerticalScrollIndicator={false}
       decelerationRate="normal"
@@ -184,7 +196,8 @@ function ScreenShell({
       }
     >
       {loading ? <SkeletonList /> : children}
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -207,9 +220,15 @@ function Card({
   title?: string;
   subtitle?: string;
 }) {
+  const { palette } = useAppTheme();
   return (
     <View style={styles.card}>
-      {title ? <Text style={styles.cardTitle}>{title}</Text> : null}
+      {title ? (
+        <View style={styles.cardTitleRow}>
+          <View style={[styles.cardMarker, { backgroundColor: palette.secondary }]} />
+          <Text style={styles.cardTitle}>{title}</Text>
+        </View>
+      ) : null}
       {subtitle ? <Text style={styles.cardSubtitle}>{subtitle}</Text> : null}
       {children}
     </View>
@@ -295,6 +314,7 @@ function ErrorCard({ message, retry }: { message: string; retry?: () => void }) 
 
 export function ProfileHomeScreen({ navigation }: HomeProps) {
   const insets = useSafeAreaInsets();
+  const { palette } = useAppTheme();
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -317,8 +337,10 @@ export function ProfileHomeScreen({ navigation }: HomeProps) {
   }, [load]);
 
   return (
-    <ScrollView
-      style={styles.screen}
+    <View style={styles.screen}>
+      <ThemedBackdrop />
+      <ScrollView
+      style={styles.scrollClear}
       contentContainerStyle={[styles.homeContent, { paddingBottom: moduleScrollBottomPad(insets.bottom) }]}
       showsVerticalScrollIndicator={false}
       decelerationRate="normal"
@@ -334,8 +356,7 @@ export function ProfileHomeScreen({ navigation }: HomeProps) {
         />
       }
     >
-      <View style={[styles.hero, { paddingTop: floatingHeaderInset(insets.top) }]}>
-        <GreenPattern darker />
+      <WaveHero style={[styles.hero, { paddingTop: floatingHeaderInset(insets.top) }]}>
         <View style={styles.heroContent}>
           {loading ? (
             <>
@@ -344,11 +365,13 @@ export function ProfileHomeScreen({ navigation }: HomeProps) {
             </>
           ) : (
             <>
-              <ProfileAvatar
-                name={profile?.full_name || profile?.username || 'Account'}
-                uri={profile?.avatar_url || null}
-                size={72}
-              />
+              <View style={[styles.heroAvatarRing, { borderColor: palette.secondary }]}>
+                <ProfileAvatar
+                  name={profile?.full_name || profile?.username || 'Account'}
+                  uri={profile?.avatar_url || null}
+                  size={72}
+                />
+              </View>
               <Text style={styles.heroTitle}>{profile?.full_name || 'Your profile'}</Text>
               <Text style={styles.heroSubtitle}>
                 {profile?.username ? `@${profile.username}` : profile?.email || 'Complete your Tukua identity'}
@@ -356,13 +379,15 @@ export function ProfileHomeScreen({ navigation }: HomeProps) {
             </>
           )}
         </View>
-        <View style={styles.heroCurve} />
-      </View>
+      </WaveHero>
       <View style={styles.homeBody}>
         {error ? <ErrorCard message={error} retry={() => void load()} /> : null}
-        <Text style={styles.sectionTitle}>Your account</Text>
+        <View style={styles.sectionTitleRow}>
+          <View style={[styles.cardMarker, { backgroundColor: palette.secondary }]} />
+          <Text style={styles.sectionTitle}>Your account</Text>
+        </View>
         <View style={styles.grid}>
-          {HOME_LINKS.map((item) => (
+          {HOME_LINKS.map((item, index) => (
             <Pressable
               key={item.screen}
               style={({ pressed }) => [styles.hubCard, pressed && styles.pressed]}
@@ -374,8 +399,16 @@ export function ProfileHomeScreen({ navigation }: HomeProps) {
                 navigation.navigate(item.screen as never);
               }}
             >
-              <View style={styles.hubIcon}>
-                <Ionicons name={item.icon} size={23} color={Colors.primary} />
+              <View
+                style={[
+                  styles.hubIcon,
+                  { backgroundColor: index % 2 === 0 ? palette.primary : rgba(palette.secondary, 0.16) },
+                ]}>
+                <Ionicons
+                  name={item.icon}
+                  size={23}
+                  color={index % 2 === 0 ? palette.secondary : palette.primary}
+                />
               </View>
               <Text style={styles.hubTitle}>{item.title}</Text>
               <Text style={styles.hubSubtitle}>{item.subtitle}</Text>
@@ -383,7 +416,8 @@ export function ProfileHomeScreen({ navigation }: HomeProps) {
           ))}
         </View>
       </View>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -1335,11 +1369,10 @@ export function BalancesScreen({ navigation }: NativeStackScreenProps<ProfileSta
       }}
     >
       {error ? <ErrorCard message={error} retry={() => void load()} /> : null}
-      <View style={styles.balanceHero}>
-        <GreenPattern darker />
-        <Text style={styles.balanceLabel}>Available tokens</Text>
+      <PrimaryPatternPanel style={styles.balanceHero}>
+        <Text style={[styles.balanceLabel, { color: Colors.orangeAccent }]}>Available tokens</Text>
         <Text style={styles.balanceAmount}>{balance.toLocaleString()}</Text>
-      </View>
+      </PrimaryPatternPanel>
 
       <Card title="Top up tokens" subtitle="Pay with M-Pesa — tokens land instantly after confirmation.">
         <Field label="M-Pesa phone number" value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholder="0712345678" />
@@ -1566,27 +1599,31 @@ export function DeleteAccountScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.background },
+  scrollClear: { flex: 1, backgroundColor: 'transparent' },
+  cardTitleRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  cardMarker: { width: 3, height: 14, borderRadius: 2, marginRight: 8 },
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12, marginTop: 8 },
+  heroAvatarRing: { borderWidth: 2, borderRadius: 40, padding: 2 },
   content: { paddingHorizontal: 16 },
   homeContent: { flexGrow: 1 },
   stack: { gap: 12 },
   skeleton: { borderRadius: 16, backgroundColor: '#E3EBE7', opacity: 0.9 },
-  hero: { minHeight: 270, overflow: 'hidden', paddingHorizontal: 20 },
-  heroContent: { alignItems: 'center', zIndex: 1, paddingTop: 12, paddingBottom: 42 },
+  hero: { minHeight: 250, paddingHorizontal: 20 },
+  heroContent: { alignItems: 'center', zIndex: 1, paddingTop: 12, paddingBottom: 18 },
   heroTitle: { color: Colors.white, fontSize: 25, fontWeight: '700', marginTop: 12, fontFamily: 'Poppins_600SemiBold' },
   heroSubtitle: { color: Colors.navbarMuted, fontSize: 13, marginTop: 2, fontFamily: 'Inter_400Regular' },
-  heroCurve: { position: 'absolute', left: 0, right: 0, bottom: -1, height: 30, backgroundColor: Colors.background, borderTopLeftRadius: 30, borderTopRightRadius: 30 },
   heroAvatarSkeleton: { width: 72, height: 72, borderRadius: 36, backgroundColor: 'rgba(255,255,255,0.22)' },
   heroLineSkeleton: { width: 150, height: 18, marginTop: 14, backgroundColor: 'rgba(255,255,255,0.18)' },
-  homeBody: { paddingHorizontal: 16, marginTop: -2 },
-  sectionTitle: { fontSize: 18, fontWeight: '700', color: Colors.foreground, marginBottom: 12, marginTop: 8, fontFamily: 'Poppins_600SemiBold' },
+  homeBody: { paddingHorizontal: 16, marginTop: 4 },
+  sectionTitle: { fontSize: 18, color: INK, fontFamily: 'Roboto_700Bold' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  hubCard: { width: '48%', minHeight: 145, backgroundColor: Colors.white, borderRadius: 18, padding: 15, borderWidth: StyleSheet.hairlineWidth, borderColor: Colors.border },
+  hubCard: { width: '48%', minHeight: 145, ...CARD_SURFACE, padding: 15 },
   pressed: { opacity: 0.72, transform: [{ scale: 0.99 }] },
-  hubIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: Colors.primaryLight, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
-  hubTitle: { fontSize: 15, fontWeight: '700', color: Colors.foreground, fontFamily: 'Inter_600SemiBold' },
+  hubIcon: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  hubTitle: { fontSize: 15, color: INK, fontFamily: 'Roboto_700Bold' },
   hubSubtitle: { fontSize: 12, lineHeight: 17, color: Colors.mutedForeground, marginTop: 4, fontFamily: 'Inter_400Regular' },
-  card: { backgroundColor: Colors.white, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: Colors.border },
-  cardTitle: { fontSize: 16, fontWeight: '700', color: Colors.foreground, marginBottom: 4, fontFamily: 'Inter_600SemiBold' },
+  card: { ...CARD_SURFACE, padding: CARD.padding, marginBottom: 12 },
+  cardTitle: { fontSize: 16, color: INK, fontFamily: 'Roboto_700Bold', flexShrink: 1 },
   cardSubtitle: { fontSize: 12, lineHeight: 17, color: Colors.mutedForeground, marginBottom: 12, fontFamily: 'Inter_400Regular' },
   field: { marginTop: 10 },
   label: { fontSize: 12, fontWeight: '600', color: Colors.labelGray, marginBottom: 6, fontFamily: 'Inter_600SemiBold' },
@@ -1627,7 +1664,7 @@ const styles = StyleSheet.create({
   loadMoreButton: { alignSelf: 'center', alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: Colors.muted, paddingHorizontal: 18, paddingVertical: 10, marginTop: 4, marginBottom: 8 },
   modelRow: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 58, paddingHorizontal: 10, borderRadius: 12, marginTop: 6 },
   modelRowActive: { backgroundColor: Colors.primaryLight },
-  balanceHero: { minHeight: 150, borderRadius: 22, overflow: 'hidden', padding: 22, justifyContent: 'center', marginBottom: 18 },
+  balanceHero: { minHeight: 150, padding: 22, justifyContent: 'center', marginBottom: 18 },
   balanceLabel: { color: Colors.navbarMuted, fontSize: 13, zIndex: 1 },
   balanceAmount: { color: Colors.white, fontSize: 38, fontWeight: '800', marginTop: 5, zIndex: 1 },
   creditIcon: { backgroundColor: Colors.primaryLight },

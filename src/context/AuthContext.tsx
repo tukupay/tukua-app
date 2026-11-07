@@ -3,6 +3,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   ReactNode,
 } from 'react';
@@ -18,7 +19,13 @@ import {
   UserProfile,
   type Session,
 } from '../lib/auth';
-import { clearPlatformNestToken } from '../lib/platformNestAuth';
+import {
+  clearPlatformNestToken,
+  jwtExpiry,
+  onPlatformAuthRejected,
+  onPlatformTokensChanged,
+  resolveNestAccessTokenForWebView,
+} from '../lib/platformNestAuth';
 import { getSavageModeEnabled, getSavageModeForUser } from '../lib/userPreferences';
 import { clearDeskSession } from '../lib/deskApi';
 import { clearSelectedContext } from '../lib/selectedContext';
@@ -37,6 +44,14 @@ type AuthContextType = {
   /** Adopt Nest identity session after PEA / Nest login. */
   adoptSession: (session: Session) => Promise<void>;
   logout: () => Promise<void>;
+  /**
+   * Gate (owner, 2026-11-07: "dont auto login"): a session restored on a cold start stays locked, so the app
+   * opens on the signed-out front door. It unlocks on a sign-in (adoptSession) or on unlockSession()
+   * (biometric "Continue as"). Tokens stay stored and refreshing either way; logout locks again.
+   */
+  sessionUnlocked: boolean;
+  /** Enter the app with the stored session (after the user proved it is them, e.g. biometrics). */
+  unlockSession: () => Promise<Session | null>;
 };
 
 const AuthContext = createContext<AuthContextType>({
@@ -51,6 +66,8 @@ const AuthContext = createContext<AuthContextType>({
   ensureFreshSession: async () => null,
   adoptSession: async () => {},
   logout: async () => {},
+  sessionUnlocked: false,
+  unlockSession: async () => null,
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -58,6 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [savageMode, setSavageMode] = useState(false);
+  const [sessionUnlocked, setSessionUnlocked] = useState(false);
 
   const loadUserPreferences = useCallback(async (userId: string) => {
     try {
@@ -96,6 +114,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const adoptSession = useCallback(
     async (next: Session) => {
       setSession(next);
+      setSessionUnlocked(true);
       await persistSession(next);
       if (next.user?.id) {
         const cached = await getCachedProfile();
@@ -176,6 +195,84 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => sub.remove();
   }, [loadUserPreferences]);
 
+  const logout = useCallback(async () => {
+    log.info('Auth', 'sign out');
+    const userId = session?.user?.id;
+    if (userId) {
+      await clearSelectedContext(userId);
+    }
+    await clearDeskSession();
+    await clearPlatformNestToken().catch(() => {});
+    await signOut();
+    setSession(null);
+    setSessionUnlocked(false);
+    setProfile(null);
+    setSavageMode(false);
+  }, [session?.user?.id]);
+
+  const unlockSession = useCallback(async () => {
+    // Refresh first when the access token is near expiry; keep the stored one on a network error.
+    let fresh: Session | null = null;
+    try {
+      fresh = await refreshSessionIfNeeded();
+    } catch (error) {
+      log.warn('Auth', 'unlock refresh failed', String(error));
+    }
+    const next = fresh ?? sessionRef.current;
+    if (!next?.user) {
+      log.warn('Auth', 'unlock: no stored session');
+      return null;
+    }
+    setSession((prev) =>
+      prev?.access_token === next.access_token && prev?.expires_at === next.expires_at ? prev : next,
+    );
+    setSessionUnlocked(true);
+    log.info('Auth', 'stored session unlocked', { email: next.user.email });
+    return next;
+  }, []);
+
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
+  const logoutRef = useRef(logout);
+  logoutRef.current = logout;
+
+  // A refreshed access token (proactive, foreground, or after a 401) replaces the one in the
+  // session, so every WebView (chat, courses) gets it through its session re-sync.
+  useEffect(() => {
+    return onPlatformTokensChanged(({ accessToken, refreshToken }) => {
+      setSession((prev) => {
+        if (!prev || prev.access_token === accessToken) return prev;
+        const exp = jwtExpiry(accessToken);
+        const next: Session = {
+          ...prev,
+          access_token: accessToken,
+          refresh_token: refreshToken || prev.refresh_token,
+          ...(exp ? { expires_at: exp, expires_in: Math.max(0, exp - Math.floor(Date.now() / 1000)) } : {}),
+        };
+        void persistSession(next);
+        return next;
+      });
+    });
+  }, []);
+
+  // Sign out only when the server rejected the refresh token (never on network errors / 5xx).
+  useEffect(() => {
+    return onPlatformAuthRejected(() => {
+      log.warn('Auth', 'refresh token rejected — signing out');
+      void logoutRef.current();
+    });
+  }, []);
+
+  // While signed in and in the foreground, check now and then; refreshes a day before expiry.
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    const id = setInterval(() => {
+      if (AppState.currentState !== 'active') return;
+      void resolveNestAccessTokenForWebView().catch(() => null);
+    }, 15 * 60_000);
+    return () => clearInterval(id);
+  }, [session?.user?.id]);
+
   return (
     <AuthContext.Provider
       value={{
@@ -189,19 +286,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSavageMode,
         ensureFreshSession,
         adoptSession,
-        logout: async () => {
-          log.info('Auth', 'sign out');
-          const userId = session?.user?.id;
-          if (userId) {
-            await clearSelectedContext(userId);
-          }
-          await clearDeskSession();
-          await clearPlatformNestToken().catch(() => {});
-          await signOut();
-          setSession(null);
-          setProfile(null);
-          setSavageMode(false);
-        },
+        logout,
+        sessionUnlocked,
+        unlockSession,
       }}>
       {children}
     </AuthContext.Provider>
