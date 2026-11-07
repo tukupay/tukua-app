@@ -55,7 +55,7 @@ export type FeeQuote = {
 
 export type FeePaymentStatus = { status: string; message?: string; receipt?: string };
 
-export type LearnerSearchBy = 'adm' | 'name' | 'phone';
+export type LearnerSearchBy = 'adm' | 'upi' | 'name' | 'phone';
 
 function base(): string {
   return getNestApiBaseUrl().replace(/\/+$/, '');

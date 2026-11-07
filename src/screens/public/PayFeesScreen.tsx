@@ -35,8 +35,8 @@ import {
   type LearnerSearchBy,
 } from './payFeesApi';
 
-const BY_LABEL: Record<LearnerSearchBy, string> = { adm: 'Admission no.', name: 'Name', phone: "Parent's phone" };
-const BY_HINT: Record<LearnerSearchBy, string> = { adm: 'e.g. STUD-12901', name: "The learner's names", phone: 'e.g. 0712 345 678' };
+const BY_LABEL: Record<LearnerSearchBy, string> = { adm: 'Admission no.', upi: 'UPI no.', name: 'Name', phone: "Parent's phone" };
+const BY_HINT: Record<LearnerSearchBy, string> = { adm: 'e.g. STUD-12901', upi: 'e.g. A1B2C3D (from NEMIS)', name: "The learner's names", phone: 'e.g. 0712 345 678' };
 const STEPS = ['School', 'Learner', 'Amount', 'Pay'];
 const POLL_MS = 4000;
 const POLL_MAX = 40;
@@ -354,7 +354,7 @@ export function PayFeesScreen({ bottomSpace = 0 }: { bottomSpace?: number }) {
                   hint={BY_HINT[by]}
                   suffixIcon={by === 'phone' ? 'call-outline' : by === 'name' ? 'person-outline' : 'id-card-outline'}
                   keyboardType={by === 'phone' ? 'phone-pad' : 'default'}
-                  autoCapitalize={by === 'adm' ? 'characters' : 'words'}
+                  autoCapitalize={by === 'adm' || by === 'upi' ? 'characters' : 'words'}
                   autoCorrect={false}
                   returnKeyType="search"
                   onSubmitEditing={() => void search()}
