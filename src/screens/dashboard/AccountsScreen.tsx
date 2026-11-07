@@ -39,6 +39,7 @@ import {
 } from '../../lib/parentPortalApi';
 import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
+import { defaultMpesaPhone } from '../../lib/phoneUtils';
 import { log } from '../../lib/logger';
 import { fetchStudentFees, type StudentFeeBalance } from '../../lib/studentPortalApi';
 import { Loader } from '../../components/ui/Loader';
@@ -46,15 +47,6 @@ import { Loader } from '../../components/ui/Loader';
 type Props = NativeStackScreenProps<DashboardStackParamList, 'Accounts'>;
 
 type MoneyTab = 'fees' | 'invoices' | 'slips';
-
-function defaultMpesaPhone(profilePhone?: string | null): string {
-  const raw = String(profilePhone ?? '').trim();
-  if (!raw) return '';
-  const digits = raw.replace(/\D/g, '');
-  if (digits.startsWith('254') && digits.length >= 12) return `0${digits.slice(3, 12)}`;
-  if (digits.length >= 9) return digits.startsWith('0') ? digits.slice(0, 10) : `0${digits.slice(-9)}`;
-  return raw;
-}
 
 type FeeYearRow = {
   financial_year: string | null;

@@ -48,3 +48,19 @@ export function kenyaMobileError(input: string): string | null {
   return 'Enter a valid phone number';
 }
 
+
+/** 07XX / 01XX / +2547XX / 2547XX → 2547XXXXXXXX, or null when it is not a Kenyan mobile number. */
+export function mpesaMsisdn(input: string): string | null {
+  const national = kenyaMobileNational(input);
+  return national ? `254${national}` : null;
+}
+
+/** A profile phone shown in an M-Pesa field as 07XXXXXXXX (left as typed when it is too short to tell). */
+export function defaultMpesaPhone(profilePhone?: string | null): string {
+  const raw = String(profilePhone ?? '').trim();
+  if (!raw) return '';
+  const digits = raw.replace(/\D/g, '');
+  if (digits.startsWith('254') && digits.length >= 12) return `0${digits.slice(3, 12)}`;
+  if (digits.length >= 9) return digits.startsWith('0') ? digits.slice(0, 10) : `0${digits.slice(-9)}`;
+  return raw;
+}

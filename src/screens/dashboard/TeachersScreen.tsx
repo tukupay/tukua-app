@@ -24,21 +24,13 @@ import { fetchChildTeachers, ParentTeacher } from '../../lib/parentPortalApi';
 import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
 import { log } from '../../lib/logger';
+import { defaultMpesaPhone } from '../../lib/phoneUtils';
 import { Loader } from '../../components/ui/Loader';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'Teachers'>;
 
 const HERO_GREEN = '#15411D';
 const AVATAR = 52;
-
-function defaultMpesaPhone(profilePhone?: string | null): string {
-  const raw = String(profilePhone ?? '').trim();
-  if (!raw) return '';
-  const digits = raw.replace(/\D/g, '');
-  if (digits.startsWith('254') && digits.length >= 12) return `0${digits.slice(3, 12)}`;
-  if (digits.length >= 9) return digits.startsWith('0') ? digits.slice(0, 10) : `0${digits.slice(-9)}`;
-  return raw;
-}
 
 function initials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);

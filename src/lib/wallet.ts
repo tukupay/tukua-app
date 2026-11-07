@@ -6,7 +6,7 @@
 import { getNestApiBaseUrl } from './localHost';
 import { mpesaCheckStatus, mpesaStk } from './platformAuthApi';
 import { recoverPlatformTokenAfter401, resolveNestAccessTokenForWebView } from './platformNestAuth';
-import { kenyaMobileNational } from './phoneUtils';
+import { mpesaMsisdn } from './phoneUtils';
 import { fetchWithTimeout } from './apiHttp';
 
 export type Wallet = {
@@ -136,11 +136,8 @@ export class MpesaTopUpError extends Error {
   }
 }
 
-/** 07XX / 01XX / +2547XX / 2547XX → 2547XXXXXXXX, or null when it is not a Kenyan mobile number. */
-export function mpesaMsisdn(input: string): string | null {
-  const national = kenyaMobileNational(input);
-  return national ? `254${national}` : null;
-}
+/** Kept here so existing `mpesaMsisdn` imports from wallet keep working (lives in phoneUtils). */
+export { mpesaMsisdn };
 
 const SESSION_ENDED = 'Your session has ended. Sign in again, then retry the top-up.';
 
