@@ -25,6 +25,7 @@ import {
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { GestureDetector } from 'react-native-gesture-handler';
 import { useAppTheme } from '../../context/AppThemeContext';
+import { rgba } from '../../theme/color';
 import { pressTab, registerTabNavigator, useTabBarSwipeGesture } from '../../navigation/TabSwipe';
 
 /** The bar's own height (without margins or the safe-area inset). */
@@ -40,14 +41,6 @@ const INACTIVE = '#7A817C';
 /** Total room the floating bar takes from the bottom of the screen; pad scroll content by this. */
 export function floatingTabBarSpace(bottomInset: number): number {
   return FLOATING_TAB_BAR_HEIGHT + BOTTOM_MARGIN + bottomInset + 4;
-}
-
-function rgba(hex: string, alpha: number): string {
-  const h = hex.replace('#', '');
-  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h.slice(0, 6);
-  const n = parseInt(full, 16);
-  if (Number.isNaN(n)) return hex;
-  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
 }
 
 function useKeyboardOpen(): boolean {

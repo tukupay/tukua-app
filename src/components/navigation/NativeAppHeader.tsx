@@ -21,6 +21,7 @@ import { ProfileAvatar } from './ProfileAvatar';
 import { TokenBalancePill } from './TokenBalancePill';
 import { NativeChatDrawer } from './NativeChatDrawer';
 import { Colors } from '../../theme/yana';
+import { rgba as hexToRgba } from '../../theme/color';
 import { FLOATING_HEADER_BODY as NATIVE_HEADER_BODY_HEIGHT } from '../../constants/layout';
 import { navigateDashboard, navigateProfile } from '../../navigation/rootNavigation';
 import { useAppTheme } from '../../context/AppThemeContext';
@@ -35,15 +36,6 @@ const SAVAGE_OFF_OPACITY = 0.35;
  * Bar look (owner, 2026-11-07: "the theme you have used in landing"): the shared AppTopBar shell (flat
  * palette.primary, whitened maths pattern, wave lip inside FLOATING_HEADER_GAP, then the one allowed fade).
  */
-function hexToRgba(hex: string, alpha: number): string {
-  const h = hex.replace('#', '');
-  if (h.length !== 6) return `rgba(4,31,24,${alpha})`;
-  const r = parseInt(h.slice(0, 2), 16);
-  const g = parseInt(h.slice(2, 4), 16);
-  const b = parseInt(h.slice(4, 6), 16);
-  return `rgba(${r},${g},${b},${alpha})`;
-}
-
 export function NativeAppHeader() {
   const insets = useSafeAreaInsets();
   const { palette } = useAppTheme();

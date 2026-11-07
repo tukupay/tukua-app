@@ -4,14 +4,7 @@ import { LinearGradient } from '../FlatFill'; // flat fill: no gradients
 import Svg, { Circle, Path, Polygon, Rect } from 'react-native-svg';
 import { useAppTheme } from '../../context/AppThemeContext';
 import { Colors } from '../../theme/yana';
-
-function hexToRgba(hex: string, alpha: number): string {
-  const raw = hex.replace('#', '').trim();
-  const full = raw.length === 3 ? raw.split('').map((c) => c + c).join('') : raw;
-  const n = Number.parseInt(full.slice(0, 6), 16);
-  if (!Number.isFinite(n)) return `rgba(10, 61, 46, ${alpha})`;
-  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
-}
+import { rgba as hexToRgba } from '../../theme/color';
 
 /** Desk-style faint themed SVG mesh behind login / register. */
 export function ThemedPageSvg() {

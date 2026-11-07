@@ -9,14 +9,10 @@ import { useAppTheme } from '../../context/AppThemeContext';
 
 const PATTERN_TILE = require('../../../assets/images/brand/tukua-pattern-tile.webp');
 
-/** '#15411D' → 'rgba(21,65,29,a)'. Leaves non-hex colours as they are. */
-export function rgba(hex: string, alpha: number): string {
-  const h = String(hex || '').replace('#', '');
-  if (!/^[0-9a-f]{3}([0-9a-f]{3})?([0-9a-f]{2})?$/i.test(h)) return hex;
-  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h.slice(0, 6);
-  const n = parseInt(full, 16);
-  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
-}
+import { rgba } from '../../theme/color';
+
+/** Re-exported so existing `rgba` imports from DashboardKit keep working. */
+export { rgba };
 
 /** Shared by every dashboard card so edges and corners line up. */
 export const CARD = {
