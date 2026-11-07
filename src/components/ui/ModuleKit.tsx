@@ -42,7 +42,6 @@ import { useBottomBarSpace } from '../navigation/useBottomBarSpace';
 import { CARD_SURFACE, INK, ThemedPage } from '../theme/ThemedPage';
 import { rgba } from '../../theme/color';
 import { Skeleton } from './Skeleton';
-import { log } from '../../lib/logger';
 import { ModuleBackBar, ModuleScreenHeader } from '../../screens/dashboard/ModuleChrome';
 
 export const MUTED_INK = '#5E625B';
@@ -103,15 +102,6 @@ export function ModuleScrollPage({
     <ThemedPage>
       <ScrollView
         {...scrollProps}
-        onLayout={(e) => {
-          const { width, height, y } = e.nativeEvent.layout;
-          log.info('ModulePage', `${title} frame`, { width, height, y, padTop: pad.top, padBottom: pad.bottom });
-          scrollProps?.onLayout?.(e);
-        }}
-        onContentSizeChange={(w, h) => {
-          log.info('ModulePage', `${title} content`, { width: w, height: h });
-          scrollProps?.onContentSizeChange?.(w, h);
-        }}
         contentContainerStyle={[styles.content, { paddingTop: pad.top, paddingBottom: pad.bottom }, contentStyle]}
         refreshControl={onRefresh ? <ThemedRefresh refreshing={refreshing} onRefresh={onRefresh} /> : undefined}
         keyboardShouldPersistTaps="handled"
