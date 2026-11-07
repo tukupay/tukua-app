@@ -14,11 +14,6 @@ export type RootStackParamList = {
   } | undefined;
 };
 
-export type AboutStackParamList = {
-  AboutHome: undefined;
-  PublicWeb: { path: string; title: string };
-};
-
 export type DashboardStackParamList = {
   DashboardHome: undefined;
   Notifications: undefined;

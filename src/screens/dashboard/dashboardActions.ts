@@ -152,23 +152,7 @@ export function flattenDashboardSections(sections: DashboardSection[]): Dashboar
   return out;
 }
 
-export type HeroStat = {
-  id: string;
-  title: string;
-  value: string;
-  subtitle: string;
-  subtitleValue: string;
-  colors: [string, string];
-  icon: FeatherIconName;
-};
-
 // ─── Parent ────────────────────────────────────────────────────────────────────────────────────
-
-export const PARENT_HERO: HeroStat[] = [
-  { id: 'total', title: 'Family fees', value: 'KES —', subtitle: 'All children', subtitleValue: 'Outstanding', colors: ['#059669', '#0EA5E9'], icon: 'credit-card' },
-  { id: 'fees', title: 'Fee Balance', value: 'KES —', subtitle: 'School fees', subtitleValue: 'Outstanding', colors: ['#0284C7', '#38BDF8'], icon: 'dollar-sign' },
-  { id: 'pocket', title: 'Pocket Money', value: 'KES —', subtitle: 'Wallet', subtitleValue: 'Available', colors: ['#F59E0B', '#F97316'], icon: 'pocket' },
-];
 
 export const PARENT_DASHBOARD_SECTIONS: DashboardSection[] = [
   {
@@ -211,14 +195,6 @@ export const PARENT_DASHBOARD_ACTIONS: DashboardAction[] = flattenDashboardSecti
 
 // ─── Student ───────────────────────────────────────────────────────────────────────────────────
 
-export const STUDENT_HERO: HeroStat[] = [
-  { id: 'grade', title: 'Current Grade', value: '—', subtitle: 'Student ID', subtitleValue: '—', colors: ['#0A3D2E', '#0F5C42'], icon: 'award' },
-  { id: 'pocket', title: 'Pocket Money', value: 'KES —', subtitle: 'Wallet', subtitleValue: 'Available', colors: ['#0F5C42', '#E85D04'], icon: 'credit-card' },
-  { id: 'pending-fees', title: 'School fees', value: '—', subtitle: 'Balance', subtitleValue: 'View in School Fees', colors: ['#062820', '#0F5C42'], icon: 'dollar-sign' },
-  { id: 'attendance', title: 'Attendance', value: '—%', subtitle: 'This Term', subtitleValue: 'On Track', colors: ['#0A3D2E', '#E85D04'], icon: 'trending-up' },
-  { id: 'pending', title: 'Pending Work', value: '—', subtitle: 'Due Soon', subtitleValue: 'Action Required', colors: ['#E85D04', '#F48C06'], icon: 'clock' },
-];
-
 export const STUDENT_DASHBOARD_SECTIONS: DashboardSection[] = [
   {
     id: 'quick',
@@ -260,12 +236,6 @@ export const STUDENT_DASHBOARD_SECTIONS: DashboardSection[] = [
 export const STUDENT_DASHBOARD_ACTIONS: DashboardAction[] = flattenDashboardSections(STUDENT_DASHBOARD_SECTIONS);
 
 // ─── Teacher ───────────────────────────────────────────────────────────────────────────────────
-
-export const TEACHER_HERO: HeroStat[] = [
-  { id: 'classes', title: 'My Classes', value: '—', subtitle: 'School', subtitleValue: 'Assigned', colors: ['#0A3D2E', '#0F5C42'], icon: 'users' },
-  { id: 'students', title: 'Total Students', value: '—', subtitle: 'Across classes', subtitleValue: 'Active', colors: ['#0F5C42', '#E85D04'], icon: 'book' },
-  { id: 'workload', title: 'Workload', value: '—', subtitle: 'Class × Subject', subtitleValue: 'Assigned', colors: ['#062820', '#0F5C42'], icon: 'clipboard' },
-];
 
 const OFFICE_ROLES = ['school_admin', 'principal', 'deputy_principal', 'admin'];
 
@@ -326,12 +296,6 @@ export const TEACHER_DASHBOARD_ACTIONS: DashboardAction[] = flattenDashboardSect
 
 // ─── Security ──────────────────────────────────────────────────────────────────────────────────
 
-export const SECURITY_HERO: HeroStat[] = [
-  { id: 'active-trip', title: 'Active trip', value: '—', subtitle: 'Status', subtitleValue: 'No run', colors: ['#0A3D2E', '#0F5C42'], icon: 'navigation' },
-  { id: 'boarded', title: 'Boarded today', value: '—', subtitle: 'Students', subtitleValue: 'This trip', colors: ['#0F5C42', '#E85D04'], icon: 'users' },
-  { id: 'assignment', title: 'Assignment', value: '—', subtitle: 'Vehicle', subtitleValue: 'Route', colors: ['#062820', '#0F5C42'], icon: 'map-pin' },
-];
-
 export const SECURITY_DASHBOARD_SECTIONS: DashboardSection[] = [
   {
     id: 'quick',
@@ -387,12 +351,6 @@ export const SCHOOL_ADMIN_DASHBOARD_SECTIONS: DashboardSection[] = [
   { id: 'account', title: 'Account', actions: [NOTIFICATIONS_ACTION, T.profile, T.schoolInfo, REFER_EARN_ACTION] },
 ];
 export const SCHOOL_ADMIN_DASHBOARD_ACTIONS: DashboardAction[] = flattenDashboardSections(SCHOOL_ADMIN_DASHBOARD_SECTIONS);
-
-export const SCHOOL_ADMIN_HERO: HeroStat[] = [
-  { id: 'learners', title: 'Learners', value: '—', subtitle: 'School', subtitleValue: 'Active roll', colors: ['#0A3D2E', '#0F5C42'], icon: 'users' },
-  { id: 'collected', title: 'Fees collected', value: 'KES —', subtitle: 'This year', subtitleValue: 'Receipts', colors: ['#059669', '#0EA5E9'], icon: 'dollar-sign' },
-  { id: 'outstanding', title: 'Outstanding', value: 'KES —', subtitle: 'Fee balances', subtitleValue: 'To collect', colors: ['#B45309', '#F59E0B'], icon: 'alert-circle' },
-];
 
 // ─── Super admin (mobile: switch into a school + hat, no company hub) ───────────────────────────
 
