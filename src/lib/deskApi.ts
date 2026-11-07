@@ -329,10 +329,18 @@ export async function deskFetch<T = unknown>(
     timeoutMs?: number;
     /** Internal: already tried Nest soft-reconnect after 401. */
     _retriedNest?: boolean;
+    /**
+     * School / student / roles for this one request instead of the active context (a probe of a
+     * school that is not open yet). Omitted fields fall back to the active context.
+     */
+    context?: { schoolId?: string | null; studentId?: string | null; roles?: string[] };
   } = {},
 ): Promise<T> {
   const base = getDeskApiBaseUrl();
   const url = `${base}${path.startsWith('/') ? path : `/${path}`}`;
+  const ctxSchoolId = opts.context?.schoolId !== undefined ? opts.context.schoolId : activeSchoolId;
+  const ctxStudentId = opts.context?.studentId !== undefined ? opts.context.studentId : activeStudentId;
+  const ctxRoles = opts.context?.roles !== undefined ? opts.context.roles : activeRoles;
   let token = opts.token === undefined ? await getDeskToken() : opts.token;
   // The school-API token from /auth/login lives 7 days and has no refresh token: renew it before
   // sending a request that would only come back 401.
@@ -350,22 +358,42 @@ export async function deskFetch<T = unknown>(
     Accept: 'application/json',
     'Content-Type': 'application/json',
   };
-  if (token) headers.Authorization = `Bearer ${token}`;
-  if (activeSchoolId) headers['X-Desk-School-Id'] = activeSchoolId;
-  if (activeStudentId) headers['X-Desk-Student-Id'] = activeStudentId;
   const roleHeader =
-    activeRoles.length > 0
-      ? activeRoles
+    ctxRoles.length > 0
+      ? ctxRoles
       : memoryUser?.user_roles
         ? Array.isArray(memoryUser.user_roles)
           ? memoryUser.user_roles.map(String)
           : [String(memoryUser.user_roles)]
         : [];
+  // The school-API token is issued for one school with that school's roles (e.g. "parent" at Elite).
+  // The server keeps only the header roles the token holds, so on the learner hat a token without
+  // "student" is answered as a parent ("Student role required", "your own children only"). The
+  // platform token carries every role the person holds, so the learner hat uses it instead.
+  if (
+    token &&
+    opts.token === undefined &&
+    roleHeader.some((r) => isLearnerRole(r)) &&
+    !tokenRoles(token).some((r) => isLearnerRole(r))
+  ) {
+    try {
+      const { resolveNestAccessTokenForWebView } = await import('./platformNestAuth');
+      const platform = await resolveNestAccessTokenForWebView();
+      if (platform && platform !== token && tokenRoles(platform).some((r) => isLearnerRole(r))) {
+        token = platform;
+      }
+    } catch {
+      // keep the school-API token
+    }
+  }
+  if (token) headers.Authorization = `Bearer ${token}`;
+  if (ctxSchoolId) headers['X-Desk-School-Id'] = ctxSchoolId;
+  if (ctxStudentId) headers['X-Desk-Student-Id'] = ctxStudentId;
   if (roleHeader.length) headers['X-Desk-Roles'] = roleHeader.join(',');
 
   log.info('DeskApi', `${opts.method ?? 'GET'} ${url}`, {
-    schoolId: activeSchoolId,
-    studentId: activeStudentId,
+    schoolId: ctxSchoolId,
+    studentId: ctxStudentId,
   });
 
   let res: Response;
@@ -506,6 +534,25 @@ export async function deskFetchMe(): Promise<DeskUser | null> {
     log.warn('DeskApi', 'auth/me failed', msg);
     // Keep desk token on /auth/me miss — Chat still uses platform Nest JWT.
     return null;
+  }
+}
+
+function isLearnerRole(role: string): boolean {
+  const r = String(role).toLowerCase().trim();
+  return r === 'student' || r === 'learner';
+}
+
+/** Roles a JWT carries (no verification: only to choose which of our tokens to send). */
+function tokenRoles(token: string): string[] {
+  try {
+    const part = token.split('.')[1];
+    if (!part) return [];
+    let b64 = part.replace(/-/g, '+').replace(/_/g, '/');
+    while (b64.length % 4) b64 += '=';
+    const json = JSON.parse(atob(b64)) as { user_roles?: unknown; roles?: unknown };
+    return normalizeDeskRoles(json.user_roles ?? json.roles);
+  } catch {
+    return [];
   }
 }
 

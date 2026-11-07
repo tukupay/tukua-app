@@ -8,6 +8,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -44,6 +45,7 @@ import { fetchUserSchools, flattenLinkedStudents, LinkedStudent, UserSchool } fr
 import {
   activeRolesForHat,
   linkedStudentsAtSchool,
+  preferRealSchoolRoles,
   prefersSchoolPicker,
   rememberedContextUsable,
   resolveContext,
@@ -59,6 +61,7 @@ import {
   StoredContext,
 } from '../lib/selectedContext';
 import { getLastContext, lastContextAsStored, rememberLastContext } from '../lib/lastContext';
+import { resolveCourseOnlySchools } from '../lib/courseLearner';
 
 /**
  * Save the context the user lands on, and remember it as their last user type (survives logout and
@@ -97,6 +100,16 @@ type DeskAuthContextType = {
   needsSchoolPick: boolean;
   /** No school open (none joined, or the picker was skipped) — the personal dashboard shows. */
   contextSkipped: boolean;
+  /**
+   * Schools where the person's learner role came only from a course (no school record): the learner
+   * hat there opens the personal dashboard, and the picker says "You are a learner here (courses)".
+   */
+  courseOnlySchoolIds: string[];
+  /**
+   * School, role and child are settled and pushed into the API context. School-scoped dashboard
+   * loads wait for this, so none goes out without the school header.
+   */
+  schoolContextReady: boolean;
   /**
    * Picker UI mode. Flow: school → role → student (parent, multi-child).
    */
@@ -151,6 +164,8 @@ const DeskAuthContext = createContext<DeskAuthContextType>({
   activeRoles: [],
   needsSchoolPick: false,
   contextSkipped: false,
+  courseOnlySchoolIds: [],
+  schoolContextReady: false,
   pickerMode: 'student',
   schoolRoleOptions: [],
   selectStudent: async () => {},
@@ -205,6 +220,7 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
   const [schoolsReady, setSchoolsReady] = useState(false);
   const [authUserId, setAuthUserId] = useState<string | null>(null);
   const authUserIdRef = useRef<string | null>(null);
+  const [courseOnlySchoolIds, setCourseOnlySchoolIds] = useState<string[]>([]);
   /** Keep Nest password JWT (needed for /parents/me/*). */
   const preferNestDeskTokenRef = useRef(false);
 
@@ -245,16 +261,26 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
     );
   }, [linkedStudents, selectedStudentId, selectedSchoolId, studentSnapshot]);
 
-  /** Push school + student + roles into deskFetch for every Nest call. */
-  useEffect(() => {
+  /**
+   * The school every school-scoped call and the persona use. While a pick is still open there is
+   * none: the token's own school (deskUser.school_id) is not the one being chosen.
+   */
+  const contextSchoolId = selectedSchoolId ?? (needsSchoolPick ? null : deskUser?.school_id ?? null);
+
+  /**
+   * Push school + student + roles into deskFetch for every Nest call. A layout effect: it runs before
+   * any screen's (passive) effects in the same commit, so the dashboard's loads for a newly opened
+   * school never go out with the previous (or no) school.
+   */
+  useLayoutEffect(() => {
     // The server keeps only header roles the token holds, so send the person's real roles behind the
     // hat (["teacher","discipline_master"]), never the hat name ("school_admin" for a bursar).
     setDeskActiveContext({
-      schoolId: selectedSchoolId ?? deskUser?.school_id ?? null,
+      schoolId: contextSchoolId,
       studentId: selectedStudentId,
       roles: activeRoles,
     });
-  }, [selectedSchoolId, selectedStudentId, activeRoles, deskUser?.school_id]);
+  }, [contextSchoolId, selectedStudentId, activeRoles]);
 
   /** Enrich selected student name/class/photo from Nest (source of truth for ERP). */
   useEffect(() => {
@@ -321,17 +347,21 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
           : deskUser.user_roles
         : personaRoles;
 
-    const schoolId = selectedSchoolId ?? deskUser?.school_id ?? orgSchoolId;
+    // While a school / role pick is open, no school is in force (the picker covers the tabs, but the
+    // dashboard behind it is mounted and must not load as the token's school).
+    const schoolId = needsSchoolPick ? selectedSchoolId : selectedSchoolId ?? deskUser?.school_id ?? orgSchoolId;
     const resolved = resolveDeskPersona(roles, {
       schoolId,
       schoolLinked: Boolean(schoolId),
       hasDeskSession: Boolean(deskToken) || orgRoles.length > 0,
     });
-    // No school open (none joined, or the picker was skipped): the learner hat has no school
-    // dashboard behind it, so show the personal one (Tukua Pay, courses, Join school).
+    // The learner hat has no school dashboard behind it when no school is open (none joined, or the
+    // picker was skipped) or when the learner role there came only from a course (no school record):
+    // show the personal one (courses, Tukua AI, Tukua Pay, Join school).
+    const courseOnly = Boolean(schoolId && courseOnlySchoolIds.includes(schoolId));
     const next: DeskPersona =
       resolved === 'student' &&
-      (!schoolId || (contextSkipped && !selectedSchoolId && schools.length > 0))
+      (!schoolId || courseOnly || (contextSkipped && !selectedSchoolId && schools.length > 0))
         ? 'individual'
         : resolved;
     log.info('DeskAuth', 'persona', {
@@ -341,6 +371,8 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
       deskRoles: deskUser?.user_roles,
       selectedRole,
       schoolId,
+      courseOnly,
+      needsSchoolPick,
       studentId: selectedStudentId,
       hasDeskToken: Boolean(deskToken),
       schoolCount: schools.length,
@@ -359,12 +391,22 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
     schools.length,
     linkedStudents.length,
     contextSkipped,
+    needsSchoolPick,
+    courseOnlySchoolIds,
   ]);
+
+  const schoolContextReady = deskReady && schoolsReady && !needsSchoolPick;
 
   const applySchoolsForUser = useCallback(
     async (
       userId: string,
-      opts?: { quiet?: boolean; forcePick?: boolean; rememberedFirst?: boolean },
+      opts?: {
+        quiet?: boolean;
+        forcePick?: boolean;
+        rememberedFirst?: boolean;
+        /** Force the picker only when the person holds 2+ hats (course-only learner hats not counted). */
+        forcePickIfMultiRole?: boolean;
+      },
     ) => {
       // Keep existing list visible — only flash spinner on first load for this user.
       if (!opts?.quiet && authUserIdRef.current !== userId) setSchoolsReady(false);
@@ -381,10 +423,21 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
       const list = withTokenRoles(rows, await getDeskTokenClaims());
       const linked = flattenLinkedStudents(list);
 
+      // Learner roles that came only from a course (no school record) — known before any persona is
+      // resolved, so a course learner never lands on the school-student dashboard. Remembered answers
+      // are instant; a later re-check that changes them updates the list in place.
+      const courseOnly = await resolveCourseOnlySchools(userId, list, (next) => {
+        if (authUserIdRef.current !== userId) return;
+        setCourseOnlySchoolIds([...next]);
+      });
+      setCourseOnlySchoolIds([...courseOnly]);
+
       // The last user type this person opened as (kept across logout). On login it wins over the
       // forced picker while that school + role is still theirs; otherwise it fills in when the
       // selected context is gone (logout, an abandoned switch).
-      let forcePick = Boolean(opts?.forcePick);
+      let forcePick =
+        Boolean(opts?.forcePick) ||
+        Boolean(opts?.forcePickIfMultiRole && shouldForcePickAfterLogin(preferRealSchoolRoles(list, courseOnly)));
       const last = forcePick && !opts?.rememberedFirst ? null : await getLastContext(userId);
       const remembered = last && rememberedContextUsable(list, last) ? lastContextAsStored(last) : null;
       if (forcePick && opts?.rememberedFirst && remembered) {
@@ -406,7 +459,7 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
         fromRemembered = true;
       }
       const { schoolId, studentId, activeRole, needsPick, pickerMode: mode, schoolRoleOptions: roleOpts } =
-        resolveContext(list, linked, stored, { forcePick });
+        resolveContext(list, linked, stored, { forcePick, courseOnlySchoolIds: courseOnly });
 
       if (!needsPick && schoolId) {
         const next: StoredContext = { schoolId, studentId, activeRole, skipped: false };
@@ -843,6 +896,7 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
       if (!session?.access_token || !session.user) {
         setAuthUserId(null);
         setSchools([]);
+        setCourseOnlySchoolIds([]);
         setSelectedSchoolIdState(null);
         setSelectedStudentIdState(null);
         setSelectedRoleState(null);
@@ -1052,10 +1106,10 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
         if (uid) {
           setAuthUserId(uid);
           authUserIdRef.current = uid;
-          const list = await fetchUserSchools(uid);
           await applySchoolsForUser(uid, {
             quiet: false,
-            forcePick: shouldForcePickAfterLogin(list),
+            // Picker only for 2+ hats; a course-only learner hat beside a real role does not count.
+            forcePickIfMultiRole: true,
             // Open as the last user type when it is still theirs; picker only when it is gone.
             rememberedFirst: true,
           });
@@ -1096,6 +1150,7 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
     setSchoolRoleOptions([]);
     setNeedsSchoolPick(false);
     setContextSkipped(false);
+    setCourseOnlySchoolIds([]);
   }, [authUserId]);
 
   const value = useMemo(
@@ -1118,6 +1173,8 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
       activeRoles,
       needsSchoolPick,
       contextSkipped,
+      courseOnlySchoolIds,
+      schoolContextReady,
       pickerMode,
       schoolRoleOptions,
       selectStudent,
@@ -1133,6 +1190,8 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
       clearDesk,
     }),
     [
+      courseOnlySchoolIds,
+      schoolContextReady,
       deskUser,
       deskToken,
       persona,

@@ -136,11 +136,35 @@ export function rememberedContextUsable(
   return hats.includes(raw) || hats.includes(mapRoleToMobileHat(raw));
 }
 
+/**
+ * Course-only learner roles (lib/courseLearner.ts) step aside for automatic choices: at a school the
+ * course learner hat is dropped when the person holds another role there, and a school where they
+ * are only a course learner is left out while another school gives them a real role. The full list
+ * still drives the picker and remembered choices.
+ */
+export function preferRealSchoolRoles(
+  schools: UserSchool[],
+  courseOnlySchoolIds?: ReadonlySet<string> | readonly string[] | null,
+): UserSchool[] {
+  const courseOnly = new Set(courseOnlySchoolIds ?? []);
+  if (!courseOnly.size) return schools;
+  const isLearner = (role: unknown) => uniqueSchoolRoles([role]).includes('student');
+  const trimmed = schools.map((s) => {
+    if (!courseOnly.has(s.id)) return s;
+    const rest = (s.roles ?? []).filter((r) => !isLearner(r));
+    return uniqueSchoolRoles(rest).length ? { ...s, roles: rest } : s;
+  });
+  const real = trimmed.filter(
+    (s) => !(courseOnly.has(s.id) && uniqueSchoolRoles(s.roles).every((h) => h === 'student')),
+  );
+  return real.length ? real : trimmed;
+}
+
 export function resolveContext(
   schools: UserSchool[],
   linked: LinkedStudent[],
   stored: StoredContext | null,
-  opts?: { forcePick?: boolean },
+  opts?: { forcePick?: boolean; courseOnlySchoolIds?: ReadonlySet<string> | readonly string[] | null },
 ): ResolvedContext {
   const empty: ResolvedContext = {
     schoolId: null,
@@ -162,7 +186,9 @@ export function resolveContext(
 
   // ── Step 1: resolve school ──
   let schoolId: string | null = null;
-  const multiRole = distinctHatsAcrossSchools(schools).length > 1;
+  // Automatic choices (no remembered pick) prefer roles with a real school record.
+  const preferred = preferRealSchoolRoles(schools, opts?.courseOnlySchoolIds);
+  const multiRole = distinctHatsAcrossSchools(preferred).length > 1;
 
   if (schools.length === 1) {
     schoolId = schools[0].id;
@@ -173,7 +199,7 @@ export function resolveContext(
   } else if (!multiRole) {
     // One role (individual+student collapsed) across schools — auto-pick; switcher later. A parent
     // opens where they have children, not on an empty school.
-    schoolId = (schools.find((s) => (s.students?.length ?? 0) > 0) ?? schools[0]).id;
+    schoolId = (preferred.find((s) => (s.students?.length ?? 0) > 0) ?? preferred[0] ?? schools[0]).id;
   } else {
     return { ...empty, needsPick: true, pickerMode: 'school' };
   }
@@ -194,6 +220,13 @@ export function resolveContext(
   if (schoolRoles.length === 1) {
     activeRole = schoolRoles[0];
   } else if (schoolRoles.length > 1 && !activeRole) {
+    // Only one role left once a course-only learner hat steps aside: open it, no role picker.
+    const realRoles = uniqueSchoolRoles(preferred.find((s) => s.id === schoolId)?.roles ?? school.roles);
+    if (realRoles.length === 1 && realRoles[0] !== 'student') {
+      activeRole = realRoles[0];
+    }
+  }
+  if (schoolRoles.length > 1 && !activeRole) {
     return {
       schoolId,
       studentId: null,

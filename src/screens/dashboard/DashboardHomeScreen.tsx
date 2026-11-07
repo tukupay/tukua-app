@@ -267,6 +267,7 @@ export function DashboardHomeScreen() {
     requestSchoolChange,
     schoolRoleOptions,
     activeRoles: heldRoles,
+    schoolContextReady,
   } = useDeskAuth();
   const { guardDashboardAction } = useTokenGate();
 
@@ -357,7 +358,7 @@ export function DashboardHomeScreen() {
   }, [profile, session, selectedStudent]);
 
   const loadTokens = useCallback(async () => {
-    if (!deskToken) {
+    if (!deskToken || !schoolContextReady) {
       setTokens(null);
       return;
     }
@@ -376,13 +377,13 @@ export function DashboardHomeScreen() {
     } finally {
       setTokensLoading(false);
     }
-  }, [deskToken]);
+  }, [deskToken, schoolContextReady]);
 
   const latestStudentRef = useRef<string | null | undefined>(selectedStudentId);
   latestStudentRef.current = selectedStudentId;
 
   const loadStudentBalances = useCallback(async () => {
-    if (!deskToken || persona !== 'parent' || !selectedStudentId) {
+    if (!deskToken || !schoolContextReady || persona !== 'parent' || !selectedStudentId) {
       setFeeBalance(null);
       setPocketBalance(null);
       setParentAttendancePct(null);
@@ -431,10 +432,10 @@ export function DashboardHomeScreen() {
       setFeeBalance(null);
       setPocketBalance(null);
     }
-  }, [deskToken, persona, selectedStudentId]);
+  }, [deskToken, schoolContextReady, persona, selectedStudentId]);
 
   const loadSecurityHero = useCallback(async () => {
-    if (!deskToken || persona !== 'security') {
+    if (!deskToken || !schoolContextReady || persona !== 'security') {
       setSecurityAssignment(null);
       setSecurityActiveTrip(null);
       setSecurityBoardedTotal(null);
@@ -473,7 +474,7 @@ export function DashboardHomeScreen() {
       setSecurityBoardedTotal(null);
       setSecurityAttendanceToday(null);
     }
-  }, [deskToken, persona]);
+  }, [deskToken, schoolContextReady, persona]);
 
   useEffect(() => {
     void loadTokens();
@@ -481,7 +482,7 @@ export function DashboardHomeScreen() {
 
   // School office hero: roll + fees, both from cached server dashboards (one request each, in parallel).
   useEffect(() => {
-    if (!deskToken || persona !== 'school_admin') {
+    if (!deskToken || !schoolContextReady || persona !== 'school_admin') {
       setOfficeHero(null);
       return;
     }
@@ -509,7 +510,7 @@ export function DashboardHomeScreen() {
     return () => {
       cancelled = true;
     };
-  }, [deskToken, persona, selectedSchool?.id, deskUser?.school_id]);
+  }, [deskToken, schoolContextReady, persona, selectedSchool?.id, deskUser?.school_id]);
 
   useEffect(() => {
     void loadStudentBalances();
@@ -536,7 +537,7 @@ export function DashboardHomeScreen() {
 
   // Learners and individuals: e-learning courses still in progress (needs a school; 400 → unknown).
   useEffect(() => {
-    if (persona !== 'student' && persona !== 'individual') {
+    if ((persona !== 'student' && persona !== 'individual') || !schoolContextReady) {
       setMyCourses(null);
       return;
     }
@@ -553,14 +554,14 @@ export function DashboardHomeScreen() {
     return () => {
       cancelled = true;
     };
-  }, [persona, deskToken]);
+  }, [persona, deskToken, schoolContextReady]);
 
   useEffect(() => {
     void loadSecurityHero();
   }, [loadSecurityHero]);
 
   useEffect(() => {
-    if (!deskToken || persona !== 'teacher') {
+    if (!deskToken || !schoolContextReady || persona !== 'teacher') {
       setTeacherHero(null);
       setIsClassTeacher(false);
       return;
@@ -622,10 +623,13 @@ export function DashboardHomeScreen() {
     deskUser?.id,
     deskUser?.user_id,
     persona,
+    schoolContextReady,
   ]);
 
   useEffect(() => {
-    if (!deskToken || persona !== 'student') {
+    // School-student figures only once the school (and that it is a real school record, not a course
+    // learner's, which resolves to 'individual') is settled and in the API context.
+    if (!deskToken || !schoolContextReady || persona !== 'student') {
       setStudentHero(null);
       return;
     }
@@ -694,7 +698,7 @@ export function DashboardHomeScreen() {
     return () => {
       cancelled = true;
     };
-  }, [deskToken, deskUser, persona, selectedStudentId]);
+  }, [deskToken, deskUser, persona, selectedStudentId, schoolContextReady]);
 
   useEffect(() => {
     Animated.parallel([

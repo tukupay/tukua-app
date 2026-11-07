@@ -94,25 +94,41 @@ function rolePhrase(role: string): string {
   return /^[aeiou]/.test(label) ? `an ${label}` : `a ${label}`;
 }
 
-/** "You are a parent in this school" · "You are a teacher and a parent in this school". */
-export function schoolRoleSentence(roles: string[] | null | undefined): string | null {
+const COURSE_LEARNER_SENTENCE = 'You are a learner here (courses)';
+
+/**
+ * "You are a parent in this school" · "You are a teacher and a parent in this school". With
+ * `courseLearner` (the learner role there came only from a course, no school record):
+ * "You are a learner here (courses)", or "You are a parent in this school, and a learner here (courses)".
+ */
+export function schoolRoleSentence(
+  roles: string[] | null | undefined,
+  opts?: { courseLearner?: boolean },
+): string | null {
   const phrases: string[] = [];
+  let learner = false;
   for (const role of roles ?? []) {
     if (!role || role.toLowerCase() === 'individual') continue;
+    if (opts?.courseLearner && mapRoleToMobileHat(role.toLowerCase().trim()) === 'student') {
+      learner = true;
+      continue;
+    }
     const p = rolePhrase(role);
     if (!phrases.includes(p)) phrases.push(p);
   }
-  if (!phrases.length) return null;
+  if (!phrases.length) return learner ? COURSE_LEARNER_SENTENCE : null;
   const list =
     phrases.length === 1
       ? phrases[0]
       : `${phrases.slice(0, -1).join(', ')} and ${phrases[phrases.length - 1]}`;
-  return `You are ${list} in this school`;
+  const sentence = `You are ${list} in this school`;
+  return learner ? `${sentence}, and a learner here (courses)` : sentence;
 }
 
 /** What opening the school as this role gives you (role step). */
-function roleBlurb(role: string): string {
+function roleBlurb(role: string, opts?: { courseLearner?: boolean }): string {
   const hat = mapRoleToMobileHat(role.toLowerCase());
+  if (hat === 'student' && opts?.courseLearner) return 'Your courses, Tukua AI and learning';
   if (hat === 'parent') return 'Fees, results, attendance and transport for your child';
   if (hat === 'student') return 'Assignments, timetable, grades and courses';
   if (hat === 'teacher') return 'Timetable, marks, class lists and reports';
@@ -293,7 +309,12 @@ export function SchoolPickerScreen() {
     deskToken,
     pickerMode,
     schoolRoleOptions,
+    courseOnlySchoolIds,
   } = useDeskAuth();
+  const isCourseLearnerAt = useCallback(
+    (schoolId: string | null | undefined) => Boolean(schoolId && courseOnlySchoolIds.includes(schoolId)),
+    [courseOnlySchoolIds],
+  );
 
   const [deskChildren, setDeskChildren] = useState<DeskChild[]>([]);
   const [deskKidsFetched, setDeskKidsFetched] = useState(false);
@@ -1130,7 +1151,8 @@ export function SchoolPickerScreen() {
                           {selectedSchool.name}
                         </Text>
                         <Text style={[styles.roleLineText, { color: palette.primary, marginTop: 2 }]} numberOfLines={2}>
-                          {schoolRoleSentence(schoolRoleOptions) ?? 'Your school'}
+                          {schoolRoleSentence(schoolRoleOptions, { courseLearner: isCourseLearnerAt(selectedSchool.id) }) ??
+                            'Your school'}
                         </Text>
                       </View>
                     </View>
@@ -1146,7 +1168,7 @@ export function SchoolPickerScreen() {
                   onPress={() => void onSelectRole(item)}
                   accessibilityRole="button"
                   accessibilityLabel={`Open as ${deskRoleLabel(item)}`}
-                  accessibilityHint={roleBlurb(item)}>
+                  accessibilityHint={roleBlurb(item, { courseLearner: isCourseLearnerAt(selectedSchoolId) })}>
                   <PickCard selected={selected} style={styles.card}>
                     <View style={styles.cardInner}>
                       <View
@@ -1161,7 +1183,7 @@ export function SchoolPickerScreen() {
                           {deskRoleLabel(item)}
                         </Text>
                         <Text style={styles.cardMeta} numberOfLines={2}>
-                          {roleBlurb(item)}
+                          {roleBlurb(item, { courseLearner: isCourseLearnerAt(selectedSchoolId) })}
                         </Text>
                       </View>
                       {selected ? (
@@ -1338,7 +1360,7 @@ export function SchoolPickerScreen() {
                         <Text style={styles.cardTitle} numberOfLines={1}>
                           {item.name}
                         </Text>
-                        {schoolRoleSentence(item.roles) ? (
+                        {schoolRoleSentence(item.roles, { courseLearner: isCourseLearnerAt(item.id) }) ? (
                           <View style={styles.roleLine}>
                             <Ionicons
                               name={roleIcon((item.roles ?? [])[0] ?? '')}
@@ -1346,7 +1368,7 @@ export function SchoolPickerScreen() {
                               color={palette.primary}
                             />
                             <Text style={[styles.roleLineText, { color: palette.primary }]} numberOfLines={2}>
-                              {schoolRoleSentence(item.roles)}
+                              {schoolRoleSentence(item.roles, { courseLearner: isCourseLearnerAt(item.id) })}
                             </Text>
                           </View>
                         ) : item.shortName ? (
