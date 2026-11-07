@@ -27,12 +27,20 @@ import { log } from '../lib/logger';
 import type { CoursesStackParamList } from '../navigation/CoursesStack';
 import { useAppTheme } from '../context/AppThemeContext';
 import { CARD, CARD_SURFACE, INK, ThemedBackdrop, rgba } from '../components/theme/ThemedPage';
+import {
+  COURSE_ROW_HEIGHT,
+  CourseTableFooter,
+  CourseTableHeader,
+  CourseTableRow,
+  CourseTableSkeletonRow,
+} from '../components/courses/CourseTableRow';
 
-async function nestAuthGet<T>(path: string): Promise<T> {
+async function nestAuthGet<T>(path: string, signal?: AbortSignal): Promise<T> {
   const token = await resolveNestAccessTokenForWebView();
   if (!token) throw new Error('Sign in again to load courses.');
   const res = await fetch(`${getNestApiBaseUrl().replace(/\/$/, '')}${path}`, {
     headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+    signal,
   });
   const json = await res.json().catch(() => null);
   if (!res.ok) {
@@ -82,6 +90,9 @@ type CatalogCourse = {
   school_name?: string | null;
   org_name?: string | null;
   certifying_agency_name?: string | null;
+  course_code?: string | null;
+  level?: string | null;
+  duration?: string | number | null;
 };
 
 type OrgBrand = {
@@ -193,38 +204,34 @@ function OrgBrandBadge({ brand }: { brand: OrgBrand | null }) {
   );
 }
 
-/** Mirrors web `CourseCertifierLabels` — primary certifying agency (with logo) + others. */
-function CertifierLabels({ entries }: { entries: CertifierEntry[] }) {
-  const named = entries.filter((e) => (e.name || e.short_name)?.trim());
-  if (!named.length) return null;
-  const primary = named.find((e) => e.is_default) || named[0];
-  const others = named.filter((e) => e !== primary);
-  const primaryName = (primary.name || primary.short_name || '').trim();
-  const othersLabel = others
-    .map((e) => (e.name || e.short_name || '').trim())
-    .filter(Boolean)
-    .join(' · ');
-
-  return (
-    <View style={styles.certWrap}>
-      <View style={styles.certRow}>
-        {primary.logo_url ? (
-          <Image source={{ uri: primary.logo_url }} style={styles.certLogo} />
-        ) : (
-          <Ionicons name="ribbon-outline" size={13} color="#B45309" />
-        )}
-        <Text style={styles.certPrimary} numberOfLines={1}>
-          {primaryName}
-        </Text>
-      </View>
-      {othersLabel ? (
-        <Text style={styles.certOthers} numberOfLines={1}>
-          {othersLabel}
-        </Text>
-      ) : null}
-    </View>
-  );
+/** Institution · level · duration, for the second line of a course row. */
+function secondaryLine(c: CatalogCourse, brandName?: string | null): string {
+  const parts: string[] = [];
+  const school = brandName?.trim() || offeringLabel(c);
+  if (school) parts.push(school);
+  const level = String(c.level ?? '').trim();
+  if (level) parts.push(level.charAt(0).toUpperCase() + level.slice(1));
+  const dur = c.duration;
+  if (typeof dur === 'number' && Number.isFinite(dur) && dur > 0) parts.push(`${dur} hrs`);
+  else if (typeof dur === 'string' && dur.trim()) parts.push(dur.trim());
+  if (!parts.length && c.category) parts.push(String(c.category));
+  return parts.join(' · ');
 }
+
+/** Courses per batch from /platform/courses/catalog-page (server pages with limit/offset, max 48). */
+const PAGE_SIZE = 20;
+/** Fewer rows than this on screen (after filters) and more on the server: fetch the next batch. */
+const MIN_VISIBLE = 12;
+const SEARCH_DEBOUNCE_MS = 300;
+
+type CatalogPage = {
+  items: CatalogCourse[];
+  total?: number;
+  org_brand_by_course?: Record<string, OrgBrand>;
+  certifiers_by_course?: Record<string, CertifierEntry[]>;
+};
+
+const SKELETON_ROWS = Array.from({ length: 8 }, (_, i) => ({ id: `__sk${i}` }) as CatalogCourse);
 
 export function CoursesScreen() {
   const insets = useSafeAreaInsets();
@@ -236,100 +243,112 @@ export function CoursesScreen() {
   const [orgBrandByCourse, setOrgBrandByCourse] = useState<Record<string, OrgBrand>>({});
   const [certifiersByCourse, setCertifiersByCourse] = useState<Record<string, CertifierEntry[]>>({});
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [moreError, setMoreError] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [filter, setFilter] = useState<FilterKey>('all');
+  const [headerHeight, setHeaderHeight] = useState(0);
 
-  const [pageSize] = useState(20);
-  const [visibleCount, setVisibleCount] = useState(20);
-
-  // Only the newest load may write to the screen (a pull-to-refresh can start while batches are still arriving).
+  const listRef = useRef<FlatList<CatalogCourse>>(null);
+  // Paging cursor + guards live in refs so onEndReached never sees stale values.
+  const offsetRef = useRef(0);
+  const hasMoreRef = useRef(true);
+  const inFlightRef = useRef(false);
+  const seenRef = useRef<Set<string>>(new Set());
+  const queryRef = useRef('');
+  const abortRef = useRef<AbortController | null>(null);
+  // Only the newest reset (search, pull-to-refresh) may write to the screen.
   const loadRun = useRef(0);
 
+  const loadEnrolled = useCallback(() => {
+    void nestAuthGet<{ items: Enrolled[] }>('/platform/courses/mine?limit=40')
+      .then((mine) => setEnrolled(mine?.items || []))
+      .catch((e) => log.warn('Courses', 'enrolled load failed', e instanceof Error ? e.message : String(e)));
+  }, []);
+
   /**
-   * The catalogue arrives a batch at a time, as on the web (src/lib/tenantCourseCatalog.ts): the first
-   * courses show as soon as they are in, and the rest fill in behind. Asking for the whole catalogue
-   * in one call kept the screen on its spinner for several seconds.
+   * One batch of the catalogue. `reset` starts again at offset 0 (new search / refresh) and cancels the
+   * request still on its way; otherwise it appends the next batch. Rows stream in a batch at a time.
    */
-  const load = useCallback(async () => {
-    setError(null);
-    const run = ++loadRun.current;
-    const current = () => run === loadRun.current;
-    type Page = {
-      items: CatalogCourse[];
-      total?: number;
-      org_brand_by_course?: Record<string, OrgBrand>;
-      certifiers_by_course?: Record<string, CertifierEntry[]>;
-    };
-    const FIRST = 24;
-    const NEXT = 48;
-    const page = (limit: number, offset: number) =>
-      nestAuthGet<Page>(`/platform/courses/catalog-page?limit=${limit}&offset=${offset}&order=catalog`);
+  const fetchPage = useCallback(async (reset: boolean, opts?: { silent?: boolean }) => {
+    if (!reset && (inFlightRef.current || !hasMoreRef.current)) return;
+    if (reset) {
+      abortRef.current?.abort();
+      loadRun.current += 1;
+      offsetRef.current = 0;
+      hasMoreRef.current = true;
+      if (!opts?.silent) setLoading(true);
+    } else {
+      setLoadingMore(true);
+    }
+    const run = loadRun.current;
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    inFlightRef.current = true;
+    setMoreError(false);
+    const offset = offsetRef.current;
+    const q = queryRef.current;
+    const path =
+      `/platform/courses/catalog-page?limit=${PAGE_SIZE}&offset=${offset}&order=catalog` +
+      (q ? `&q=${encodeURIComponent(q)}` : '');
     try {
-      // What the person is enrolled in comes on its own, so it never waits for the catalogue.
-      void nestAuthGet<{ items: Enrolled[] }>('/platform/courses/mine?limit=40')
-        .then((mine) => {
-          if (current()) setEnrolled(mine?.items || []);
-        })
-        .catch((e) => log.warn('Courses', 'enrolled load failed', e instanceof Error ? e.message : String(e)));
-
-      const first = await page(FIRST, 0);
-      if (!current()) return;
-      const seen = new Set<string>();
-      const all: CatalogCourse[] = [];
-      const brands: Record<string, OrgBrand> = {};
-      const certifiers: Record<string, CertifierEntry[]> = {};
-      const take = (p: Page | null | undefined) => {
-        for (const item of p?.items || []) {
-          const id = String((item as { id?: unknown }).id ?? '');
-          if (!id || seen.has(id)) continue;
-          seen.add(id);
-          all.push(item);
-        }
-        Object.assign(brands, p?.org_brand_by_course || {});
-        Object.assign(certifiers, p?.certifiers_by_course || {});
-      };
-      const show = () => {
-        setCatalog([...all]);
-        setOrgBrandByCourse({ ...brands });
-        setCertifiersByCourse({ ...certifiers });
-      };
-      take(first);
-      show();
-      setVisibleCount(20);
-      setLoading(false);
-      setRefreshing(false);
-
-      const total = Number(first?.total) || all.length;
-      const offsets: number[] = [];
-      for (let offset = FIRST; offset < total && offsets.length < 60; offset += NEXT) offsets.push(offset);
-      if ((first?.items || []).length < FIRST) offsets.length = 0;
-      let next = 0;
-      const worker = async () => {
-        while (next < offsets.length) {
-          const offset = offsets[next];
-          next += 1;
-          const more = await page(NEXT, offset).catch(() => null);
-          if (!current()) return;
-          take(more);
-          show();
-        }
-      };
-      await Promise.all([worker(), worker(), worker()]);
+      const page = await nestAuthGet<CatalogPage>(path, ctrl.signal);
+      if (run !== loadRun.current) return;
+      const items = page?.items || [];
+      if (reset) seenRef.current = new Set();
+      const fresh: CatalogCourse[] = [];
+      for (const item of items) {
+        const id = String(item?.id ?? '');
+        if (!id || seenRef.current.has(id)) continue;
+        seenRef.current.add(id);
+        fresh.push(item);
+      }
+      setCatalog((prev) => (reset ? fresh : [...prev, ...fresh]));
+      setOrgBrandByCourse((prev) => ({ ...(reset ? {} : prev), ...(page?.org_brand_by_course || {}) }));
+      setCertifiersByCourse((prev) => ({ ...(reset ? {} : prev), ...(page?.certifiers_by_course || {}) }));
+      offsetRef.current = offset + items.length;
+      const total = Number(page?.total);
+      hasMoreRef.current =
+        items.length >= PAGE_SIZE && (!Number.isFinite(total) || total <= 0 || offsetRef.current < total);
+      setHasMore(hasMoreRef.current);
+      if (reset) setError(null);
     } catch (e) {
+      if (ctrl.signal.aborted || run !== loadRun.current) return;
       const msg = e instanceof Error ? e.message : 'Could not load courses';
-      setError(msg);
       log.warn('Courses', 'load failed', msg);
+      if (reset) setError(msg);
+      else setMoreError(true);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (run === loadRun.current) {
+        inFlightRef.current = false;
+        setLoadingMore(false);
+        if (reset) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      }
     }
   }, []);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    loadEnrolled();
+    return () => abortRef.current?.abort();
+  }, [loadEnrolled]);
+
+  // Typing waits a moment before asking the server; the search starts again at the first batch.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query.trim()), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  useEffect(() => {
+    queryRef.current = debouncedQuery;
+    void fetchPage(true);
+  }, [debouncedQuery, fetchPage]);
 
   const openCourse = (courseId: string, title?: string, tab?: string) => {
     const path = tab ? `/courses/${courseId}/${tab}` : `/courses/${courseId}`;
@@ -349,8 +368,8 @@ export function CoursesScreen() {
 
   const enrolledIds = useMemo(() => new Set(enrolled.map((e) => e.course_id)), [enrolled]);
 
-  const browseAll = useMemo(() => {
-    const q = query.trim().toLowerCase();
+  // The server pages and searches (q); the Featured / Free / Certified chips filter the batches already in.
+  const browse = useMemo(() => {
     return catalog
       .filter((c) => c.id && !enrolledIds.has(c.id))
       .filter((c) => {
@@ -358,46 +377,102 @@ export function CoursesScreen() {
         if (filter === 'featured') return Boolean(c.is_featured);
         if (filter === 'certified') return Boolean(c.is_certified);
         return true;
-      })
-      .filter((c) => {
-        if (!q) return true;
-        const school = offeringLabel(c) || '';
-        const hay = `${c.title || ''} ${c.short_description || ''} ${c.category || ''} ${school}`.toLowerCase();
-        return hay.includes(q);
       });
-  }, [catalog, enrolledIds, filter, query]);
+  }, [catalog, enrolledIds, filter]);
 
-  const browse = useMemo(() => browseAll.slice(0, visibleCount), [browseAll, visibleCount]);
+  // A filter (or the enrolled courses) can leave a batch nearly empty: keep streaming until the screen has rows.
+  useEffect(() => {
+    if (loading || loadingMore || !hasMore || moreError || error) return;
+    if (browse.length < MIN_VISIBLE) void fetchPage(false);
+  }, [browse.length, loading, loadingMore, hasMore, moreError, error, fetchPage]);
 
   const headerPad = floatingHeaderInset(insets.top);
+
+  const getItemLayout = useCallback(
+    (_: ArrayLike<CatalogCourse> | null | undefined, index: number) => ({
+      length: COURSE_ROW_HEIGHT,
+      offset: headerPad + headerHeight + COURSE_ROW_HEIGHT * index,
+      index,
+    }),
+    [headerPad, headerHeight],
+  );
+
+  const renderItem = useCallback(
+    ({ item }: { item: CatalogCourse }) => {
+      if (item.id.startsWith('__sk')) return <CourseTableSkeletonRow />;
+      const orgBrand = orgBrandByCourse[item.id] || null;
+      const certifiers = certifiersByCourse[item.id] || [];
+      const primary = certifiers.find((e) => e.is_default) || certifiers[0];
+      const certifier = (primary?.short_name || primary?.name || '').trim() || null;
+      return (
+        <CourseTableRow
+          title={item.title || 'Course'}
+          secondary={secondaryLine(item, orgBrand?.name)}
+          thumbnailUrl={item.thumbnail_url}
+          pricing={formatPrice(item)}
+          certified={Boolean(item.is_certified)}
+          featured={Boolean(item.is_featured)}
+          certifier={certifier}
+          onPress={() => openCourse(item.id, item.title)}
+        />
+      );
+    },
+    // openCourse only uses navigation, which is stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [orgBrandByCourse, certifiersByCourse],
+  );
+
+  const footerState: 'loading' | 'more' | 'end' | 'empty' | 'error' | null = loading
+    ? null
+    : error && !catalog.length
+      ? 'empty'
+      : loadingMore
+        ? 'loading'
+        : moreError
+          ? 'error'
+          : !browse.length
+            ? 'empty'
+            : hasMore
+              ? 'more'
+              : 'end';
 
   return (
     <View style={[styles.root, { backgroundColor: palette.muted }]}>
       <ThemedBackdrop />
       <FlatList
-        data={loading ? ([{ id: '__sk1' }, { id: '__sk2' }, { id: '__sk3' }] as CatalogCourse[]) : browse}
+        ref={listRef}
+        data={loading ? SKELETON_ROWS : browse}
         keyExtractor={(item) => item.id}
+        renderItem={renderItem}
+        getItemLayout={getItemLayout}
+        initialNumToRender={10}
+        maxToRenderPerBatch={10}
+        updateCellsBatchingPeriod={40}
+        windowSize={9}
+        removeClippedSubviews
         contentContainerStyle={[styles.listContent, { paddingTop: headerPad, paddingBottom: bottomBarSpace + 16 }]}
         showsVerticalScrollIndicator={false}
         decelerationRate="normal"
         scrollEventThrottle={16}
+        keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={() => {
               setRefreshing(true);
-              void load();
+              loadEnrolled();
+              void fetchPage(true, { silent: true });
             }}
             tintColor={Colors.primary}
           />
         }
         onEndReached={() => {
           if (loading) return;
-          if (visibleCount < browseAll.length) setVisibleCount((n) => n + pageSize);
+          void fetchPage(false);
         }}
-        onEndReachedThreshold={0.35}
+        onEndReachedThreshold={0.5}
         ListHeaderComponent={
-          <View>
+          <View onLayout={(e) => setHeaderHeight(Math.round(e.nativeEvent.layout.height))}>
             <View style={styles.titleRow}>
               <View style={[styles.titleMarker, { backgroundColor: palette.secondary }]} />
               <Text style={styles.h1}>Courses and eLearning</Text>
@@ -464,16 +539,14 @@ export function CoursesScreen() {
               <Ionicons name="search" size={18} color={Colors.mutedForeground} />
               <TextInput
                 value={query}
-                onChangeText={(t) => {
-                  setQuery(t);
-                  setVisibleCount(20);
-                }}
+                onChangeText={setQuery}
                 placeholder="Search courses"
                 placeholderTextColor={Colors.mutedForeground}
                 style={styles.searchInput}
                 autoCapitalize="none"
                 autoCorrect={false}
                 clearButtonMode="while-editing"
+                returnKeyType="search"
               />
             </View>
 
@@ -483,10 +556,7 @@ export function CoursesScreen() {
                 return (
                   <Pressable
                     key={f.key}
-                    onPress={() => {
-                      setFilter(f.key);
-                      setVisibleCount(20);
-                    }}
+                    onPress={() => setFilter(f.key)}
                     style={[styles.chip, on && { backgroundColor: palette.primary, borderColor: palette.primary }]}
                   >
                     <Text style={[styles.chipText, on && { color: palette.secondary }]}>{f.label}</Text>
@@ -496,82 +566,23 @@ export function CoursesScreen() {
             </View>
 
             <SectionTitle label="Browse" accent={palette.secondary} style={{ marginTop: 12 }} />
+            <CourseTableHeader />
           </View>
         }
-        renderItem={({ item }) =>
-          loading || item.id.startsWith('__sk') ? (
-            <View style={[styles.cardLarge, styles.skeletonCard]}>
-              <View style={[styles.skLine, { width: '70%' }]} />
-              <View style={styles.cardBodyRow}>
-                <View style={[styles.thumb, styles.thumbPh]} />
-                <View style={styles.cardBodyRight}>
-                  <View style={[styles.skLine, { width: '90%' }]} />
-                  <View style={[styles.skLine, { width: '55%', marginTop: 10 }]} />
-                </View>
-              </View>
-            </View>
-          ) : (
-            (() => {
-              const pricing = formatPrice(item);
-              const orgBrand = orgBrandByCourse[item.id] || null;
-              const school = orgBrand?.name?.trim() || offeringLabel(item);
-              const certifiers = certifiersByCourse[item.id] || [];
-              const desc = item.short_description || item.description || '';
-              return (
-                <Pressable style={styles.cardLarge} onPress={() => openCourse(item.id, item.title)}>
-                  {orgBrand?.name ? <OrgBrandBadge brand={orgBrand} /> : null}
-                  <Text style={styles.cardTitleFull} numberOfLines={2}>
-                    {item.title || 'Course'}
-                  </Text>
-                  {!orgBrand?.name && school ? <Text style={[styles.school, { color: palette.primary }]}>{school}</Text> : null}
-                  <View style={styles.cardBodyRow}>
-                    <CourseMedia uri={item.thumbnail_url} />
-                    <View style={styles.cardBodyRight}>
-                      {desc ? (
-                        <Text style={styles.desc} numberOfLines={2}>
-                          {desc.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()}
-                        </Text>
-                      ) : null}
-                      <View style={styles.priceRow}>
-                        <Text style={styles.price}>{pricing.label}</Text>
-                        {pricing.strike ? <Text style={styles.strike}>{pricing.strike}</Text> : null}
-                        {pricing.discount ? (
-                          <View style={[styles.discountBadge, { backgroundColor: rgba(palette.secondary, 0.18) }]}>
-                            <Text style={[styles.discountText, { color: palette.primary }]}>{pricing.discount}</Text>
-                          </View>
-                        ) : null}
-                        {item.is_certified ? <Text style={styles.certified}> · Certified</Text> : null}
-                      </View>
-                    </View>
-                    <Ionicons
-                      name="chevron-forward"
-                      size={20}
-                      color={Colors.mutedForeground}
-                      style={styles.cardChevron}
-                    />
-                  </View>
-                  <CertifierLabels entries={certifiers} />
-                </Pressable>
-              );
-            })()
-          )
-        }
-        ListEmptyComponent={
-          !error && !loading ? (
-            <Text style={styles.empty}>
-              {query || filter !== 'all' ? 'No courses match your filters.' : 'No catalog courses right now.'}
-            </Text>
-          ) : null
-        }
         ListFooterComponent={
-          loading ? (
-            <Text style={[styles.muted, { textAlign: 'center', paddingVertical: 12 }]}>
-              Loading courses…
-            </Text>
-          ) : !loading && visibleCount < browseAll.length ? (
-            <Text style={[styles.muted, { textAlign: 'center', paddingVertical: 8 }]}>
-              Scroll for more…
-            </Text>
+          footerState ? (
+            <CourseTableFooter
+              state={footerState}
+              message={
+                error && !catalog.length
+                  ? 'Pull down to try again.'
+                  : query || filter !== 'all'
+                    ? 'No courses match your filters.'
+                    : 'No catalog courses right now.'
+              }
+            />
+          ) : loading ? (
+            <CourseTableFooter state="loading" />
           ) : null
         }
       />
