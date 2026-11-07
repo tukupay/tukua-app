@@ -21,20 +21,20 @@ export function shortDate(raw: unknown): string {
 }
 
 /**
- * A phone for display with the middle hidden: "0712345678" → "0712 ••• 678". Takes a raw number or the
- * API's masked form ("*** *** *678" → "•••• ••• 678"). Empty when nothing usable.
+ * A phone for display with two digits hidden: "0712345678" → "07123••678". Takes a raw number or the
+ * API's masked form ("07123**678" → "07123••678"). Empty when nothing usable.
  */
 export function maskPhoneDisplay(raw: string | null | undefined): string {
   const s = String(raw ?? '').trim();
   if (!s) return '';
   const digits = s.replace(/\D/g, '');
-  if (/[*•x]/i.test(s)) {
-    const tail = digits.slice(-3);
-    return tail ? `•••• ••• ${tail}` : '';
-  }
+  // Already masked by the API ("07123**678"): show it as is, with dots.
+  if (/[*•]/.test(s)) return s.replace(/\*/g, '•');
   if (digits.length < 7) return '';
+  // Two digits hidden (owner, 2026-11-08): "0712345678" -> "07123••678".
   const local = digits.startsWith('254') ? `0${digits.slice(3)}` : digits;
-  return `${local.slice(0, 4)} ••• ${local.slice(-3)}`;
+  const cut = local.length - 5;
+  return `${local.slice(0, cut)}••${local.slice(cut + 2)}`;
 }
 
 /** Two-letter initials for an avatar. */
