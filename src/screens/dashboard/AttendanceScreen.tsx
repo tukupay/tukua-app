@@ -12,7 +12,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from '../../components/FlatFill'; // flat fill: no gradients
 import { GreenPattern } from '../../components/dashboard/DashboardBackground';
 import { ThemedBackdrop } from '../../components/theme/ThemedPage';
-import { GlassPanel } from '../../components/dashboard/Glass';
 import { ModuleBackBar, ModuleScreenHeader, ModuleEmpty, ModuleGlassCard, ModuleKicker } from './ModuleChrome';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import { useDeskAuth } from '../../context/DeskAuthContext';

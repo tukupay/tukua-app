@@ -25,7 +25,6 @@ import { JoinSchoolScreen } from '../screens/dashboard/JoinSchoolScreen';
 import { EnterMarksScreen } from '../screens/dashboard/EnterMarksScreen';
 import { TeacherMarksheetScreen } from '../screens/dashboard/TeacherMarksheetScreen';
 import { EnterMarksEntryScreen } from '../screens/dashboard/EnterMarksEntryScreen';
-import { ScanMarksheetScreen } from '../screens/dashboard/ScanMarksheetScreen';
 import { TeacherClassesScreen } from '../screens/dashboard/TeacherClassesScreen';
 import { TeacherReportsScreen } from '../screens/dashboard/TeacherReportsScreen';
 import { StudentGradesScreen } from '../screens/dashboard/StudentGradesScreen';

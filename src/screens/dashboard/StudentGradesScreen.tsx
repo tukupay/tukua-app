@@ -18,7 +18,6 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Ionicons } from '@expo/vector-icons';
 
 import { ThemedBackdrop } from '../../components/theme/ThemedPage';
 
