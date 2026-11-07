@@ -35,7 +35,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppTheme } from '../../context/AppThemeContext';
 import { floatingHeaderInset } from '../../constants/layout';
 import { useBottomBarSpace } from '../navigation/useBottomBarSpace';
-import { CARD_SURFACE, INK, ThemedPage, rgba } from '../theme/ThemedPage';
+import { CARD_SURFACE, INK, ThemedPage } from '../theme/ThemedPage';
+import { rgba } from '../../theme/color';
 import { Skeleton } from './Skeleton';
 import { ModuleBackBar, ModuleScreenHeader } from '../../screens/dashboard/ModuleChrome';
 

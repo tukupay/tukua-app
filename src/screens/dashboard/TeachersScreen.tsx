@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { FlatList, Image, Linking, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { ThemedBackdrop, INK, rgba } from '../../components/theme/ThemedPage';
+import { ThemedBackdrop, INK } from '../../components/theme/ThemedPage';
+import { rgba } from '../../theme/color';
 import { PaymentBottomSheet } from '../../components/dashboard/PaymentBottomSheet';
 import { PaymentProcessCard, type PaymentOutcome } from '../../components/dashboard/PaymentProcessCard';
 import {

@@ -15,7 +15,8 @@ import {
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { ThemedPage, rgba } from '../../components/theme/ThemedPage';
+import { ThemedPage } from '../../components/theme/ThemedPage';
+import { rgba } from '../../theme/color';
 import { useAppTheme } from '../../context/AppThemeContext';
 import {
   ErrorState,

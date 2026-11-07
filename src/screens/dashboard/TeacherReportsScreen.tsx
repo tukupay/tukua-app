@@ -15,7 +15,8 @@ import { DashboardStackParamList } from '../../navigation/types';
 import { log } from '../../lib/logger';
 import { useAppTheme } from '../../context/AppThemeContext';
 import { fetchExamAggregates, fetchTeacherExams, pickDefaultExam, type DeskExam } from '../../lib/teacherPortalApi';
-import { INK, rgba } from '../../components/theme/ThemedPage';
+import { INK } from '../../components/theme/ThemedPage';
+import { rgba } from '../../theme/color';
 import {
   ErrorState,
   ListSkeleton,

@@ -20,7 +20,8 @@ import {
   type DeskExam,
   type MarksEntryStatusRow,
 } from '../../lib/teacherPortalApi';
-import { INK, rgba } from '../../components/theme/ThemedPage';
+import { INK } from '../../components/theme/ThemedPage';
+import { rgba } from '../../theme/color';
 import {
   ChipRow,
   ErrorState,

@@ -18,7 +18,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppTheme } from '../../context/AppThemeContext';
 import { floatingHeaderInset } from '../../constants/layout';
-import { CARD_SURFACE, INK, PrimaryPatternPanel, rgba } from '../theme/ThemedPage';
+import { CARD_SURFACE, INK, PrimaryPatternPanel } from '../theme/ThemedPage';
+import { rgba } from '../../theme/color';
 import { Skeleton } from '../ui/Skeleton';
 import { Colors } from '../../theme/yana';
 

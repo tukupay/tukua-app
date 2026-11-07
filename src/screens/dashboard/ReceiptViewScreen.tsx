@@ -9,7 +9,8 @@ import {
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { CARD_SURFACE, ThemedBackdrop, rgba } from '../../components/theme/ThemedPage';
+import { CARD_SURFACE, ThemedBackdrop } from '../../components/theme/ThemedPage';
+import { rgba } from '../../theme/color';
 import {
   MoneyHeader,
 } from '../../components/dashboard/MoneyKit';

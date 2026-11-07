@@ -4,7 +4,8 @@ import { WebView } from 'react-native-webview';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useIsFocused } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { ThemedPage, INK, rgba } from '../../components/theme/ThemedPage';
+import { ThemedPage, INK } from '../../components/theme/ThemedPage';
+import { rgba } from '../../theme/color';
 import { LoaderMark } from '../../components/ui/Loader';
 import {
   ChipRow,

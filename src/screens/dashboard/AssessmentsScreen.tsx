@@ -16,7 +16,8 @@ import { useAppTheme } from '../../context/AppThemeContext';
 import { fetchParentAssessmentReports } from '../../lib/parentPortalApi';
 import { DashboardStackParamList } from '../../navigation/types';
 import { log } from '../../lib/logger';
-import { INK, rgba } from '../../components/theme/ThemedPage';
+import { INK } from '../../components/theme/ThemedPage';
+import { rgba } from '../../theme/color';
 import {
   ChipRow,
   ErrorState,

@@ -24,7 +24,8 @@ import { useBottomBarSpace } from '../../components/navigation/useBottomBarSpace
 import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
 import { useAppTheme } from '../../context/AppThemeContext';
-import { CARD, CARD_SURFACE, INK, ThemedBackdrop, rgba } from '../../components/theme/ThemedPage';
+import { CARD, CARD_SURFACE, INK, ThemedBackdrop } from '../../components/theme/ThemedPage';
+import { rgba } from '../../theme/color';
 import {
   TUKUPAY_LINKING_LIVE,
   isPlausibleLinkCode,

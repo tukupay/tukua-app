@@ -10,7 +10,8 @@ import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from '
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { ThemedPage, INK, rgba } from '../../components/theme/ThemedPage';
+import { ThemedPage, INK } from '../../components/theme/ThemedPage';
+import { rgba } from '../../theme/color';
 import { useAppTheme } from '../../context/AppThemeContext';
 import { resolveNotificationHref } from '../../lib/notificationDeepLink';
 import { useWebViewControl } from '../../context/WebViewControlContext';

@@ -20,15 +20,8 @@ import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  CARD,
-  CARD_SURFACE,
-  INK,
-  PrimaryPatternPanel,
-  ThemedBackdrop,
-  WaveHero,
-  rgba,
-} from '../../components/theme/ThemedPage';
+import { CARD, CARD_SURFACE, INK, PrimaryPatternPanel, ThemedBackdrop, WaveHero } from '../../components/theme/ThemedPage';
+import { rgba } from '../../theme/color';
 import { ProfileAvatar } from '../../components/navigation/ProfileAvatar';
 import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
 import { floatingTabBarSpace } from '../../components/navigation/FloatingTabBar';

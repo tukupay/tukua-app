@@ -9,7 +9,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAppTheme } from '../../context/AppThemeContext';
 import { log } from '../../lib/logger';
 import type { AttendancePage } from '../../lib/parentPortalApi';
-import { PrimaryPatternPanel, rgba, INK } from '../theme/ThemedPage';
+import { PrimaryPatternPanel, INK } from '../theme/ThemedPage';
+import { rgba } from '../../theme/color';
 import {
   ChipRow,
   ErrorState,

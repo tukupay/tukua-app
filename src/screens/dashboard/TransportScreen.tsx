@@ -9,7 +9,8 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useIsFocused } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import { ThemedPage, INK, rgba } from '../../components/theme/ThemedPage';
+import { ThemedPage, INK } from '../../components/theme/ThemedPage';
+import { rgba } from '../../theme/color';
 import {
   ChipRow,
   ErrorState,

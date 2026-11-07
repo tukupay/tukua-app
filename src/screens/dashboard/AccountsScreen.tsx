@@ -15,7 +15,8 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { ThemedBackdrop, INK, rgba } from '../../components/theme/ThemedPage';
+import { ThemedBackdrop, INK } from '../../components/theme/ThemedPage';
+import { rgba } from '../../theme/color';
 import { PaymentBottomSheet } from '../../components/dashboard/PaymentBottomSheet';
 import { PaymentProcessCard } from '../../components/dashboard/PaymentProcessCard';
 import {

@@ -31,7 +31,8 @@ import { darajaUserError, type DarajaUserError } from '../../lib/darajaErrors';
 import { useAppTheme } from '../../context/AppThemeContext';
 import { Colors } from '../../theme/yana';
 import { initialsOf, kes } from '../../lib/moneyFormat';
-import { INK, rgba } from '../theme/ThemedPage';
+import { INK } from '../theme/ThemedPage';
+import { rgba } from '../../theme/color';
 
 export type PaymentProcessMode =
   | 'school_fees'

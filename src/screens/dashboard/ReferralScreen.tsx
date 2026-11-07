@@ -14,7 +14,8 @@ import {
 import * as Clipboard from 'expo-clipboard';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { PrimaryPatternPanel, ThemedBackdrop, INK, rgba } from '../../components/theme/ThemedPage';
+import { PrimaryPatternPanel, ThemedBackdrop, INK } from '../../components/theme/ThemedPage';
+import { rgba } from '../../theme/color';
 import { KeyboardAwareScroll } from '../../components/auth/KeyboardAwareScroll';
 import {
   ListFooter,

@@ -21,7 +21,8 @@ import {
   type StudentTrend,
 } from '../../lib/studentPortalApi';
 import { useDeskAuth } from '../../context/DeskAuthContext';
-import { INK, rgba } from '../../components/theme/ThemedPage';
+import { INK } from '../../components/theme/ThemedPage';
+import { rgba } from '../../theme/color';
 import {
   ErrorState,
   ListSkeleton,
