@@ -47,10 +47,19 @@ export async function persistSession(session: Session | null) {
   await saveSession(session.access_token, session.refresh_token);
 }
 
+/** Parse a stored JSON value; a corrupt entry reads as missing instead of throwing. */
+function parseStored<T>(raw: string | null): T | null {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
 export async function getStoredSession() {
   const raw = await SecureStore.getItemAsync(SESSION_KEY);
-  if (!raw) return null;
-  return JSON.parse(raw) as { access_token: string; refresh_token: string };
+  return parseStored<{ access_token: string; refresh_token: string }>(raw);
 }
 
 export function nestSessionFromProfile(
@@ -381,7 +390,7 @@ export async function fetchProfile(userId: string): Promise<UserProfile | null> 
 
 export async function getCachedProfile(): Promise<UserProfile | null> {
   const raw = await SecureStore.getItemAsync(PROFILE_KEY);
-  return raw ? JSON.parse(raw) : null;
+  return parseStored<UserProfile>(raw);
 }
 
 export async function signOut() {

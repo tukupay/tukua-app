@@ -368,7 +368,15 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
     ) => {
       // Keep existing list visible — only flash spinner on first load for this user.
       if (!opts?.quiet && authUserIdRef.current !== userId) setSchoolsReady(false);
-      const [rows] = await Promise.all([fetchUserSchools(userId), awaitDeskLoginInFlight()]);
+      let rows: UserSchool[];
+      try {
+        [rows] = await Promise.all([fetchUserSchools(userId), awaitDeskLoginInFlight()]);
+      } catch (e) {
+        // Never leave the school spinner up when the list could not be read; callers decide what to show.
+        setSchoolsReady(true);
+        log.warn('DeskAuth', 'school list failed', e instanceof Error ? e.message : String(e));
+        throw e;
+      }
       // The token's own roles win at its school (bursar, deputy principal… not the coarse membership slug).
       const list = withTokenRoles(rows, await getDeskTokenClaims());
       const linked = flattenLinkedStudents(list);
@@ -999,19 +1007,24 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
         if (await refreshDeskTokenIfRolesChanged()) setDeskToken(await getDeskToken());
         await refreshPlatformNestToken();
         return applySchoolsForUser(uid, { quiet: true });
-      })().then((membership) => {
-        if (membership?.activeRole) {
-          setDeskUser((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  school_id: membership.schoolId ?? prev.school_id,
-                  user_roles: [membership.activeRole!],
-                }
-              : prev,
-          );
-        }
-      });
+      })()
+        .then((membership) => {
+          if (membership?.activeRole) {
+            setDeskUser((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    school_id: membership.schoolId ?? prev.school_id,
+                    user_roles: [membership.activeRole!],
+                  }
+                : prev,
+            );
+          }
+        })
+        .catch((e) => {
+          // Offline on return to the app: keep the school/role already on screen.
+          log.warn('DeskAuth', 'foreground refresh failed', e instanceof Error ? e.message : String(e));
+        });
     });
     return () => sub.remove();
   }, [applySchoolsForUser]);

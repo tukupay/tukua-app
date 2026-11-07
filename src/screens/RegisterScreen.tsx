@@ -189,10 +189,12 @@ export function RegisterScreen({ navigation }: Props) {
 
   useEffect(() => {
     setPeaConfigLoaded(false);
-    fetchPeaConfig(peaRole).then((cfg) => {
-      setPeaConfig(cfg);
-      setPeaConfigLoaded(true);
-    });
+    fetchPeaConfig(peaRole)
+      .then((cfg) => setPeaConfig(cfg))
+      .catch(() => {
+        /* keep the default fee */
+      })
+      .finally(() => setPeaConfigLoaded(true));
   }, [peaRole]);
 
   const schoolsToJoin: RegistrationSchoolHit[] =
@@ -215,12 +217,18 @@ export function RegisterScreen({ navigation }: Props) {
     let cancelled = false;
     setSchoolSearching(true);
     const t = setTimeout(() => {
-      void searchRegistrationSchools(schoolQuery).then((r) => {
-        if (cancelled) return;
-        setSchoolHits(r.data || []);
-        setSchoolSearching(false);
-        if (!r.ok && r.message) setError(humanizeError(r.message));
-      });
+      void searchRegistrationSchools(schoolQuery)
+        .then((r) => {
+          if (cancelled) return;
+          setSchoolHits(r.data || []);
+          setSchoolSearching(false);
+          if (!r.ok && r.message) setError(humanizeError(r.message));
+        })
+        .catch((e) => {
+          if (cancelled) return;
+          setSchoolSearching(false);
+          setError(humanizeError(e instanceof Error ? e.message : String(e)));
+        });
     }, 320);
     return () => {
       cancelled = true;
@@ -611,7 +619,6 @@ export function RegisterScreen({ navigation }: Props) {
             }}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
-            keyboardOpeningTime={0}
             automaticallyAdjustKeyboardInsets={false}
             showsVerticalScrollIndicator
             bounces

@@ -25,6 +25,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { getNestApiBaseUrl } from '../lib/localHost';
 import { resolveNestAccessTokenForWebView } from '../lib/platformNestAuth';
+import { fetchWithTimeout, messageForStatus, readJsonSafe, unwrapEnvelope } from '../lib/apiHttp';
 import { useDeskAuth } from '../context/DeskAuthContext';
 import { useTokenGate } from '../context/TokenGateContext';
 import { useAppTheme } from '../context/AppThemeContext';
@@ -110,7 +111,7 @@ function decodeHtmlEntities(raw: string): string {
 async function nestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const token = await resolveNestAccessTokenForWebView();
   if (!token) throw new Error('Sign in again');
-  const res = await fetch(`${getNestApiBaseUrl().replace(/\/$/, '')}${path}`, {
+  const res = await fetchWithTimeout(`${getNestApiBaseUrl().replace(/\/$/, '')}${path}`, {
     ...init,
     headers: {
       Accept: 'application/json',
@@ -119,18 +120,9 @@ async function nestJson<T>(path: string, init?: RequestInit): Promise<T> {
       ...(init?.headers || {}),
     },
   });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const msg =
-      (typeof (json as any)?.message === 'string' && (json as any).message) ||
-      `Request failed (${res.status})`;
-    throw new Error(msg);
-  }
-  const data =
-    json && typeof json === 'object' && 'data' in (json as object)
-      ? (json as { data: T }).data
-      : (json as T);
-  return data;
+  const json = (await readJsonSafe(res)) ?? {};
+  if (!res.ok) throw new Error(messageForStatus(res.status, json));
+  return unwrapEnvelope<T>(json);
 }
 
 function youtubeEmbedHtml(videoId: string, muted: boolean, isShort: boolean, autoplay: boolean): string {

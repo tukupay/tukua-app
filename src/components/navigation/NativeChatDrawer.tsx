@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getNestApiBaseUrl } from '../../lib/localHost';
 import { resolveNestAccessTokenForWebView } from '../../lib/platformNestAuth';
+import { fetchWithTimeout, messageForStatus, readJsonSafe } from '../../lib/apiHttp';
 import { useWebViewControl } from '../../context/WebViewControlContext';
 import { useAuth } from '../../context/AuthContext';
 import { useDialog } from '../../context/DialogContext';
@@ -66,10 +67,10 @@ export function NativeChatDrawer({ visible, onClose }: Props) {
         setItems([]);
         return;
       }
-      const res = await fetch(`${getNestApiBaseUrl().replace(/\/$/, '')}/chat/conversations`, {
+      const res = await fetchWithTimeout(`${getNestApiBaseUrl().replace(/\/$/, '')}/chat/conversations`, {
         headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
       });
-      const json = await res.json().catch(() => null);
+      const json = (await readJsonSafe(res)) as any;
       if (!res.ok) {
         setError(json?.message || 'Could not load chats.');
         setItems([]);
@@ -135,7 +136,7 @@ export function NativeChatDrawer({ visible, onClose }: Props) {
               try {
                 const token = await resolveNestAccessTokenForWebView();
                 if (!token) return;
-                const res = await fetch(
+                const res = await fetchWithTimeout(
                   `${getNestApiBaseUrl().replace(/\/$/, '')}/chat/conversations/${encodeURIComponent(id)}`,
                   {
                     method: 'DELETE',
@@ -143,6 +144,16 @@ export function NativeChatDrawer({ visible, onClose }: Props) {
                   },
                 );
                 if (res.ok) setItems((prev) => prev.filter((c) => c.id !== id));
+                else {
+                  const json = await readJsonSafe(res);
+                  showDialog({ title: 'Could not delete chat', message: messageForStatus(res.status, json), variant: 'danger' });
+                }
+              } catch (e) {
+                showDialog({
+                  title: 'Could not delete chat',
+                  message: e instanceof Error ? e.message : 'Please try again.',
+                  variant: 'danger',
+                });
               } finally {
                 setDeletingId(null);
               }

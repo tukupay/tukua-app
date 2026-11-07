@@ -20,6 +20,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { getNestApiBaseUrl } from '../lib/localHost';
 import { resolveNestAccessTokenForWebView } from '../lib/platformNestAuth';
 import { humanizeError } from '../lib/humanizeError';
+import { fetchWithTimeout, messageForStatus, readJsonSafe, unwrapEnvelope } from '../lib/apiHttp';
 import { Colors } from '../theme/yana';
 import { floatingHeaderInset } from '../constants/layout';
 import { useBottomBarSpace } from '../components/navigation/useBottomBarSpace';
@@ -38,23 +39,13 @@ import {
 async function nestAuthGet<T>(path: string, signal?: AbortSignal): Promise<T> {
   const token = await resolveNestAccessTokenForWebView();
   if (!token) throw new Error('Sign in again to load courses.');
-  const res = await fetch(`${getNestApiBaseUrl().replace(/\/$/, '')}${path}`, {
+  const res = await fetchWithTimeout(`${getNestApiBaseUrl().replace(/\/$/, '')}${path}`, {
     headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
     signal,
   });
-  const json = await res.json().catch(() => null);
-  if (!res.ok) {
-    const raw =
-      (typeof json?.message === 'string' && json.message) ||
-      (typeof json?.error === 'string' && json.error) ||
-      `Request failed (${res.status})`;
-    throw new Error(humanizeError(raw));
-  }
-  const data =
-    json && typeof json === 'object' && 'data' in json
-      ? (json as { data: T }).data
-      : (json as T);
-  return data;
+  const json = await readJsonSafe(res);
+  if (!res.ok) throw new Error(humanizeError(messageForStatus(res.status, json)));
+  return unwrapEnvelope<T>(json);
 }
 
 type Enrolled = {

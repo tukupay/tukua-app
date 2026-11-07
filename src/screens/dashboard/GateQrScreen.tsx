@@ -17,6 +17,7 @@ import { DashboardStackParamList } from '../../navigation/types';
 import { Colors } from '../../theme/yana';
 import { useDeskAuth } from '../../context/DeskAuthContext';
 import { resolveDeskApiBaseUrl } from '../../lib/deskApi';
+import { fetchWithTimeout, messageForStatus, readJsonSafe } from '../../lib/apiHttp';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'GateQr'>;
 
@@ -28,16 +29,17 @@ type QrPayload = {
 async function fetchPublicAttendanceQr(schoolId: string): Promise<QrPayload> {
   const base = resolveDeskApiBaseUrl().replace(/\/$/, '');
   const url = `${base}/public/attendance-qr/${encodeURIComponent(schoolId)}`;
-  const res = await fetch(url, { headers: { Accept: 'application/json' } });
-  const json = (await res.json()) as {
+  // The screen polls every few seconds, so give up sooner than the default.
+  const res = await fetchWithTimeout(url, { headers: { Accept: 'application/json' } }, 10_000);
+  const json = (await readJsonSafe(res)) as {
     success?: boolean;
     message?: string;
     data?: QrPayload;
     token?: string;
     expires_at?: string;
-  };
+  } | null;
   if (!res.ok || json?.success === false) {
-    throw new Error(json?.message || `HTTP ${res.status}`);
+    throw new Error(json?.message || messageForStatus(res.status, json));
   }
   const data = json?.data ?? json;
   return {

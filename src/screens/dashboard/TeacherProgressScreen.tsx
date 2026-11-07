@@ -66,12 +66,14 @@ export function TeacherProgressScreen({ navigation }: Props) {
     if (!soft) setLoading(true);
     setError(null);
     try {
-      const [examList, statusRes] = await Promise.all([
+      // One failing source must not blank the other.
+      const [examRes, statusRes] = await Promise.allSettled([
         fetchTeacherExams(15),
         fetchMarksEntryStatus(),
       ]);
-      setExams(examList);
-      setRows(unwrapRows(statusRes));
+      if (examRes.status === 'fulfilled') setExams(examRes.value);
+      if (statusRes.status === 'fulfilled') setRows(unwrapRows(statusRes.value));
+      else throw statusRes.reason;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       log.warn('TeacherProgress', msg);

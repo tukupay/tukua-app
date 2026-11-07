@@ -147,11 +147,11 @@ async function pickImageForUpload(aspect: [number, number]): Promise<PickedAsset
 
 /** Native Alert action sheet — Take photo / Choose photo / Choose file. */
 function pickFileOrPhoto(): Promise<PickedAsset | null> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     Alert.alert('Add a file', 'Take a photo, choose one from your gallery, or pick a file.', [
-      { text: 'Take photo', onPress: () => void pickFromCamera().then(resolve) },
-      { text: 'Choose photo', onPress: () => void pickFromGallery().then(resolve) },
-      { text: 'Choose file', onPress: () => void pickDocumentOrImage().then(resolve) },
+      { text: 'Take photo', onPress: () => void pickFromCamera().then(resolve, reject) },
+      { text: 'Choose photo', onPress: () => void pickFromGallery().then(resolve, reject) },
+      { text: 'Choose file', onPress: () => void pickDocumentOrImage().then(resolve, reject) },
       { text: 'Cancel', style: 'cancel', onPress: () => resolve(null) },
     ]);
   });
@@ -734,7 +734,11 @@ export function DocumentsScreen() {
         <PrimaryButton
           label="Add a document"
           icon="cloud-upload-outline"
-          onPress={() => void pickFileOrPhoto().then(upload)}
+          onPress={() =>
+            void pickFileOrPhoto()
+              .then(upload)
+              .catch((e) => showDialog({ title: 'Could not add the file', message: errorMessage(e), variant: 'danger' }))
+          }
           busy={busy}
         />
       </Card>
@@ -930,7 +934,14 @@ export function MemoryScreen() {
   const remove = (item: ProfileMemory) => {
     Alert.alert('Delete memory?', item.key, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: () => void deleteMemory(item.id).then(load) },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () =>
+          void deleteMemory(item.id)
+            .then(load)
+            .catch((e) => showDialog({ title: 'Delete failed', message: errorMessage(e), variant: 'danger' })),
+      },
     ]);
   };
 
@@ -1469,10 +1480,10 @@ export function IdVerificationScreen() {
   const [result, setResult] = useState<{ verified: boolean; message?: string } | null>(null);
 
   const pickIdAsset = (): Promise<PickedAsset | null> => {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       Alert.alert('Add your ID', 'Take a photo, choose one from your gallery, or pick a file.', [
-        { text: 'Take photo', onPress: () => void pickFromCamera().then(resolve) },
-        { text: 'Choose photo', onPress: () => void pickFromGallery().then(resolve) },
+        { text: 'Take photo', onPress: () => void pickFromCamera().then(resolve, reject) },
+        { text: 'Choose photo', onPress: () => void pickFromGallery().then(resolve, reject) },
         {
           text: 'Choose file',
           onPress: () =>
@@ -1480,7 +1491,7 @@ export function IdVerificationScreen() {
               if (picked.canceled || !picked.assets?.[0]) return resolve(null);
               const asset = picked.assets[0];
               resolve({ uri: asset.uri, name: asset.name, mimeType: asset.mimeType, size: asset.size });
-            }),
+            }, reject),
         },
         { text: 'Cancel', style: 'cancel', onPress: () => resolve(null) },
       ]);
