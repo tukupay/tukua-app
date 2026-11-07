@@ -5,6 +5,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { LoginScreen } from '../screens/LoginScreen';
 import { RegisterScreen } from '../screens/RegisterScreen';
 import { ResetPasswordScreen } from '../screens/ResetPasswordScreen';
+import { GuestTabsScreen, type GuestTabsParams } from '../screens/public/GuestTabsScreen';
 import { MainTabs } from './MainTabs';
 import { RootStackParamList } from './types';
 import { rootNavigationRef } from './rootNavigation';
@@ -14,7 +15,10 @@ import { useAppTheme } from '../context/AppThemeContext';
 import { MobileErrorBoundary } from '../components/MobileErrorBoundary';
 import { DashboardBackground } from '../components/dashboard/DashboardBackground';
 
-const Stack = createNativeStackNavigator<RootStackParamList>();
+/** The signed-out front door (Sign in · Pay fees · Create account) is a root route too. */
+type AppStackParamList = RootStackParamList & { Guest: GuestTabsParams };
+
+const Stack = createNativeStackNavigator<AppStackParamList>();
 
 const linking = {
   prefixes: [
@@ -36,6 +40,8 @@ const linking = {
           email: (v: string) => v,
         },
       },
+      // Signed-out front door; tukua://welcome/fees opens the Pay fees page.
+      Guest: 'welcome/:tab?',
       Login: 'sign-in',
       Register: 'register',
       Main: {
@@ -72,6 +78,8 @@ function RootNavigator() {
         <Stack.Screen name="Main" component={MainTabs} />
       ) : (
         <>
+          {/* First signed-out screen: the book-pager front door. Login/Register stay for deep links and pushes. */}
+          <Stack.Screen name="Guest" component={GuestTabsScreen} />
           <Stack.Screen name="Login" component={LoginScreen} />
           <Stack.Screen name="Register" component={RegisterScreen} />
         </>

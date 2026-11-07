@@ -3,7 +3,11 @@ import { RootStackParamList } from './types';
 
 export const rootNavigationRef = createNavigationContainerRef<RootStackParamList>();
 
-/** Nested navigate into Dashboard stack from headers / push handlers. */
+/**
+ * Nested navigate into Dashboard stack from headers / push handlers.
+ * `initial: false` keeps DashboardHome underneath, so Back (and "Done") land on the dashboard
+ * even when the Dashboard tab had never been opened before.
+ */
 export function navigateDashboard(
   screen: string,
   params?: Record<string, unknown>,
@@ -11,7 +15,7 @@ export function navigateDashboard(
   if (!rootNavigationRef.isReady()) return;
   rootNavigationRef.navigate('Main', {
     screen: 'Dashboard',
-    params: { screen, params },
+    params: screen === 'DashboardHome' ? { screen } : { screen, params, initial: false },
   } as never);
 }
 

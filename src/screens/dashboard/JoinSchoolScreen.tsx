@@ -1,22 +1,26 @@
 /**
- * Join School — parent / student / teacher / staff onboarding wizard.
- * Students auto-approve (dashboard unlocks immediately). Parents/teachers wait for school admin.
+ * Join School — parent / student / teacher / staff onboarding wizard. Optional: many people use
+ * Tukua without a school, so the first step says so and has a clear "Not now".
+ * When the school auto-approves, the school opens and the app lands on the dashboard at once;
+ * otherwise a "Request sent" state waits for the school admin.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  ToastAndroid,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '../../theme/yana';
 import { floatingHeaderInset, TAB_BAR_BODY_HEIGHT } from '../../constants/layout';
@@ -52,11 +56,13 @@ const ROLE_OPTIONS: Array<{
   hint: string;
   icon: keyof typeof Ionicons.glyphMap;
 }> = [
-  { id: 'parent', title: 'Parent / guardian', hint: 'Link to your child', icon: 'people' },
-  { id: 'student', title: 'Student', hint: 'Join a class', icon: 'school' },
-  { id: 'teacher', title: 'Teacher', hint: 'Subjects & class teacher', icon: 'book' },
-  { id: 'staff', title: 'Staff', hint: 'Accountant, librarian, …', icon: 'briefcase' },
+  { id: 'student', title: "I'm a student", hint: 'See your class, results and fees', icon: 'school-outline' },
+  { id: 'parent', title: "I'm a parent or guardian", hint: "Follow your child's school life", icon: 'people-outline' },
+  { id: 'teacher', title: "I'm a teacher", hint: 'Your subjects, classes and marks', icon: 'book-outline' },
+  { id: 'staff', title: "I'm school staff", hint: 'Bursar, librarian, nurse, …', icon: 'briefcase-outline' },
 ];
+
+const STEP_ORDER: Step[] = ['role', 'school', 'details'];
 
 const STAFF_ROLES = [
   { id: 'accountant', label: 'Accountant' },
@@ -118,7 +124,7 @@ function LogoAvatar({
 
 export function JoinSchoolScreen() {
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation();
+  const navigation = useNavigation<NativeStackNavigationProp<DashboardStackParamList>>();
   const route = useRoute<RouteProp<DashboardStackParamList, 'JoinSchool'>>();
   const firstLogin = Boolean(route.params?.firstLogin);
   const preferRole = route.params?.preferRole;
@@ -157,7 +163,14 @@ export function JoinSchoolScreen() {
   const [memberships, setMemberships] = useState<MembershipHit[]>([]);
   const [loadingMemberships, setLoadingMemberships] = useState(true);
   const [pendingRequests, setPendingRequests] = useState<MyJoinRequestHit[]>([]);
-  const [joinAutoApproved, setJoinAutoApproved] = useState(false);
+  /** What the "done" step says: request(s) waiting for the school, or already waiting. */
+  const [doneInfo, setDoneInfo] = useState<{ already: boolean; created: number; alreadyCount: number }>({
+    already: false,
+    created: 1,
+    alreadyCount: 0,
+  });
+  /** Auto-approved: opening the school and moving to the dashboard. */
+  const [openingSchool, setOpeningSchool] = useState(false);
   const [loadingPending, setLoadingPending] = useState(true);
   const [leavingId, setLeavingId] = useState<string | null>(null);
 
@@ -172,8 +185,50 @@ export function JoinSchoolScreen() {
     }
   }, []);
 
-  // Do not mark "seen" on open — login must re-check incomplete teacher/parent onboarding.
-  // Seen is set only when they skip or successfully submit (below).
+  // Do not mark "seen" on open — seen is set only when they skip or successfully submit (below).
+
+  /** Dashboard home as the only screen in this stack (no Join school left behind it). */
+  const goDashboardHome = useCallback(() => {
+    navigation.reset({ index: 0, routes: [{ name: 'DashboardHome' }] });
+  }, [navigation]);
+
+  /** Back to where the user came from; Join school opened on its own falls back to the dashboard. */
+  const leave = useCallback(() => {
+    if (navigation.canGoBack()) navigation.goBack();
+    else goDashboardHome();
+  }, [goDashboardHome, navigation]);
+
+  /**
+   * Auto-approved join: load the new membership, open that school with the role just joined, then
+   * land on the dashboard. The membership list can lag the approval by a moment, so retry briefly.
+   */
+  const openJoinedSchool = useCallback(
+    async (schoolId: string, schoolName: string, joinedRole: string | null) => {
+      setOpeningSchool(true);
+      let opened = false;
+      try {
+        for (let attempt = 0; attempt < 3 && !opened; attempt += 1) {
+          if (attempt > 0) await new Promise((r) => setTimeout(r, 600 * attempt));
+          try {
+            await refreshSchools({ quiet: true, forcePick: false });
+            opened = await selectSchool(schoolId, { role: joinedRole });
+          } catch {
+            opened = false;
+          }
+        }
+      } finally {
+        setOpeningSchool(false);
+      }
+      if (Platform.OS === 'android') {
+        ToastAndroid.show(
+          opened ? `You're in ${schoolName}` : `You're in ${schoolName}. It will show on your dashboard shortly.`,
+          ToastAndroid.SHORT,
+        );
+      }
+      goDashboardHome();
+    },
+    [goDashboardHome, refreshSchools, selectSchool],
+  );
 
   const reloadMemberships = useCallback(async () => {
     setLoadingMemberships(true);
@@ -312,7 +367,7 @@ export function JoinSchoolScreen() {
       // selectSchool says false when the school is not in the refreshed list (it used to read the
       // pre-refresh list, so a school joined a moment ago never opened and the screen just closed).
       if (!(await selectSchool(m.school_id))) throw new Error('not listed yet');
-      navigation.goBack();
+      goDashboardHome();
     } catch {
       showDialog({
         title: 'Could not open school',
@@ -429,26 +484,16 @@ export function JoinSchoolScreen() {
           });
           if (res.already_pending) already += 1;
           else created += 1;
-          if ((res as { auto_approved?: boolean }).auto_approved) approved += 1;
+          if (res.auto_approved) approved += 1;
         }
         await markJoinPromptSeen();
-        // Schools that auto-approve parents link the child at once — open it like teachers/learners.
+        // Schools that auto-approve parents link the child at once — open it and land on the dashboard.
         if (approved) {
-          setJoinAutoApproved(true);
-          await refreshSchools({ quiet: true });
-          await selectSchool(school.id);
+          await openJoinedSchool(school.id, school.name, 'parent');
+          return;
         }
+        setDoneInfo({ already: already > 0 && created === 0, created, alreadyCount: already });
         setStep('done');
-        showDialog({
-          title: approved ? 'You are in' : already && !created ? 'Already pending' : 'Requests submitted',
-          message: approved
-            ? 'Your child is linked. Their school dashboard is ready.'
-            : students.length > 1
-              ? `${created} new · ${already} already pending. Waiting for school approval.`
-              : 'Waiting for school admin approval.',
-          variant: 'success',
-          icon: 'checkmark-circle',
-        });
       } else {
         const res = await createJoinRequest({
           school_id: school.id,
@@ -474,32 +519,14 @@ export function JoinSchoolScreen() {
               }
             : {}),
         });
-        const auto = Boolean((res as { auto_approved?: boolean }).auto_approved);
-        setJoinAutoApproved(auto);
         await markJoinPromptSeen();
-        if (auto) {
-          await refreshSchools({ quiet: true, forcePick: false });
-          if (school?.id) {
-            try {
-              await selectSchool(school.id);
-            } catch {
-              /* membership list may lag one tick */
-            }
-          }
+        if (res.auto_approved) {
+          // Auto-allowed by the school: straight to the dashboard, no "Open dashboard" step.
+          await openJoinedSchool(school.id, school.name, role === 'staff' ? staffRoles[0] ?? 'staff' : role);
+          return;
         }
+        setDoneInfo({ already: Boolean(res.already_pending), created: res.already_pending ? 0 : 1, alreadyCount: res.already_pending ? 1 : 0 });
         setStep('done');
-        showDialog({
-          title: res.already_pending
-            ? 'Already pending'
-            : auto
-              ? 'You are in'
-              : 'Request submitted',
-          message: auto
-            ? 'Your school dashboard is ready.'
-            : 'Waiting for school admin approval.',
-          variant: 'success',
-          icon: 'checkmark-circle',
-        });
       }
       void reloadMemberships();
     } catch (e) {
@@ -514,23 +541,19 @@ export function JoinSchoolScreen() {
     }
   };
 
-  const skipFirstLogin = async () => {
+  const notNow = async () => {
     await markJoinPromptSeen();
-    navigation.goBack();
+    leave();
   };
 
+  const stepIndex = STEP_ORDER.indexOf(step);
+
+  // Only shown when there is something in them: empty boxes made the first step look busy.
   const pendingBox =
-    step === 'role' ? (
+    step === 'role' && !loadingPending && pendingRequests.length > 0 ? (
       <View style={styles.joinedBox}>
         <Text style={styles.joinedTitle}>Your requests</Text>
-        <Text style={styles.joinedHint}>
-          Pending requests are waiting for school approval. You cannot send another request for the same school while
-          pending.
-        </Text>
-        {loadingPending ? <ActivityIndicator color={hero} /> : null}
-        {!loadingPending && pendingRequests.length === 0 ? (
-          <Text style={styles.hint}>No join requests yet.</Text>
-        ) : null}
+        <Text style={styles.joinedHint}>Waiting for the school to approve.</Text>
         {pendingRequests.map((r) => {
           const rejected = String(r.status || '').toLowerCase() === 'rejected';
           return (
@@ -578,16 +601,12 @@ export function JoinSchoolScreen() {
     ) : null;
 
   const alreadyJoined =
-    step === 'role' ? (
+    step === 'role' && !loadingMemberships && memberships.length > 0 ? (
       <View style={styles.joinedBox}>
-        <Text style={styles.joinedTitle}>Already joined</Text>
+        <Text style={styles.joinedTitle}>Your schools</Text>
         <Text style={styles.joinedHint}>
           Tap a school to open it. Leave removes you — rejoining needs a new approval.
         </Text>
-        {loadingMemberships ? <ActivityIndicator color={hero} /> : null}
-        {!loadingMemberships && memberships.length === 0 ? (
-          <Text style={styles.hint}>No approved school links yet.</Text>
-        ) : null}
         {memberships.map((m) => (
           <View key={m.school_id} style={styles.joinedCard}>
             <Pressable
@@ -638,45 +657,73 @@ export function JoinSchoolScreen() {
           { paddingTop: floatingHeaderInset(insets.top), paddingBottom: bottomPad },
         ]}
         keyboardShouldPersistTaps="handled">
-        <Pressable
-          onPress={() => {
-            if (step === 'details') setStep('school');
-            else if (step === 'school') setStep('role');
-            else navigation.goBack();
-          }}
-          style={styles.backRow}
-          accessibilityRole="button">
-          <Ionicons name="chevron-back" size={22} color={hero} />
-          <Text style={[styles.backText, { color: hero }]}>Back</Text>
-        </Pressable>
-
-        <Text style={styles.title}>Join school</Text>
-        <Text style={styles.moduleDesc}>
-          {firstLogin
-            ? preferRole === 'teacher'
-              ? 'Add at least one subject / class workload for your school. You can skip and finish later — we will remind you on login.'
-              : preferRole === 'parent'
-                ? 'Select your student at the school. You can skip and finish later — we will remind you on login.'
-                : 'Join a school now, or skip and fill this later after login.'
-            : 'Students are linked right away. Parents and teachers wait for school approval.'}
-        </Text>
-
-        {(firstLogin || preferRole) && step === 'role' ? (
-          <View style={[styles.promptBox, { borderColor: `${hero}33`, backgroundColor: `${hero}0A` }]}>
-            <Text style={styles.promptTitle}>School details</Text>
-            <Text style={styles.hint}>
-              Teachers add workload · Parents link a student · Students need nothing extra. You can skip for now.
-            </Text>
-            <Pressable style={[styles.skipBtn, { borderColor: `${hero}55` }]} onPress={() => void skipFirstLogin()}>
-              <Text style={[styles.skipText, { color: hero }]}>Skip for now</Text>
+        <View style={styles.topRow}>
+          {step !== 'done' ? (
+            <Pressable
+              onPress={() => {
+                if (step === 'details') setStep('school');
+                else if (step === 'school') setStep('role');
+                else leave();
+              }}
+              style={styles.backRow}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Back">
+              <Ionicons name="chevron-back" size={22} color={hero} />
+              <Text style={[styles.backText, { color: hero }]}>Back</Text>
             </Pressable>
+          ) : (
+            <View />
+          )}
+          {step !== 'done' ? (
+            <Pressable
+              onPress={() => void notNow()}
+              style={styles.notNowTop}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Not now, close join school">
+              <Text style={styles.notNowTopText}>Not now</Text>
+            </Pressable>
+          ) : null}
+        </View>
+
+        {stepIndex >= 0 ? (
+          <View style={styles.progressRow} accessibilityLabel={`Step ${stepIndex + 1} of 3`}>
+            {STEP_ORDER.map((s, i) => (
+              <View
+                key={s}
+                style={[styles.progressBar, { backgroundColor: i <= stepIndex ? hero : Colors.border }]}
+              />
+            ))}
           </View>
         ) : null}
 
-        {preferRole && step !== 'role' ? (
-          <Pressable style={[styles.skipBtn, { borderColor: `${hero}55`, marginBottom: 12 }]} onPress={() => void skipFirstLogin()}>
-            <Text style={[styles.skipText, { color: hero }]}>Skip for now — fill later</Text>
-          </Pressable>
+        {step === 'role' ? (
+          <>
+            <Text style={styles.title}>Do you belong to a school?</Text>
+            <Text style={styles.moduleDesc}>
+              Joining is optional. Tukua AI, courses and Tukua Pay all work without a school. If you are part of
+              one, link it to see your school dashboard.
+            </Text>
+          </>
+        ) : step === 'school' ? (
+          <>
+            <Text style={styles.title}>Find your school</Text>
+            <Text style={styles.moduleDesc}>
+              {firstLogin && preferRole === 'teacher'
+                ? 'Find your school, then add the subjects and classes you teach.'
+                : firstLogin && preferRole === 'parent'
+                  ? "Find your child's school, then pick your child."
+                  : 'Search by name, code or town.'}
+            </Text>
+          </>
+        ) : step === 'details' ? (
+          <>
+            <Text style={styles.title}>A few details</Text>
+            <Text style={styles.moduleDesc}>
+              Some schools let you in at once; others approve requests first.
+            </Text>
+          </>
         ) : null}
 
         {step === 'role' ? (
@@ -684,9 +731,11 @@ export function JoinSchoolScreen() {
             {ROLE_OPTIONS.map((opt) => (
               <Pressable
                 key={opt.id}
-                style={({ pressed }) => [styles.card, pressed && styles.pressed]}
-                onPress={() => pickRole(opt.id)}>
-                <View style={[styles.iconBox, { backgroundColor: `${hero}14` }]}>
+                style={({ pressed }) => [styles.roleCard, pressed && styles.pressed]}
+                onPress={() => pickRole(opt.id)}
+                accessibilityRole="button"
+                accessibilityLabel={opt.title}>
+                <View style={[styles.iconBox, { backgroundColor: Colors.cardSky }]}>
                   <Ionicons name={opt.icon} size={22} color={hero} />
                 </View>
                 <View style={styles.cardText}>
@@ -696,6 +745,12 @@ export function JoinSchoolScreen() {
                 <Ionicons name="chevron-forward" size={18} color={Colors.mutedForeground} />
               </Pressable>
             ))}
+            <Pressable
+              style={({ pressed }) => [styles.notNowBtn, pressed && styles.pressed]}
+              onPress={() => void notNow()}
+              accessibilityRole="button">
+              <Text style={styles.notNowText}>Not now — I don't belong to a school</Text>
+            </Pressable>
             {pendingBox}
             {alreadyJoined}
           </View>
@@ -703,19 +758,28 @@ export function JoinSchoolScreen() {
 
         {step === 'school' && role ? (
           <View style={styles.stack}>
-            <Text style={[styles.chip, { backgroundColor: `${hero}14`, color: hero }]}>
-              {ROLE_OPTIONS.find((r) => r.id === role)?.title}
-            </Text>
-            <TextInput
-              style={styles.input}
-              value={schoolQuery}
-              onChangeText={setSchoolQuery}
-              placeholder="Type school name, code, place…"
-              placeholderTextColor="#94a3b8"
-              autoCorrect={false}
-            />
-            <Text style={styles.hint}>Schools only — updates as you type.</Text>
-            {searchingSchools ? <ActivityIndicator color={hero} /> : null}
+            <Pressable onPress={() => setStep('role')} accessibilityRole="button" accessibilityLabel="Change role">
+              <Text style={[styles.chip, { backgroundColor: Colors.cardSky, color: hero }]}>
+                {ROLE_OPTIONS.find((r) => r.id === role)?.title}  ·  change
+              </Text>
+            </Pressable>
+            <View style={styles.searchBox}>
+              <Ionicons name="search" size={18} color={Colors.mutedForeground} />
+              <TextInput
+                style={styles.searchInput}
+                value={schoolQuery}
+                onChangeText={setSchoolQuery}
+                placeholder="School name, code or town"
+                placeholderTextColor={Colors.mutedForeground}
+                autoCorrect={false}
+                autoFocus
+                returnKeyType="search"
+              />
+              {searchingSchools ? <ActivityIndicator size="small" color={hero} /> : null}
+            </View>
+            {!searchingSchools && schoolQuery.trim().length >= 2 && schoolHits.length === 0 ? (
+              <Text style={styles.hint}>No school matches “{schoolQuery.trim()}”. Try its code or town.</Text>
+            ) : null}
             {schoolHits.map((s) => {
               const line = [
                 s.description,
@@ -780,7 +844,7 @@ export function JoinSchoolScreen() {
                   value={studentQuery}
                   onChangeText={setStudentQuery}
                   placeholder="Search another student…"
-                  placeholderTextColor="#94a3b8"
+                  placeholderTextColor={Colors.mutedForeground}
                   autoCorrect={false}
                 />
                 {searchingStudents ? <ActivityIndicator color={hero} /> : null}
@@ -1143,7 +1207,7 @@ export function JoinSchoolScreen() {
               value={note}
               onChangeText={setNote}
               placeholder="Note for school admin…"
-              placeholderTextColor="#94a3b8"
+              placeholderTextColor={Colors.mutedForeground}
             />
 
             <Pressable
@@ -1155,12 +1219,15 @@ export function JoinSchoolScreen() {
               disabled={!canSubmit || submitting}
               onPress={() => void submit()}>
               {submitting ? (
-                <ActivityIndicator color="#fff" />
+                <View style={styles.submitBusy}>
+                  <ActivityIndicator color="#fff" />
+                  {openingSchool ? <Text style={styles.submitText}>Opening your school…</Text> : null}
+                </View>
               ) : (
                 <Text style={styles.submitText}>
                   {role === 'parent' && students.length > 1
-                    ? `Submit ${students.length} join requests`
-                    : 'Submit join request'}
+                    ? `Join for ${students.length} children`
+                    : 'Join school'}
                 </Text>
               )}
             </Pressable>
@@ -1169,23 +1236,24 @@ export function JoinSchoolScreen() {
 
         {step === 'done' ? (
           <View style={styles.doneBox}>
-            <Ionicons name="checkmark-circle" size={48} color={palette.tertiary} />
-            <Text style={styles.doneTitle}>
-              {joinAutoApproved ? 'You are linked' : 'Request pending'}
-            </Text>
-            <Text style={styles.subtitle}>
-              {joinAutoApproved
+            <View style={[styles.doneIcon, { backgroundColor: Colors.cardSky }]}>
+              <Ionicons name={doneInfo.already ? 'time-outline' : 'paper-plane-outline'} size={30} color={hero} />
+            </View>
+            <Text style={styles.doneTitle}>{doneInfo.already ? 'Already waiting' : 'Request sent'}</Text>
+            <Text style={styles.doneText}>
+              {doneInfo.already
                 ? school?.name
-                  ? `You're in at ${school.name}. Open the dashboard anytime.`
-                  : 'School linked. Open the dashboard anytime.'
-                : school?.name
-                  ? `Your ${role} request for ${school.name} is waiting for approval.`
-                  : 'Waiting for school approval.'}
+                  ? `Your request to ${school.name} is still waiting for approval.`
+                  : 'Your request is still waiting for approval.'
+                : role === 'parent' && doneInfo.created + doneInfo.alreadyCount > 1
+                  ? `${doneInfo.created} new${doneInfo.alreadyCount ? ` · ${doneInfo.alreadyCount} already waiting` : ''}. ${school?.name || 'The school'} will approve them.`
+                  : `${school?.name || 'The school'} will approve it. Once approved, the school opens from your dashboard.`}
             </Text>
             <Pressable
-              style={[styles.submit, { backgroundColor: hero }]}
-              onPress={() => navigation.goBack()}>
-              <Text style={styles.submitText}>{joinAutoApproved ? 'Open dashboard' : 'Done'}</Text>
+              style={[styles.submit, styles.doneBtn, { backgroundColor: hero }]}
+              onPress={leave}
+              accessibilityRole="button">
+              <Text style={styles.submitText}>Done</Text>
             </Pressable>
           </View>
         ) : null}
@@ -1195,36 +1263,28 @@ export function JoinSchoolScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#fff' },
+  root: { flex: 1, backgroundColor: Colors.background },
   content: { paddingHorizontal: 16 },
-  backRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 8 },
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  backRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   backText: { fontSize: 15, fontWeight: '600' },
+  notNowTop: { paddingHorizontal: 4, paddingVertical: 4 },
+  notNowTopText: { fontSize: 14, fontWeight: '600', color: Colors.mutedForeground },
+  progressRow: { flexDirection: 'row', gap: 6, marginBottom: 16 },
+  progressBar: { flex: 1, height: 4, borderRadius: 2 },
   title: { fontSize: 24, fontWeight: '800', color: Colors.ink },
   moduleDesc: {
-    marginTop: 4,
-    fontSize: 11,
-    lineHeight: 15,
+    marginTop: 6,
+    fontSize: 14,
+    lineHeight: 20,
     color: Colors.mutedForeground,
-    marginBottom: 14,
+    marginBottom: 18,
   },
-  subtitle: { marginTop: 6, fontSize: 14, color: Colors.mutedForeground, marginBottom: 16 },
-  promptBox: {
-    gap: 8,
-    padding: 14,
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    marginBottom: 12,
-  },
-  promptTitle: { fontSize: 15, fontWeight: '800', color: Colors.ink },
-  skipBtn: {
-    alignSelf: 'flex-start',
-    marginTop: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  skipText: { fontSize: 13, fontWeight: '700' },
   stack: { gap: 10 },
   card: {
     flexDirection: 'row',
@@ -1233,17 +1293,49 @@ const styles = StyleSheet.create({
     padding: 14,
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(10,61,46,0.12)',
-    backgroundColor: '#fff',
+    borderColor: Colors.border,
+    backgroundColor: Colors.white,
   },
+  roleCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    paddingVertical: 16,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.white,
+  },
+  notNowBtn: {
+    marginTop: 4,
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: 'transparent',
+  },
+  notNowText: { fontSize: 15, fontWeight: '700', color: Colors.foreground },
   pressed: { opacity: 0.85 },
   iconBox: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  searchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.white,
+  },
+  searchInput: { flex: 1, paddingVertical: 12, fontSize: 15, color: Colors.ink },
   avatarImg: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#e2e8f0' },
   avatarFallback: {
     width: 40,
@@ -1259,7 +1351,7 @@ const styles = StyleSheet.create({
   rejectedNote: { marginTop: 4, fontSize: 12, lineHeight: 17, color: '#B91C1C' },
   input: {
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(10,61,46,0.18)',
+    borderColor: Colors.border,
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 12,
@@ -1317,7 +1409,7 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(10,61,46,0.12)',
+    borderColor: Colors.border,
   },
   danger: { color: '#DC2626', fontWeight: '700', fontSize: 13 },
   submit: {
@@ -1327,17 +1419,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   submitDisabled: { opacity: 0.45 },
+  submitBusy: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   submitText: { color: '#fff', fontWeight: '800', fontSize: 15 },
-  doneBox: { alignItems: 'center', gap: 12, paddingVertical: 24 },
-  doneTitle: { fontSize: 20, fontWeight: '800', color: Colors.ink },
+  doneBox: { alignItems: 'center', gap: 12, paddingTop: 48, paddingBottom: 24 },
+  doneIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  doneTitle: { fontSize: 22, fontWeight: '800', color: Colors.ink },
+  doneText: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: Colors.mutedForeground,
+    textAlign: 'center',
+    paddingHorizontal: 12,
+  },
+  doneBtn: { alignSelf: 'stretch', marginTop: 12 },
   joinedBox: {
     marginTop: 8,
     gap: 8,
     padding: 14,
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(10,61,46,0.12)',
-    backgroundColor: 'rgba(21,65,29,0.03)',
+    borderColor: Colors.border,
+    backgroundColor: Colors.white,
   },
   joinedTitle: { fontSize: 14, fontWeight: '800', color: Colors.ink },
   joinedHint: { fontSize: 12, color: Colors.mutedForeground, marginBottom: 4 },
@@ -1345,7 +1453,7 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(10,61,46,0.1)',
+    borderTopColor: Colors.border,
   },
   joinedMain: {
     flexDirection: 'row',

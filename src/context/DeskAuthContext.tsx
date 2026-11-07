@@ -59,6 +59,7 @@ import {
 } from '../lib/selectedContext';
 import { log } from '../lib/logger';
 import { refreshPlatformNestToken } from '../lib/platformNestAuth';
+import { navigateDashboard } from '../navigation/rootNavigation';
 
 type DeskAuthContextType = {
   deskUser: DeskUser | null;
@@ -81,7 +82,7 @@ type DeskAuthContextType = {
   activeRoles: string[];
   /** True when user must pick school, role, or student. */
   needsSchoolPick: boolean;
-  /** User skipped school/role — individual treated as student; dashboards locked until pick. */
+  /** No school open (none joined, or the picker was skipped) — the personal dashboard shows. */
   contextSkipped: boolean;
   /**
    * Picker UI mode. Flow: school → role → student (parent, multi-child).
@@ -90,9 +91,13 @@ type DeskAuthContextType = {
   /** Roles available at the selected school (for role picker). */
   schoolRoleOptions: string[];
   selectStudent: (student: LinkedStudent) => Promise<void>;
-  selectSchool: (schoolId: string) => Promise<boolean>;
+  /**
+   * Open a school. False when it is not in the membership list (yet). With `role` (e.g. the role just
+   * joined) and the school granting it, that hat opens directly instead of the role picker.
+   */
+  selectSchool: (schoolId: string, opts?: { role?: string | null }) => Promise<boolean>;
   selectRole: (role: string) => Promise<void>;
-  /** Continue as individual (student hat) without a school — dashboards stay locked. */
+  /** Continue as individual (student hat) without a school — the personal dashboard shows. */
   skipSchoolPick: () => Promise<void>;
   /**
    * Super-admin: adopt any school + mobile hat (teacher/security/parent/student/individual)
@@ -105,7 +110,7 @@ type DeskAuthContextType = {
   }) => Promise<void>;
   /** Step back within picker (role → school, student → role). */
   backInPicker: () => Promise<void>;
-  /** Clear selection and show picker again. */
+  /** Clear selection and show picker again (no schools yet → opens Join school instead). */
   requestSchoolChange: () => Promise<void>;
   /** Reload school/student links for the signed-in user (e.g. after leave/join). Returns the new list. */
   refreshSchools: (opts?: { quiet?: boolean; forcePick?: boolean }) => Promise<UserSchool[]>;
@@ -304,11 +309,18 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
         : personaRoles;
 
     const schoolId = selectedSchoolId ?? deskUser?.school_id ?? orgSchoolId;
-    const next = resolveDeskPersona(roles, {
+    const resolved = resolveDeskPersona(roles, {
       schoolId,
       schoolLinked: Boolean(schoolId),
       hasDeskSession: Boolean(deskToken) || orgRoles.length > 0,
     });
+    // No school open (none joined, or the picker was skipped): the learner hat has no school
+    // dashboard behind it, so show the personal one (Tukua Pay, courses, Join school).
+    const next: DeskPersona =
+      resolved === 'student' &&
+      (!schoolId || (contextSkipped && !selectedSchoolId && schools.length > 0))
+        ? 'individual'
+        : resolved;
     log.info('DeskAuth', 'persona', {
       persona: next,
       roles,
@@ -333,6 +345,7 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
     selectedStudentId,
     schools.length,
     linkedStudents.length,
+    contextSkipped,
   ]);
 
   const applySchoolsForUser = useCallback(
@@ -582,7 +595,7 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
   );
 
   const selectSchool = useCallback(
-    async (schoolId: string): Promise<boolean> => {
+    async (schoolId: string, opts?: { role?: string | null }): Promise<boolean> => {
       if (!authUserId) return false;
       // Ref, not state: Join school calls this right after refreshSchools, before a re-render.
       const school = schoolsRef.current.find((s) => s.id === schoolId);
@@ -592,8 +605,12 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
       }
 
       const roles = uniqueSchoolRoles(school.roles);
+      // A role the caller asks for (the one just joined) opens directly when the school grants it.
+      const wanted = opts?.role ? String(opts.role).toLowerCase().trim() : '';
+      const wantedHat = wanted ? mapRoleToMobileHat(wanted) : '';
+      const preferred = wantedHat && roles.includes(wantedHat) ? wantedHat : wanted && roles.includes(wanted) ? wanted : null;
 
-      if (roles.length > 1) {
+      if (roles.length > 1 && !preferred) {
         setSelectedSchoolIdState(schoolId);
         setSelectedStudentIdState(null);
         setSelectedRoleState(null);
@@ -606,7 +623,7 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
         return true;
       }
 
-      const role = roles[0] ?? null;
+      const role = preferred ?? roles[0] ?? null;
       setSelectedSchoolIdState(schoolId);
       setSelectedRoleState(role);
       setSchoolRoleOptions(roles);
@@ -741,15 +758,9 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
 
   const requestSchoolChange = useCallback(async () => {
     if (!authUserId) return;
-    const canSwitch =
-      contextSkipped ||
-      schools.length >= 1 ||
-      linkedStudents.length > 1 ||
-      schoolRoleOptions.length > 1 ||
-      uniqueSchoolRoles(selectedSchool?.roles).length > 1;
-    if (!canSwitch && schools.length === 0) {
-      // Still allow reopening picker so they can search/join or skip again
-    } else if (!canSwitch) {
+    if (schools.length === 0) {
+      // Nothing to pick from: an empty picker is a dead end, so offer joining one instead.
+      navigateDashboard('JoinSchool');
       return;
     }
     await clearSelectedContext(authUserId);
@@ -760,16 +771,9 @@ export function DeskAuthProvider({ children }: { children: ReactNode }) {
     setContextSkipped(false);
     setDeskActiveContext({ schoolId: null, studentId: null });
     setNeedsSchoolPick(true);
-    setPickerMode(schools.length > 1 || prefersSchoolPicker(schools) ? 'school' : 'school');
+    setPickerMode('school');
     log.info('DeskAuth', 'context change requested');
-  }, [
-    authUserId,
-    contextSkipped,
-    linkedStudents.length,
-    schools,
-    schoolRoleOptions.length,
-    selectedSchool?.roles,
-  ]);
+  }, [authUserId, schools]);
 
   const refreshSchools = useCallback(
     async (opts?: { quiet?: boolean; forcePick?: boolean }) => {

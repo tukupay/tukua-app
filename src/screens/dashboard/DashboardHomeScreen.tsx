@@ -9,7 +9,6 @@ import {
   View,
 } from 'react-native';
 import { Feather, Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from '../../components/FlatFill'; // flat fill: no gradients
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -20,6 +19,7 @@ import { Colors } from '../../theme/yana';
 import { floatingHeaderInset } from '../../constants/layout';
 import { DashboardStackParamList } from '../../navigation/types';
 import { DashboardBackground } from '../../components/dashboard/DashboardBackground';
+import { CardChip, MenuCard, MenuItem, PatternTiles, rgba } from '../../components/dashboard/DashboardKit';
 import { ProfileAvatar } from '../../components/navigation/ProfileAvatar';
 import { deskFetch } from '../../lib/deskApi';
 import { isDeskErpPath, isDeskWebModuleAvailable, getWebBaseUrl } from '../../lib/localHost';
@@ -38,7 +38,6 @@ import { formatTokensShort } from '../../components/navigation/TokenBalancePill'
 import { useRegisterTabJumper } from '../../hooks/useRegisterTabJumper';
 import { useAppTheme } from '../../context/AppThemeContext';
 import { useTokenGate } from '../../context/TokenGateContext';
-import type { ThemePalette } from '../../theme/schoolThemes';
 import {
   DashboardAction,
   FeatherIconName,
@@ -84,23 +83,10 @@ type StudentOverview = {
   grades?: { latest?: { mean?: number | null; grade?: string | null } | null };
 };
 
-const TILE_SIZE = 52;
-const ICON_SIZE = 30;
-
-/** Mostly dark theme hues + occasional bright accent. */
-function tileAccentFor(palette: ThemePalette, index: number): string {
-  const darks = [
-    palette.primary,
-    palette.tertiary,
-    '#1e293b',
-    '#334155',
-    '#0f172a',
-    '#1f2937',
-  ];
-  const brights = [palette.secondary, '#F59E0B', '#0EA5E9'];
-  if (index % 4 === 3) return brights[Math.floor(index / 4) % brights.length];
-  return darks[index % darks.length];
-}
+const TILE_ICON_SIZE = 26;
+/** Shortcuts per card (two rows of four, as TukuPay's Instant Pay). */
+const PER_CARD = 8;
+const PER_ROW = 4;
 
 /** Filled Ionicons — heavier weight than Feather strokes for dashboard tiles. */
 const TILE_ICON: Partial<Record<FeatherIconName, keyof typeof Ionicons.glyphMap>> = {
@@ -252,10 +238,10 @@ function heroForPersona(persona: DeskPersona): HeroStat[] {
   }
 }
 
-/** Keep every action — chunk into rows of 4 (never drop Bulk Pay etc.). */
+/** Keep every action — chunk into cards of two rows of four (never drop Bulk Pay etc.). */
 function sectionsForActions(actions: DashboardAction[]): ActionSection[] {
   const chunks: DashboardAction[][] = [];
-  for (let i = 0; i < actions.length; i += 4) chunks.push(actions.slice(i, i + 4));
+  for (let i = 0; i < actions.length; i += PER_CARD) chunks.push(actions.slice(i, i + PER_CARD));
   return chunks.map((chunk, index) => ({
     id: `section-${index}`,
     title: SECTION_TITLES[index] ?? `More ${index + 1}`,
@@ -263,32 +249,11 @@ function sectionsForActions(actions: DashboardAction[]): ActionSection[] {
   }));
 }
 
-function ModuleTile({
-  action,
-  onPress,
-  accent,
-}: {
-  action: DashboardAction;
-  onPress: () => void;
-  accent: string;
-}) {
-  return (
-    <Pressable
-      style={({ pressed }) => [styles.tile, pressed && styles.tilePressed]}
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={`${action.title}. ${action.description}`}
-      accessibilityHint={action.description}>
-      <View style={styles.tileIconWrap}>
-        <PlainIcon name={action.icon} size={ICON_SIZE} color={accent} />
-      </View>
-      <View style={styles.tileLabelBox}>
-        <Text style={styles.tileLabel} numberOfLines={2}>
-          {action.title}
-        </Text>
-      </View>
-    </Pressable>
-  );
+/** Rows of four for a section card. */
+function rowsOf<T>(items: T[]): T[][] {
+  const rows: T[][] = [];
+  for (let i = 0; i < items.length; i += PER_ROW) rows.push(items.slice(i, i + PER_ROW));
+  return rows;
 }
 
 export function DashboardHomeScreen() {
@@ -369,6 +334,8 @@ export function DashboardHomeScreen() {
 
   const fade = useRef(new Animated.Value(0)).current;
   const slide = useRef(new Animated.Value(16)).current;
+  // Eye toggle on the hero card (hides the figures, as on a bank card).
+  const [hideValues, setHideValues] = useState(false);
 
   const avatarUrl = useMemo(() => {
     if (selectedStudent) {
@@ -988,18 +955,26 @@ export function DashboardHomeScreen() {
   const primaryHero = heroStats[0];
   const secondaryHero = heroStats.slice(1, 3);
 
+  const green = palette.primary;
+  const yellow = palette.secondary;
+  const masked = (v: string) => (hideValues ? '••••••' : v);
+  const schoolLine = selectedSchool?.name || schools[0]?.name || 'Tukua';
+
   if (!deskReady) {
     return (
-      <View style={styles.centered}>
+      <View style={[styles.centered, { backgroundColor: palette.muted }]}>
         <DashboardBackground patternOnly liquid />
+        <PatternTiles />
         <ActivityIndicator color={heroGreen} size="large" />
       </View>
     );
   }
 
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, { backgroundColor: palette.muted }]}>
+      {/* Flat warm-neutral page with the faint maths pattern (no glows, no gradients). */}
       <DashboardBackground patternOnly liquid />
+      <PatternTiles />
       <ScrollView
         contentContainerStyle={[
           styles.content,
@@ -1015,7 +990,7 @@ export function DashboardHomeScreen() {
               accessibilityLabel={
                 selectedStudent ? 'Change student' : 'Open profile'
               }>
-              <ProfileAvatar name={avatarLabel} uri={avatarUrl} size={52} />
+              <ProfileAvatar name={avatarLabel} uri={avatarUrl} size={48} />
             </Pressable>
             <View style={styles.topTextCol}>
               <Text style={styles.greeting} numberOfLines={1}>
@@ -1041,7 +1016,7 @@ export function DashboardHomeScreen() {
                 onPress={() => navigation.navigate('Notifications')}
                 accessibilityRole="button"
                 accessibilityLabel="Notifications">
-                <Ionicons name="notifications-outline" size={18} color={heroGreen} />
+                <Ionicons name="notifications-outline" size={18} color={green} />
               </Pressable>
               {/* One switcher: both old buttons opened the same school → role → child picker. */}
               {showSwitch ? (
@@ -1054,7 +1029,7 @@ export function DashboardHomeScreen() {
                       ? 'Switch child, school or role'
                       : 'Switch school or role'
                   }>
-                  <Ionicons name="swap-horizontal" size={18} color={heroGreen} />
+                  <Ionicons name="swap-horizontal" size={18} color={green} />
                 </Pressable>
               ) : null}
             </View>
@@ -1067,55 +1042,82 @@ export function DashboardHomeScreen() {
                 {userDisplayName}
               </Text>
               <View style={styles.roleChipRow}>
-                <View style={styles.roleChip}>
-                  <Ionicons name={roleIconName} size={12} color={heroGreen} style={{ marginRight: 4 }} />
-                  <Text style={styles.roleChipText}>{personaLabel}</Text>
+                <View style={[styles.roleChip, { backgroundColor: rgba(green, 0.08) }]}>
+                  <Ionicons name={roleIconName} size={12} color={green} style={{ marginRight: 4 }} />
+                  <Text style={[styles.roleChipText, { color: green }]}>{personaLabel}</Text>
                 </View>
               </View>
             </View>
             <Pressable
-              style={styles.tokenChip}
+              style={[styles.tokenChip, { backgroundColor: rgba(yellow, 0.16), borderColor: rgba(yellow, 0.45) }]}
               onPress={() => navigate('/profile/balances', '/profile')}
               accessibilityRole="button"
               accessibilityLabel={`Tokens ${tokensLabel}`}>
-              <Ionicons name="diamond" size={12} color={palette.secondary} />
+              <Ionicons name="diamond" size={12} color={green} />
               {tokensLoading ? (
-                <ActivityIndicator size="small" color={heroGreen} />
+                <ActivityIndicator size="small" color={green} />
               ) : (
-                <Text style={styles.tokenChipText}>{tokensLabel}</Text>
+                <Text style={[styles.tokenChipText, { color: green }]}>{tokensLabel}</Text>
               )}
             </Pressable>
           </View>
 
-          {/* Hero balances — compact flat bank card */}
-          <View style={styles.heroElevate}>
-            <View style={styles.heroCard}>
-              <LinearGradient
-                pointerEvents="none"
-                colors={[palette.primary, palette.tertiary]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={StyleSheet.absoluteFill}
-              />
-              <View style={styles.heroContent}>
-                <View style={styles.heroHead}>
-                  <View style={styles.heroIconBox}>
-                    <HeroPlainIcon name={primaryHero.icon} size={20} color="#FFFFFF" />
-                  </View>
-                  <View style={styles.heroHeadText}>
-                    <Text style={styles.heroKicker}>{primaryHero.title}</Text>
-                    <Text style={styles.heroValue}>{primaryHero.value}</Text>
-                    <Text style={styles.heroSub}>
-                      {primaryHero.subtitle} · {primaryHero.subtitleValue}
+          {/* Hero — bank-card style: flat dark green, yellow accents, rings top-right. No gradient. */}
+          <View style={[styles.heroCard, { backgroundColor: green, boxShadow: `0px 8px 16px ${rgba(green, 0.28)}` }]}>
+            <View pointerEvents="none" style={styles.heroRingFill} />
+            <View pointerEvents="none" style={styles.heroRingLine} />
+            <View pointerEvents="none" style={[styles.heroRingAccent, { borderColor: rgba(yellow, 0.22) }]} />
+            <View pointerEvents="none" style={styles.heroRim} />
+
+            <View style={styles.heroContent}>
+              {/* School line + persona chip, the hero icon where a card brand sits */}
+              <View style={styles.heroTopRow}>
+                <View style={styles.heroTopLeft}>
+                  <Text style={styles.heroSchool} numberOfLines={1}>
+                    {schoolLine}
+                  </Text>
+                  <View style={[styles.heroChipPill, { backgroundColor: rgba(yellow, 0.24) }]}>
+                    <Text style={[styles.heroChipPillText, { color: yellow }]} numberOfLines={1}>
+                      {personaLabel.toUpperCase()}
                     </Text>
                   </View>
                 </View>
+                <View style={styles.heroIconBox}>
+                  <HeroPlainIcon name={primaryHero.icon} size={18} color={yellow} />
+                </View>
+              </View>
 
-                <View style={styles.heroSplit}>
+              {/* Chip + the primary stat's context line, like the number on a card */}
+              <View style={styles.heroChipRow}>
+                <CardChip color={yellow} />
+                <Text style={styles.heroCardLine} numberOfLines={1}>
+                  {primaryHero.subtitle} · {primaryHero.subtitleValue}
+                </Text>
+              </View>
+
+              {/* Main figure with the eye toggle */}
+              <View style={styles.heroLabelRow}>
+                <Text style={styles.heroKicker}>{primaryHero.title.toUpperCase()}</Text>
+                <Pressable
+                  onPress={() => setHideValues((v) => !v)}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel={hideValues ? 'Show figures' : 'Hide figures'}
+                  style={styles.heroEye}>
+                  <Ionicons name={hideValues ? 'eye-off-outline' : 'eye-outline'} size={12} color="rgba(255,255,255,0.92)" />
+                </Pressable>
+              </View>
+              <Text style={styles.heroValue} numberOfLines={1} adjustsFontSizeToFit>
+                {masked(primaryHero.value)}
+              </Text>
+
+              {/* Footer: the other figures as pills */}
+              {secondaryHero.length ? (
+                <View style={styles.heroFooter}>
                   {secondaryHero.map((stat) => (
                     <Pressable
                       key={stat.id}
-                      style={styles.heroStat}
+                      style={({ pressed }) => [styles.heroStat, pressed && { opacity: 0.75 }]}
                       onPress={() => {
                         if (stat.id === 'fees' || stat.id === 'pocket') {
                           navigation.navigate('Accounts');
@@ -1125,9 +1127,11 @@ export function DashboardHomeScreen() {
                       }}
                       accessibilityRole="button"
                       accessibilityLabel={`${stat.title} ${stat.value}`}>
-                      <Text style={styles.heroStatLabel}>{stat.title}</Text>
+                      <Text style={[styles.heroStatLabel, { color: yellow }]} numberOfLines={1}>
+                        {stat.title.toUpperCase()}
+                      </Text>
                       <Text style={styles.heroStatValue} numberOfLines={1}>
-                        {stat.value}
+                        {masked(stat.value)}
                       </Text>
                       <Text style={styles.heroStatSub} numberOfLines={1}>
                         {stat.subtitleValue}
@@ -1135,7 +1139,7 @@ export function DashboardHomeScreen() {
                     </Pressable>
                   ))}
                 </View>
-              </View>
+              ) : null}
             </View>
           </View>
 
@@ -1151,37 +1155,44 @@ export function DashboardHomeScreen() {
                 },
               ].map((m) => (
                 <View key={m.label} style={styles.studentMetric}>
-                  <Text style={styles.studentMetricLabel}>{m.label}</Text>
-                  <Text style={styles.studentMetricValue} numberOfLines={1}>
-                    {m.value}
-                  </Text>
+                  <View style={[styles.studentMetricMark, { backgroundColor: yellow }]} />
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={styles.studentMetricLabel}>{m.label.toUpperCase()}</Text>
+                    <Text style={[styles.studentMetricValue, { color: green }]} numberOfLines={1}>
+                      {m.value}
+                    </Text>
+                  </View>
                 </View>
               ))}
             </View>
           ) : null}
 
-          {/* Action grids — icons free of card containers */}
-          {sections.map((section, sectionIndex) => (
-            <View key={section.id} style={styles.sectionBlock}>
-              <Text style={styles.sectionTitle}>{section.title}</Text>
-              <View style={styles.sectionInner}>
-                <View style={styles.tileRow}>
-                  {section.actions.map((action, actionIndex) => (
-                    <ModuleTile
-                      key={action.id}
-                      action={action}
-                      accent={tileAccentFor(palette, sectionIndex * 4 + actionIndex)}
-                      onPress={() => onPressAction(action)}
-                    />
-                  ))}
-                  {section.actions.length < 4
-                    ? Array.from({ length: 4 - section.actions.length }).map((_, i) => (
-                        <View key={`pad-${section.id}-${i}`} style={styles.tilePad} />
-                      ))
-                    : null}
-                </View>
+          {/* Shortcut cards — two rows of four, alternating solid green / yellow-tinted tiles */}
+          {sections.map((section) => (
+            <MenuCard key={section.id} title={section.title} style={styles.sectionCard}>
+              <View style={styles.cardRows}>
+                {rowsOf(section.actions).map((row, rowIndex) => (
+                  <View key={`${section.id}-r${rowIndex}`} style={styles.tileRow}>
+                    {row.map((action, colIndex) => (
+                      <MenuItem
+                        key={action.id}
+                        label={action.title}
+                        solid={(rowIndex + colIndex) % 2 === 0}
+                        onPress={() => onPressAction(action)}
+                        accessibilityLabel={`${action.title}. ${action.description}`}
+                        accessibilityHint={action.description}
+                        renderIcon={(c) => <PlainIcon name={action.icon} size={TILE_ICON_SIZE} color={c} />}
+                      />
+                    ))}
+                    {row.length < PER_ROW
+                      ? Array.from({ length: PER_ROW - row.length }).map((_, i) => (
+                          <View key={`pad-${section.id}-${rowIndex}-${i}`} style={styles.tilePad} />
+                        ))
+                      : null}
+                  </View>
+                ))}
               </View>
-            </View>
+            </MenuCard>
           ))}
         </Animated.View>
       </ScrollView>
@@ -1192,13 +1203,12 @@ export function DashboardHomeScreen() {
 const H_PAD = 16;
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#FFFFFF' },
+  root: { flex: 1 },
   content: { paddingHorizontal: H_PAD },
   centered: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFFFFF',
   },
   topBar: {
     flexDirection: 'row',
@@ -1207,13 +1217,10 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   avatarHit: {
-    borderRadius: 26,
-    backgroundColor: Colors.white,
-    shadowColor: '#0A3D2E',
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 3,
+    borderRadius: 24,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E6EBE7',
   },
   topTextCol: { flex: 1, minWidth: 0 },
   headerActions: {
@@ -1222,35 +1229,29 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   headerIconBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.white,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(10,61,46,0.1)',
-    shadowColor: '#0A3D2E',
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E6EBE7',
   },
   greeting: {
-    fontSize: 13,
-    fontWeight: '600',
+    fontFamily: 'Inter_500Medium',
+    fontSize: 12,
     color: Colors.mutedForeground,
   },
   contextTitle: {
-    marginTop: 2,
+    marginTop: 1,
+    fontFamily: 'Roboto_700Bold',
     fontSize: 18,
-    fontWeight: '800',
-    color: Colors.ink,
+    color: '#1D1B20',
   },
   contextMeta: {
-    marginTop: 2,
+    fontFamily: 'Inter_500Medium',
     fontSize: 12,
-    fontWeight: '500',
     color: Colors.mutedForeground,
     flexShrink: 1,
   },
@@ -1271,9 +1272,9 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   userName: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: Colors.ink,
+    fontFamily: 'Inter_700Bold',
+    fontSize: 14,
+    color: '#1D1B20',
   },
   roleChipRow: {
     flexDirection: 'row',
@@ -1284,194 +1285,223 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingVertical: 4,
     borderRadius: 999,
-    backgroundColor: 'rgba(21,65,29,0.08)',
   },
   roleChipText: {
+    fontFamily: 'Inter_600SemiBold',
     fontSize: 11,
-    fontWeight: '700',
-    color: Colors.brandGreen,
     textTransform: 'capitalize',
   },
   tokenChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    gap: 5,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: Colors.white,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(10,61,46,0.1)',
-    shadowColor: '#0A3D2E',
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    borderWidth: 1,
   },
   tokenChipText: {
+    fontFamily: 'Inter_700Bold',
     fontSize: 12,
-    fontWeight: '800',
-    color: Colors.ink,
     fontVariant: ['tabular-nums'],
   },
-  heroElevate: {
-    borderRadius: 18,
-    marginBottom: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(255,255,255,0.18)',
-    // Flat bank-card look — no heavy elevation
-    shadowOpacity: 0,
-    elevation: 0,
-  },
   heroCard: {
-    borderRadius: 18,
+    borderRadius: 20,
     overflow: 'hidden',
-    minHeight: 118,
+    marginBottom: 14,
+    minHeight: 188,
+  },
+  heroRingFill: {
+    position: 'absolute',
+    top: -70,
+    right: -50,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  heroRingLine: {
+    position: 'absolute',
+    top: -30,
+    right: -90,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  heroRingAccent: {
+    position: 'absolute',
+    bottom: -60,
+    left: -40,
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    borderWidth: 1,
+  },
+  heroRim: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
   },
   heroContent: {
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    zIndex: 1,
+    paddingHorizontal: 18,
+    paddingTop: 14,
+    paddingBottom: 12,
   },
-  heroHead: {
+  heroTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginBottom: 10,
+  },
+  heroTopLeft: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  heroSchool: {
+    fontFamily: 'Roboto_700Bold',
+    fontSize: 16,
+    color: '#FFFFFF',
+    flexShrink: 1,
+  },
+  heroChipPill: {
+    marginLeft: 8,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 8,
+    flexShrink: 0,
+  },
+  heroChipPillText: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 9,
+    letterSpacing: 0.6,
   },
   heroIconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.14)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  heroHeadText: { flex: 1, minWidth: 0 },
+  heroChipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 10,
+  },
+  heroCardLine: {
+    flex: 1,
+    fontFamily: 'Inter_500Medium',
+    fontSize: 12,
+    letterSpacing: 0.6,
+    color: 'rgba(255,255,255,0.82)',
+  },
+  heroLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 14,
+  },
   heroKicker: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-    color: 'rgba(255,255,255,0.72)',
+    fontFamily: 'Inter_700Bold',
+    fontSize: 9,
+    letterSpacing: 0.9,
+    color: 'rgba(255,255,255,0.6)',
+    marginRight: 6,
+  },
+  heroEye: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   heroValue: {
-    marginTop: 1,
-    fontSize: 22,
-    fontWeight: '800',
-    color: Colors.white,
+    marginTop: 2,
+    fontFamily: 'PlusJakartaSans_700Bold',
+    fontSize: 23,
+    letterSpacing: -0.4,
+    color: '#FFFFFF',
   },
-  heroSub: {
-    marginTop: 1,
-    fontSize: 11,
-    fontWeight: '500',
-    color: 'rgba(255,255,255,0.7)',
-  },
-  heroSplit: {
+  heroFooter: {
     flexDirection: 'row',
-    gap: 6,
+    gap: 8,
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.12)',
   },
   heroStat: {
     flex: 1,
+    minWidth: 0,
     borderRadius: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 8,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    backgroundColor: 'rgba(255,255,255,0.10)',
   },
   heroStatLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
-    color: 'rgba(255,255,255,0.7)',
+    fontFamily: 'Inter_700Bold',
+    fontSize: 9,
+    letterSpacing: 0.6,
   },
   heroStatValue: {
-    marginTop: 4,
+    marginTop: 3,
+    fontFamily: 'Inter_700Bold',
     fontSize: 14,
-    fontWeight: '800',
-    color: Colors.white,
+    color: '#FFFFFF',
   },
   heroStatSub: {
-    marginTop: 2,
+    marginTop: 1,
+    fontFamily: 'Inter_400Regular',
     fontSize: 10,
-    fontWeight: '500',
-    color: 'rgba(255,255,255,0.55)',
+    color: 'rgba(255,255,255,0.6)',
   },
-  sectionBlock: {
-    marginTop: 14,
+  sectionCard: {
+    marginBottom: 14,
   },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    letterSpacing: 0.7,
-    textTransform: 'uppercase',
-    color: Colors.ink,
-    marginBottom: 8,
-    paddingHorizontal: 2,
-  },
-  sectionInner: {
-    paddingHorizontal: 2,
-    paddingVertical: 6,
-  },
+  cardRows: { gap: 14 },
   tileRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
   },
-  tile: {
-    flex: 1,
-    alignItems: 'center',
-    paddingHorizontal: 2,
-  },
   tilePad: { flex: 1 },
-  tilePressed: { opacity: 0.7 },
-  tileIconWrap: {
-    width: TILE_SIZE,
-    height: TILE_SIZE,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tileLabelBox: {
-    marginTop: 8,
-    height: 28,
-    width: '100%',
-    justifyContent: 'flex-start',
-  },
-  tileLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: Colors.ink,
-    textAlign: 'center',
-    lineHeight: 13,
-  },
   studentMetricsRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 12,
-    paddingHorizontal: 2,
+    gap: 10,
+    marginBottom: 14,
   },
   studentMetric: {
-    flexGrow: 1,
-    flexBasis: '22%',
-    minWidth: 72,
-    borderRadius: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 8,
-    backgroundColor: 'rgba(10,61,46,0.06)',
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(255,255,255,0.94)',
+    borderWidth: 1,
+    borderColor: '#E6ECE9',
   },
+  studentMetricMark: { width: 3, height: 28, borderRadius: 2 },
   studentMetricLabel: {
+    fontFamily: 'Inter_700Bold',
     fontSize: 9,
-    fontWeight: '700',
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
+    letterSpacing: 0.6,
     color: Colors.mutedForeground,
   },
   studentMetricValue: {
-    marginTop: 4,
-    fontSize: 12,
-    fontWeight: '800',
-    color: Colors.ink,
+    marginTop: 2,
+    fontFamily: 'PlusJakartaSans_700Bold',
+    fontSize: 16,
   },
 });

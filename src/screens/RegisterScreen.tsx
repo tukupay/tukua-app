@@ -536,12 +536,58 @@ export function RegisterScreen({ navigation }: Props) {
     }
     setError('');
     if (!(await assertTukuaAvailable())) return;
-    if (canJoinSchool) {
+    // Parents and teachers get the (skippable) school step. Students go straight on: a school is
+    // optional for them, offered as a link on the next step and from the dashboard later.
+    if (accountType === 'parent' || accountType === 'teacher') {
       setStep('schoolJoin');
       return;
     }
+    if (accountType === 'student' && studentSchools.length === 0) setWantSchool(false);
     formRef.current = buildForm();
-    pendingSchoolJoinRef.current = null;
+    pendingSchoolJoinRef.current = accountType === 'student' ? pendingJoinFromUi() : null;
+    setStep('payment');
+  };
+
+  /** School step → payment. `skip` continues without a school (parents/teachers "Skip for now"). */
+  const continueFromSchoolJoin = async (skip: boolean) => {
+    if (skip) {
+      setWantSchool(false);
+      setSelectedSchool(null);
+      setSchoolHits([]);
+      setSchoolQuery('');
+      if (accountType === 'student') {
+        setStudentSchools([]);
+        setStudentAdmissions({});
+      }
+    } else if (accountType === 'student') {
+      if (studentSchools.length === 0 && wantSchool !== false) {
+        setError('Add a school, or skip for now');
+        return;
+      }
+    } else {
+      if (wantSchool === null) {
+        setError('Choose Find my school/organisation or Skip for now');
+        return;
+      }
+      if (wantSchool && !selectedSchool) {
+        setError('Select a school from the search results, or skip');
+        return;
+      }
+    }
+    const validationError = validateForm();
+    if (validationError) {
+      setError(validationError);
+      if (!agreedToTerms) setStep('details');
+      return;
+    }
+    setError('');
+    if (!(await assertTukuaAvailable())) {
+      setStep('details');
+      return;
+    }
+    // State updates above land next render, so a skip must not read the old school picks.
+    pendingSchoolJoinRef.current = skip ? null : pendingJoinFromUi();
+    formRef.current = buildForm();
     setStep('payment');
   };
 
@@ -773,8 +819,16 @@ export function RegisterScreen({ navigation }: Props) {
 
               {step === 'schoolJoin' ? (
                 <>
-                  <TouchableOpacity onPress={() => setStep('details')} style={styles.backRow}>
-                    <Text style={[styles.backText, { fontSize: font(13) }]}>← Back to details</Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      // Students reach this optional step from payment, so Back returns there.
+                      if (accountType === 'student') void continueFromSchoolJoin(studentSchools.length === 0);
+                      else setStep('details');
+                    }}
+                    style={styles.backRow}>
+                    <Text style={[styles.backText, { fontSize: font(13) }]}>
+                      {accountType === 'student' ? '← Back' : '← Back to details'}
+                    </Text>
                   </TouchableOpacity>
 
                   <Text style={[styles.prompt, { fontSize: font(13), lineHeight: font(19) }]}>
@@ -915,16 +969,9 @@ export function RegisterScreen({ navigation }: Props) {
 
                       {studentSchools.length === 0 ? (
                         <TouchableOpacity
-                          onPress={() => {
-                            setWantSchool(false);
-                            setStudentSchools([]);
-                            setStudentAdmissions({});
-                            setSchoolQuery('');
-                            setSchoolHits([]);
-                            setError('');
-                          }}
+                          onPress={() => void continueFromSchoolJoin(true)}
                           style={styles.skipRow}>
-                          <Text style={[styles.skipText, { fontSize: font(13) }]}>Skip for now</Text>
+                          <Text style={[styles.skipText, { fontSize: font(13) }]}>Not now — continue without a school</Text>
                         </TouchableOpacity>
                       ) : null}
                     </>
@@ -1083,37 +1130,7 @@ export function RegisterScreen({ navigation }: Props) {
                   <View style={styles.btnRow}>
                     <AuthButton
                       text="Continue"
-                      onPress={async () => {
-                        if (accountType === 'student') {
-                          if (studentSchools.length === 0 && wantSchool !== false) {
-                            setError('Add a school, or skip for now');
-                            return;
-                          }
-                        } else {
-                          if (wantSchool === null) {
-                            setError('Choose Find my school/organisation or Skip for now');
-                            return;
-                          }
-                          if (wantSchool && !selectedSchool) {
-                            setError('Select a school from the search results, or skip');
-                            return;
-                          }
-                        }
-                        const validationError = validateForm();
-                        if (validationError) {
-                          setError(validationError);
-                          if (!agreedToTerms) setStep('details');
-                          return;
-                        }
-                        setError('');
-                        if (!(await assertTukuaAvailable())) {
-                          setStep('details');
-                          return;
-                        }
-                        pendingSchoolJoinRef.current = pendingJoinFromUi();
-                        formRef.current = buildForm();
-                        setStep('payment');
-                      }}
+                      onPress={() => void continueFromSchoolJoin(false)}
                       enabled={
                         !loading &&
                         (accountType === 'student'
@@ -1122,16 +1139,54 @@ export function RegisterScreen({ navigation }: Props) {
                       }
                     />
                   </View>
+
+                  {accountType !== 'student' && !selectedSchool ? (
+                    <TouchableOpacity
+                      onPress={() => void continueFromSchoolJoin(true)}
+                      disabled={loading}
+                      style={[styles.skipProminent, { paddingVertical: s(14), borderRadius: s(12) }]}
+                      accessibilityRole="button">
+                      <Text style={[styles.skipProminentText, { fontSize: font(15) }]}>
+                        Skip for now — I'll do this later
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null}
                 </>
               ) : null}
 
               {step === 'payment' ? (
                 <>
                   <TouchableOpacity
-                    onPress={() => setStep(canJoinSchool ? 'schoolJoin' : 'details')}
+                    onPress={() =>
+                      setStep(
+                        accountType === 'student'
+                          ? studentSchools.length > 0
+                            ? 'schoolJoin'
+                            : 'details'
+                          : canJoinSchool
+                            ? 'schoolJoin'
+                            : 'details',
+                      )
+                    }
                     style={styles.backRow}>
                     <Text style={[styles.backText, { fontSize: font(13) }]}>← Back</Text>
                   </TouchableOpacity>
+
+                  {accountType === 'student' && studentSchools.length === 0 && peaStatus === 'idle' ? (
+                    <TouchableOpacity
+                      onPress={() => {
+                        setWantSchool(true);
+                        setError('');
+                        setStep('schoolJoin');
+                      }}
+                      style={styles.optionalSchoolLink}
+                      accessibilityRole="button">
+                      <Ionicons name="school-outline" size={s(18)} color={Colors.brandGreenDark} />
+                      <Text style={[styles.optionalSchoolText, { fontSize: font(13) }]}>
+                        Belong to a school? Join it (optional)
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null}
 
                   {canJoinSchool && schoolsToJoin.length > 0 ? (
                     <Text style={[styles.linkedSchool, { fontSize: font(13) }]}>
@@ -1413,6 +1468,32 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontFamily: 'Poppins_600SemiBold',
     color: Colors.mutedForeground,
+    textDecorationLine: 'underline',
+  },
+  skipProminent: {
+    marginTop: 10,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: Colors.brandGreen,
+    backgroundColor: Colors.white,
+  },
+  skipProminentText: {
+    fontWeight: '700',
+    fontFamily: 'Poppins_600SemiBold',
+    color: Colors.brandGreen,
+  },
+  optionalSchoolLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    alignSelf: 'flex-start',
+    paddingVertical: 8,
+    marginBottom: 6,
+  },
+  optionalSchoolText: {
+    fontWeight: '600',
+    fontFamily: 'Poppins_600SemiBold',
+    color: Colors.brandGreenDark,
     textDecorationLine: 'underline',
   },
   schoolCard: {

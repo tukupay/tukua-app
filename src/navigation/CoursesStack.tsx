@@ -9,7 +9,7 @@ import { CoursesScreen } from '../screens/CoursesScreen';
 import { WebAppScreen } from '../screens/WebAppScreen';
 import { Colors } from '../theme/yana';
 import { useAppTheme } from '../context/AppThemeContext';
-import { FLOATING_HEADER_BODY } from '../constants/layout';
+import { floatingHeaderInset } from '../constants/layout';
 
 export type CoursesStackParamList = {
   CoursesHome: undefined;
@@ -35,7 +35,10 @@ function CourseWebScreen({
         <TouchableOpacity
           style={[
             courseWebStyles.backBtn,
-            { top: insets.top + FLOATING_HEADER_BODY + 8, borderColor: `${palette.primary}99` },
+            // Top of the WebView (it is padded by floatingHeaderInset). In-app course pages keep a 52px empty band at
+            // the top (APP_SHELL_TOP_INSET) — the 44px button sits inside it, clear of the hero buttons and the sticky
+            // tabs bar (pinned at 68px).
+            { top: floatingHeaderInset(insets.top), borderColor: `${palette.primary}99` },
           ]}
           onPress={() => navigation.goBack()}
           accessibilityLabel="Back to courses"
@@ -52,12 +55,12 @@ function CourseWebScreen({
 const courseWebStyles = StyleSheet.create({
   backBtn: {
     position: 'absolute',
-    left: 14,
+    left: 12,
     zIndex: 60,
     elevation: 60,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,

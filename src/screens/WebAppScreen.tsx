@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   BackHandler,
   Platform,
   StyleSheet,
@@ -9,6 +10,9 @@ import {
 } from 'react-native';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { WebView, WebViewNavigation } from 'react-native-webview';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 import { hideSystemStatusBar } from '../components/ImmersiveSystemBars';
 import { Colors, TukuaWeb } from '../theme/yana';
 import { TAB_BAR_BODY_HEIGHT, floatingHeaderInset } from '../constants/layout';
@@ -45,6 +49,94 @@ import { hslToCssVar, SCHOOL_THEME_HSL } from '../theme/schoolThemes';
 
 const TAB_FOCUS_AUTH_CHECK_MS = 60_000;
 let lastTabFocusAuthCheckAt = 0;
+
+/** Files the web page hands over (exam PDFs / Word docs) — refuse anything bigger. */
+const WEB_FILE_MAX_BYTES = 25 * 1024 * 1024;
+
+function sanitizeFileName(raw: unknown, fallbackExt: string): string {
+  let name = String(typeof raw === 'string' ? raw : '')
+    .replace(/[^A-Za-z0-9._() -]+/g, '_')
+    .replace(/\s+/g, '_')
+    .replace(/^\.+/, '')
+    .slice(0, 100);
+  if (!name) name = `tukua_${Date.now()}`;
+  if (!/\.[a-z0-9]{2,5}$/i.test(name)) name = `${name}.${fallbackExt}`;
+  return name;
+}
+
+function extForMime(mime: string): string {
+  if (mime === 'application/pdf') return 'pdf';
+  if (mime.includes('wordprocessingml')) return 'docx';
+  if (mime.includes('spreadsheetml')) return 'xlsx';
+  if (mime.startsWith('image/')) return mime.slice(6).replace('jpeg', 'jpg') || 'png';
+  return 'bin';
+}
+
+/** One share sheet at a time — the exam export sends the paper and the marking scheme back to back. */
+let fileShareQueue: Promise<void> = Promise.resolve();
+function enqueueFileShare(task: () => Promise<void>) {
+  fileShareQueue = fileShareQueue.then(task).catch((e) => {
+    log.warn('WebApp', 'file share failed', String(e));
+    Alert.alert('Could not save the file', 'Please try again.');
+  });
+}
+
+async function shareLocalFile(uri: string, mimeType: string, title: string) {
+  if (await Sharing.isAvailableAsync()) {
+    await Sharing.shareAsync(uri, {
+      mimeType,
+      dialogTitle: title,
+      UTI: mimeType === 'application/pdf' ? 'com.adobe.pdf' : undefined,
+    });
+  } else {
+    Alert.alert('File saved', `${title} was saved in the app, but sharing is not available on this device.`);
+  }
+}
+
+/** TUKUA_SAVE_FILE: write the base64 bytes to the cache folder, then open the share sheet (save / open with). */
+function saveWebFile(msg: { name?: unknown; mime?: unknown; base64?: unknown }) {
+  const base64 = typeof msg.base64 === 'string' ? msg.base64 : '';
+  const mime = typeof msg.mime === 'string' && msg.mime ? msg.mime : 'application/octet-stream';
+  const name = sanitizeFileName(msg.name, extForMime(mime));
+  if (!base64) return;
+  if (Math.floor((base64.length * 3) / 4) > WEB_FILE_MAX_BYTES) {
+    Alert.alert('File too large', `${name} is larger than 25 MB and cannot be saved in the app. Use tukua.ai on a computer.`);
+    return;
+  }
+  enqueueFileShare(async () => {
+    const dir = `${FileSystem.cacheDirectory || ''}downloads/`;
+    await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => undefined);
+    const uri = `${dir}${name}`;
+    await FileSystem.writeAsStringAsync(uri, base64, { encoding: FileSystem.EncodingType.Base64 });
+    log.info('WebApp', 'web file saved', { name, mime, bytes: Math.floor((base64.length * 3) / 4) });
+    await shareLocalFile(uri, mime, name);
+  });
+}
+
+/** TUKUA_PRINT_HTML: render the page to a PDF natively (expo-print), then share it. */
+function printWebHtml(msg: { html?: unknown; name?: unknown }) {
+  const html = typeof msg.html === 'string' ? msg.html : '';
+  if (!html) return;
+  if (html.length > WEB_FILE_MAX_BYTES) {
+    Alert.alert('Page too large', 'This paper is too large to print in the app.');
+    return;
+  }
+  const name = sanitizeFileName(msg.name || 'tukua_paper.pdf', 'pdf');
+  enqueueFileShare(async () => {
+    const { uri } = await Print.printToFileAsync({ html, base64: false });
+    let target = uri;
+    try {
+      const dir = `${FileSystem.cacheDirectory || ''}downloads/`;
+      await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => undefined);
+      target = `${dir}${name}`;
+      await FileSystem.deleteAsync(target, { idempotent: true });
+      await FileSystem.moveAsync({ from: uri, to: target });
+    } catch {
+      target = uri;
+    }
+    await shareLocalFile(target, 'application/pdf', name);
+  });
+}
 
 type Props = {
   path: string;
@@ -154,8 +246,11 @@ export function WebAppScreen({ path, label }: Props) {
   const injectChatComposerInsets = useCallback(() => {
     if (Platform.OS === 'web' || !webRef.current) return;
     // top=0: WebView is already padded below the floating nav
+    // --tukua-native-tab-bar: lets fixed bottom bars on web pages (course action bar) sit above the native tab bar.
+    const tabBarPx = Math.max(48, Math.round(tabBarInsetPx));
     webRef.current.injectJavaScript(
-      `${buildMobileChatTabBarStylesScript(tabBarInsetPx, 0)}\ntrue;`,
+      `${buildMobileChatTabBarStylesScript(tabBarInsetPx, 0)}\n` +
+        `try{document.documentElement.style.setProperty('--tukua-native-tab-bar','${tabBarPx}px')}catch(e){}\ntrue;`,
     );
   }, [tabBarInsetPx]);
 
@@ -676,6 +771,14 @@ export function WebAppScreen({ path, label }: Props) {
       } else if (msg.type === 'TUKUA_BOOTSTRAP_ERR') {
         log.error('WebApp', 'bootstrap err', { error: msg.error });
         setPageLoading(false);
+      } else if (msg.type === 'TUKUA_SAVE_FILE') {
+        if (Platform.OS === 'web') return;
+        saveWebFile(msg);
+      } else if (msg.type === 'TUKUA_SAVE_FILE_TOO_LARGE') {
+        Alert.alert('File too large', 'This file is larger than 25 MB and cannot be saved in the app. Use tukua.ai on a computer.');
+      } else if (msg.type === 'TUKUA_PRINT_HTML') {
+        if (Platform.OS === 'web') return;
+        printWebHtml(msg);
       } else if (msg.type === 'request_contacts') {
         if (Platform.OS === 'web') return;
         void (async () => {
@@ -783,10 +886,17 @@ export function WebAppScreen({ path, label }: Props) {
             setPageLoading(false);
             if (isFocused) syncTabRoute('shell reload');
           }
-          // Chat/courses: wait for TUKUA_CHAT_READY. Fallback so loader never sticks forever.
+          // Course pages have no TUKUA_CHAT_READY ping: once the shell has loaded, drop the loader shortly after
+          // (time for the bootstrap SPA navigate) so the blocking overlay never sits over a live page.
+          if (isCourseWeb) {
+            injectChatComposerInsets();
+            setTimeout(() => setPageLoading(false), 1_200);
+          }
+          // Chat: wait for TUKUA_CHAT_READY. Fallback so the loader never sticks forever — not gated on bootstrap,
+          // since a missed bootstrap ping would otherwise leave an invisible page under a tap-swallowing loader.
           if (shellLoaderMode) {
             setTimeout(() => {
-              if (shellReadyRef.current && bootstrappedRef.current) {
+              if (shellReadyRef.current) {
                 setPageLoading(false);
               }
             }, 8_000);

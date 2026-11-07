@@ -11,6 +11,7 @@ import { AgencyLogo } from './AgencyLogo';
 import { CertifyingAgency, fetchCertifyingAgencies } from '../../lib/certifyingAgencies';
 import { Colors } from '../../theme/yana';
 import { useAuthScale } from './useAuthScale';
+import { PagerSafe } from '../BookPager';
 
 type Props = { compact?: boolean };
 
@@ -67,6 +68,8 @@ export function CertifyingAgenciesCarousel({ compact }: Props) {
 
   return (
     <View style={[styles.wrap, compact && styles.wrapCompact, { maxWidth: s(320) }]}>
+      {/* Inside the signed-out book pager a swipe here scrolls the logos, not the page. */}
+      <PagerSafe>
       <ScrollView
         ref={scrollRef}
         horizontal
@@ -96,6 +99,7 @@ export function CertifyingAgenciesCarousel({ compact }: Props) {
           </View>
         ))}
       </ScrollView>
+      </PagerSafe>
     </View>
   );
 }

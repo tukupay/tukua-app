@@ -1,6 +1,5 @@
 import React from 'react';
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity } from 'react-native';
-import { LinearGradient } from '../FlatFill'; // flat fill: no gradients
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Colors } from '../../theme/yana';
 import { useAuthScale } from './useAuthScale';
 
@@ -9,47 +8,47 @@ type Props = {
   enabled?: boolean;
   loading?: boolean;
   onPress: () => void;
+  /** 'green' (default): dark green pill, white text. 'yellow': Tukua yellow pill, dark green text. */
+  variant?: 'green' | 'yellow';
 };
 
-/** Solid hero CTA — same green→teal as dashboard balance cards. One radius, no double stroke. */
-export function AuthButton({ text, enabled = true, loading = false, onPress }: Props) {
+/** Flat pill CTA (TukuPay's AuthButton: 50 high, fully round, flat brand colour, presses in a little). No gradient. */
+export function AuthButton({ text, enabled = true, loading = false, onPress, variant = 'green' }: Props) {
   const { s, font } = useAuthScale();
   const active = enabled && !loading;
+  const yellow = variant === 'yellow';
+  const fill = yellow ? Colors.orange : Colors.primary;
+  const ink = yellow ? Colors.primary : Colors.white;
   return (
-    <TouchableOpacity
-      style={styles.wrap}
+    <Pressable
+      style={({ pressed }) => [styles.wrap, { transform: [{ scale: pressed && active ? 0.98 : 1 }] }]}
       onPress={onPress}
       disabled={!active}
-      activeOpacity={0.88}>
-      <LinearGradient
-        colors={active ? ['#15411D', '#006D69'] : ['#9BB0A6', '#8AA39B']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
+      accessibilityRole="button"
+      accessibilityState={{ disabled: !active, busy: loading }}>
+      <View
         style={[
           styles.button,
           {
-            height: s(52),
-            borderRadius: 16,
+            height: s(50),
+            borderRadius: s(30),
+            backgroundColor: fill,
+            opacity: active || loading ? 1 : 0.45,
           },
         ]}>
         {loading ? (
-          <ActivityIndicator color={Colors.white} />
+          <ActivityIndicator color={ink} />
         ) : (
-          <Text style={[styles.label, { fontSize: font(16) }]}>{text}</Text>
+          <Text style={[styles.label, { fontSize: font(16), color: ink }]}>{text}</Text>
         )}
-      </LinearGradient>
-    </TouchableOpacity>
+      </View>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: {
     flex: 1,
-    shadowColor: '#0A3D2E',
-    shadowOpacity: 0.22,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 5,
   },
   button: {
     alignItems: 'center',
@@ -57,8 +56,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   label: {
-    color: Colors.white,
-    fontWeight: '700',
+    fontWeight: '600',
     fontFamily: 'Poppins_600SemiBold',
+    letterSpacing: 0.3,
   },
 });

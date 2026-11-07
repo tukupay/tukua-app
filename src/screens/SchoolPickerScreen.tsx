@@ -518,10 +518,16 @@ export function SchoolPickerScreen() {
                 : { school_id: school.id, role_slug: role };
         const res = await createJoinRequest(body);
         closeAddRole();
-        void refreshSchools({ forcePick: true });
         const adm =
           role === 'student' ? String(res?.request?.admission_number || '').trim() : '';
-        const auto = Boolean((res as { auto_approved?: boolean })?.auto_approved);
+        const auto = Boolean(res?.auto_approved);
+        if (auto && !res?.already_pending) {
+          // Auto-allowed: open the school with the role just joined (the picker closes) — no
+          // "open the dashboard" dialog. If the list lags, fall back to the picker below.
+          await refreshSchools({ quiet: true });
+          if (await selectSchool(school.id, { role })) return;
+        }
+        void refreshSchools({ forcePick: true });
         showDialog({
           title: res?.already_pending ? 'Already requested' : auto ? 'You are in' : 'Request sent',
           message: res?.already_pending
@@ -544,7 +550,7 @@ export function SchoolPickerScreen() {
         setPendingJoinKey(null);
       }
     },
-    [closeAddRole, refreshSchools, showDialog, classOrCourse],
+    [closeAddRole, refreshSchools, selectSchool, showDialog, classOrCourse],
   );
 
   const onPickAddSchool = useCallback((school: JoinSchoolHit) => {

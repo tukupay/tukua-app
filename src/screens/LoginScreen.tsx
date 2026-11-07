@@ -1,6 +1,7 @@
 import React, { useCallback, useState } from 'react';
 
 import {
+  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -10,22 +11,17 @@ import {
   View,
 } from 'react-native';
 
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Ionicons } from '@expo/vector-icons';
 
-import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useFocusEffect } from '@react-navigation/native';
+import type { NativeStackNavigationProp, NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 
-import { LogoPartners } from '../components/auth/LogoPartners';
-import { LoginHeroCurve, loginHeroHeight } from '../components/auth/LoginHeroCurve';
-import { ChatPatternBackdrop } from '../components/auth/ChatPatternBackdrop';
-import { CurveHProvider, CurvePaint } from '../components/auth/CurvePaint';
+import { TopWave, TukuaPatternLayer, topWaveHeight } from '../components/auth/TopWave';
 import { CertifyingAgenciesCarousel } from '../components/auth/CertifyingAgenciesCarousel';
-import { NewsHighlight } from '../components/auth/NewsHighlight';
 import { AuthTextField } from '../components/auth/AuthTextField';
 import { AuthButton } from '../components/auth/AuthButton';
-import { GlassPanel } from '../components/dashboard/Glass';
 
 import { RootStackParamList } from '../navigation/types';
 
@@ -45,19 +41,30 @@ import { log } from '../lib/logger';
 import { getDeskApiDebugInfo, saveDeskCredentials } from '../lib/deskApi';
 
 import { Colors } from '../theme/yana';
+import { Images } from '../constants/images';
 import { useAuthScale } from '../components/auth/useAuthScale';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
+type Props = Partial<NativeStackScreenProps<RootStackParamList, 'Login'>> & {
+  /** Shown as a page of the signed-out front door (GuestTabsScreen): no back arrow, room for the tab bar. */
+  embedded?: boolean;
+  /** Room kept free under the content (the floating tab bar). */
+  bottomSpace?: number;
+  /** "Create account" tapped. Default: open the Register screen. */
+  onCreateAccount?: () => void;
+};
 
-export function LoginScreen({ navigation }: Props) {
+/** Sign in: flat green wave, Tukua logo, one-line fields, flat pill button (TukuPay's look). */
+export function LoginScreen({ embedded = false, bottomSpace = 0, onCreateAccount }: Props) {
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const insets = useSafeAreaInsets();
 
   const { showDialog } = useDialog();
 
   const layout = useAuthScale(0.88);
 
   const { s, font } = layout;
-  /** Curve sits just above the form (was ~72% and overlapped fields). */
-  const curveH = loginHeroHeight(layout.width, layout.height);
+  const waveH = topWaveHeight(layout.width);
+  const canGoBack = !embedded && navigation.canGoBack();
 
   const { refreshProfile, adoptSession } = useAuth();
   const { connectDesk } = useDeskAuth();
@@ -244,7 +251,7 @@ export function LoginScreen({ navigation }: Props) {
     if (!raw) {
       showDialog({
         title: 'Email or phone required',
-        message: 'Enter your email or phone first, then tap Forgotten Password.',
+        message: 'Enter your email or phone first, then tap Forgot password.',
         variant: 'info',
         icon: 'mail-unread-outline',
       });
@@ -270,198 +277,187 @@ export function LoginScreen({ navigation }: Props) {
     }
   };
 
+  const logo = s(layout.compact ? 64 : 76);
+
   return (
     <View style={styles.root}>
-      <ChatPatternBackdrop />
-      <LoginHeroCurve height={curveH} />
+      <TukuaPatternLayer />
+      <TopWave />
+      {canGoBack ? (
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+          style={[styles.back, { top: insets.top + s(10), left: s(14) }]}>
+          <Ionicons name="chevron-back" size={s(24)} color={Colors.white} />
+        </TouchableOpacity>
+      ) : null}
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.scroll,
+            {
+              paddingTop: Math.max(waveH * 0.55, insets.top + s(16)),
+              paddingBottom: bottomSpace + insets.bottom + layout.bottomPad,
+              paddingHorizontal: layout.padH,
+            },
+          ]}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          showsVerticalScrollIndicator={false}>
+          <View style={styles.centerBlock}>
+            {/* Logo badge sitting on the wave's edge */}
+            <View
+              style={[
+                styles.logoBadge,
+                { width: logo + s(12), height: logo + s(12), borderRadius: (logo + s(12)) / 2 },
+              ]}>
+              <Image
+                source={Images.appIcon512}
+                style={{ width: logo, height: logo, borderRadius: logo / 2 }}
+                accessibilityLabel="Tukua"
+              />
+            </View>
 
-      <CurveHProvider height={curveH}>
-      <SafeAreaView style={styles.safe} edges={['left', 'right', 'bottom']}>
-        <KeyboardAvoidingView
-          style={styles.flex}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <ScrollView
-            contentContainerStyle={[
-              styles.scroll,
-              {
-                minHeight: layout.scrollMinH,
-                paddingBottom: layout.bottomPad,
-                paddingHorizontal: layout.padH,
-              },
-            ]}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}>
-            <View style={[styles.centerBlock, { paddingTop: Math.max(s(20), Math.round(curveH * 0.1)) }]}>
-              <CurvePaint>
-                {(inside) => <LogoPartners compact={layout.compact} onGreen={inside} />}
-              </CurvePaint>
+            <Text style={[styles.loginTitle, { fontSize: font(22), marginTop: s(14) }]}>Welcome back</Text>
+            <Text style={[styles.loginSub, { fontSize: font(13), marginBottom: s(22) }]}>
+              Sign in to your Tukua account
+            </Text>
 
-              <View style={{ height: Math.max(layout.spacer, s(10)) }} />
+            <View style={{ width: layout.formWidth }}>
+              <AuthTextField
+                hint="Email, phone or username"
+                keyboardType="default"
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="username"
+                textContentType="username"
+                suffixIcon="person-outline"
+                returnKeyType="next"
+                value={email}
+                onChangeText={setEmail}
+              />
 
-              <GlassPanel
-                tone="frost"
-                radius={16}
-                shine
-                style={[styles.formCard, { width: layout.formWidth, marginTop: s(8), padding: s(18) }]}>
-                <Text style={[styles.loginTitle, { fontSize: font(20) }]}>Welcome back</Text>
-                <Text style={[styles.loginSub, { fontSize: font(13), marginBottom: s(16) }]}>
-                  Sign in to Tukua
-                </Text>
-                <Text style={[styles.fieldLabel, { fontSize: font(11) }]}>Email, phone or username</Text>
-                <AuthTextField
-                  hint="you@example.com / 07… / username"
-                  keyboardType="default"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  autoComplete="username"
-                  textContentType="username"
-                  suffixIcon="person-outline"
-                  value={email}
-                  onChangeText={setEmail}
-                />
+              <View style={{ height: s(14) }} />
+              <AuthTextField
+                hint="Password"
+                isPassword
+                obscure={obscure}
+                onToggleObscure={() => setObscure((v) => !v)}
+                autoComplete="password"
+                textContentType="password"
+                returnKeyType="go"
+                onSubmitEditing={() => void handleLogin()}
+                value={password}
+                onChangeText={setPassword}
+              />
 
-                <Text style={[styles.fieldLabel, { fontSize: font(11), marginTop: s(14) }]}>Password</Text>
-                <AuthTextField
-                  hint="Password"
-                  isPassword
-                  obscure={obscure}
-                  onToggleObscure={() => setObscure((v) => !v)}
-                  autoComplete="password"
-                  textContentType="password"
-                  value={password}
-                  onChangeText={setPassword}
-                />
+              <View style={[styles.rememberRow, { marginTop: s(16) }]}>
+                <TouchableOpacity
+                  style={styles.rememberLeft}
+                  onPress={() => setRememberMe((v) => !v)}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: rememberMe }}
+                  hitSlop={8}>
+                  <Ionicons
+                    name={rememberMe ? 'checkmark-circle' : 'ellipse-outline'}
+                    size={s(20)}
+                    color={rememberMe ? Colors.primary : Colors.mutedForeground}
+                  />
+                  <Text style={[styles.rememberText, { fontSize: font(12) }]}>Remember me</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleForgot} hitSlop={8} accessibilityRole="link">
+                  <Text style={[styles.forgotText, { fontSize: font(12) }]}>Forgot password?</Text>
+                </TouchableOpacity>
+              </View>
 
-                <View style={[styles.rememberRow, { marginTop: s(14) }]}>
-                  <TouchableOpacity style={styles.rememberLeft} onPress={() => setRememberMe((v) => !v)}>
-                    <Ionicons
-                      name={rememberMe ? 'checkbox' : 'square-outline'}
-                      size={s(20)}
-                      color={rememberMe ? Colors.orange : Colors.mutedForeground}
-                    />
-                    <Text style={[styles.rememberText, { fontSize: font(12) }]}>Remember me</Text>
+              <View style={[styles.loginRow, { marginTop: s(22) }]}>
+                <AuthButton text="Log in" enabled={canLogin} loading={loading} onPress={handleLogin} />
+                {bioAvailable && !loading ? (
+                  <TouchableOpacity
+                    style={[styles.fingerprint, { width: s(50), height: s(50), borderRadius: s(25) }]}
+                    onPress={handleBiometric}
+                    accessibilityRole="button"
+                    accessibilityLabel="Sign in with biometrics">
+                    <Ionicons name="finger-print" size={s(26)} color={Colors.primary} />
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={handleForgot} hitSlop={8}>
-                    <Text style={[styles.forgotText, { fontSize: font(12) }]}>Forgot password?</Text>
-                  </TouchableOpacity>
-                </View>
-
-                <View style={[styles.loginRow, { marginTop: s(16) }]}>
-                  <AuthButton text="Log in" enabled={canLogin} loading={loading} onPress={handleLogin} />
-                  {bioAvailable && !loading ? (
-                    <TouchableOpacity
-                      style={[styles.fingerprint, { width: s(52), height: s(52), borderRadius: 16 }]}
-                      onPress={handleBiometric}
-                      accessibilityLabel="Sign in with biometrics">
-                      <Ionicons name="finger-print" size={layout.compact ? s(24) : s(26)} color={Colors.white} />
-                    </TouchableOpacity>
-                  ) : null}
-                </View>
-              </GlassPanel>
+                ) : null}
+              </View>
 
               <TouchableOpacity
-                style={[styles.registerLink, { marginTop: s(16) }]}
-                onPress={() => navigation.navigate('Register')}>
+                style={[styles.registerLink, { marginTop: s(18) }]}
+                onPress={() => (onCreateAccount ? onCreateAccount() : navigation.navigate('Register'))}
+                accessibilityRole="link">
                 <Text style={[styles.registerLinkText, { fontSize: font(14) }]}>
-                  Don't have an account? <Text style={styles.registerLinkEm}>Create account</Text>
+                  New to Tukua? <Text style={styles.registerLinkEm}>Create account</Text>
                 </Text>
               </TouchableOpacity>
             </View>
+          </View>
 
-            <View style={styles.institutionFooter}>
-
-              <NewsHighlight />
-
-              <Text style={[styles.partnerLabel, { fontSize: font(10) }]}>Partner Institutions</Text>
-
-              <CertifyingAgenciesCarousel compact={layout.compact} />
-
-            </View>
-
-          </ScrollView>
-
-        </KeyboardAvoidingView>
-
-      </SafeAreaView>
-      </CurveHProvider>
-
+          <View style={[styles.institutionFooter, { marginTop: s(20) }]}>
+            <Text style={[styles.partnerLabel, { fontSize: font(10) }]}>Partner institutions</Text>
+            <CertifyingAgenciesCarousel compact={layout.compact} />
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </View>
-
   );
-
 }
 
 const styles = StyleSheet.create({
-
   root: {
-
     flex: 1,
-
     backgroundColor: Colors.background,
-
   },
-
-  safe: { flex: 1, width: '100%', zIndex: 2 },
-
   flex: { flex: 1 },
-
+  back: {
+    position: 'absolute',
+    zIndex: 3,
+    padding: 4,
+  },
   scroll: {
     flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   centerBlock: {
-    flex: 1,
     width: '100%',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
   },
-
+  logoBadge: {
+    backgroundColor: Colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
   institutionFooter: {
     width: '100%',
     alignItems: 'center',
-    paddingTop: 8,
     gap: 6,
   },
-
   partnerLabel: {
-
-    fontSize: 10,
-
     fontWeight: '600',
-
     color: Colors.mutedForeground,
-
     fontFamily: 'Inter_600SemiBold',
-
     letterSpacing: 0.3,
-
     textTransform: 'uppercase',
-
   },
-
   loginTitle: {
     fontWeight: '700',
     fontFamily: 'Poppins_700Bold',
     textAlign: 'center',
-    color: Colors.ink,
+    color: Colors.primary,
   },
   loginSub: {
     fontFamily: 'Inter_400Regular',
     textAlign: 'center',
     color: Colors.mutedForeground,
-  },
-  formCard: {
-    alignSelf: 'center',
-  },
-  fieldLabel: {
-    fontFamily: 'Inter_600SemiBold',
-    fontWeight: '600',
-    color: Colors.labelGray,
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
-    marginBottom: 6,
+    marginTop: 2,
   },
   rememberRow: {
     flexDirection: 'row',
@@ -472,17 +468,17 @@ const styles = StyleSheet.create({
   rememberLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
   rememberText: {
-    fontWeight: '600',
-    fontFamily: 'Poppins_600SemiBold',
-    color: Colors.ink,
+    fontFamily: 'Poppins_400Regular',
+    color: Colors.mutedForeground,
   },
   forgotText: {
     fontWeight: '600',
     fontFamily: 'Poppins_600SemiBold',
-    color: Colors.orange,
+    /** Darker gold: Tukua yellow is too light for text on the page colour. */
+    color: Colors.brandGreenMid,
   },
   loginRow: {
     flexDirection: 'row',
@@ -494,14 +490,10 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.orange,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#0A3D2E',
-    shadowOpacity: 0.18,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
   },
   registerLink: {
     paddingVertical: 4,
+    alignSelf: 'center',
   },
   registerLinkText: {
     fontFamily: 'Poppins_400Regular',
@@ -511,7 +503,6 @@ const styles = StyleSheet.create({
   registerLinkEm: {
     fontWeight: '700',
     fontFamily: 'Poppins_600SemiBold',
-    color: Colors.brandGreenMid,
+    color: Colors.primary,
   },
 });
-

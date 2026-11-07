@@ -4,17 +4,15 @@ import Svg, {
   ClipPath,
   Defs,
   G,
-  LinearGradient,
   Path,
-  RadialGradient,
   Rect,
-  Stop,
 } from 'react-native-svg';
 import { useAppTheme } from '../../context/AppThemeContext';
 import { Images } from '../../constants/images';
 import { Colors } from '../../theme/yana';
 
 /**
+ * Flat (no gradients, 2026-11-07). No longer used by LoginScreen (TopWave replaced it).
  * Desk login S-curve, rotated so it is the bottom edge of a top photo region.
  * Source (objectBoundingBox, left edge of the form):
  *   M0.14 0 C-0.02 0.12 -0.04 0.28 0.16 0.50 C0.30 0.66 0.42 0.84 0.50 1
@@ -99,25 +97,13 @@ export function LoginHeroCurve({ height }: { height: number }) {
         preserveAspectRatio="none"
         style={StyleSheet.absoluteFill}>
         <Defs>
-          <ClipPath id="loginHeroClip" clipRule="nonzero">
+          <ClipPath id="loginHeroClip">
             <Path d={CURVE_CLIP} />
           </ClipPath>
-          <RadialGradient id="loginHeroAroundFade" cx="50" cy="28" r="88" gradientUnits="userSpaceOnUse">
-            <Stop offset="0.42" stopColor={page} stopOpacity="0" />
-            <Stop offset="0.78" stopColor={page} stopOpacity="0.22" />
-            <Stop offset="1" stopColor={page} stopOpacity="0.55" />
-          </RadialGradient>
-          <LinearGradient id="loginHeroBottomFade" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0.48" stopColor={page} stopOpacity="0" />
-            <Stop offset="0.72" stopColor={page} stopOpacity="0.28" />
-            <Stop offset="1" stopColor={page} stopOpacity="0.72" />
-          </LinearGradient>
         </Defs>
         <G clipPath="url(#loginHeroClip)">
           <Rect x="0" y="0" width="100" height="108" fill={ground} />
           <Rect x="0" y="0" width="100" height="108" fill={wash} />
-          <Rect x="0" y="0" width="100" height="108" fill="url(#loginHeroAroundFade)" />
-          <Rect x="0" y="0" width="100" height="108" fill="url(#loginHeroBottomFade)" />
         </G>
         <Path
           d={CURVE_EDGE}

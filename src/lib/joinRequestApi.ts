@@ -264,8 +264,16 @@ export async function createJoinRequest(body: {
   note?: string;
 }) {
   return nestJoinFetch<{
-    request?: { id: string; status: string; admission_number?: string | null };
+    request?: {
+      id: string;
+      status: string;
+      school_id?: string;
+      role_slug?: string;
+      admission_number?: string | null;
+    };
     already_pending?: boolean;
+    /** True when the school auto-approves this role: the membership exists already. */
+    auto_approved?: boolean;
   }>('/parents/join/requests', {
     method: 'POST',
     body,

@@ -32,6 +32,7 @@ import { navigateDashboard } from './rootNavigation';
 import { JOIN_PROMPT_SEEN_KEY } from '../screens/dashboard/JoinSchoolScreen';
 import { listMyMemberships } from '../lib/joinRequestApi';
 import { TokenGateProvider, useTokenGate } from '../context/TokenGateContext';
+import { FloatingTabBar } from '../components/navigation/FloatingTabBar';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
@@ -95,39 +96,18 @@ function MainTabNavigator({
   const insets = useSafeAreaInsets();
   const { setActiveTabPath, notifyTabFocused } = useWebViewControl();
   const { guardTab } = useTokenGate();
-  const { contextSkipped, requestSchoolChange } = useDeskAuth();
-  const { showDialog } = useDialog();
   const { palette } = useAppTheme();
   const tabBarHeight = TAB_BAR_BODY_HEIGHT + insets.bottom;
 
+  // No school is fine: the Dashboard tab then shows the personal dashboard (with a Join school tile),
+  // so it is never blocked here — only the token gate applies.
   const tabPressGuard = useCallback(
     (tab: keyof MainTabParamList) => ({
       tabPress: (e: { preventDefault: () => void }) => {
-        if (tab === 'Dashboard' && contextSkipped) {
-          e.preventDefault();
-          showDialog({
-            title: 'Select school and role',
-            message:
-              'School dashboards unlock after you choose a school and role. You can keep using Chat and Profile as an individual student.',
-            variant: 'info',
-            icon: 'school-outline',
-            buttons: [
-              { text: 'Not now', style: 'cancel' },
-              {
-                text: 'Choose school',
-                style: 'default',
-                onPress: () => {
-                  void requestSchoolChange();
-                },
-              },
-            ],
-          });
-          return;
-        }
         if (!guardTab(tab)) e.preventDefault();
       },
     }),
-    [contextSkipped, guardTab, requestSchoolChange, showDialog],
+    [guardTab],
   );
 
   useEffect(() => {
@@ -148,6 +128,7 @@ function MainTabNavigator({
   return (
     <Tab.Navigator
       initialRouteName="Chat"
+      tabBar={(p) => <FloatingTabBar {...p} />}
       screenListeners={{
         state: (e) => {
           hideSystemStatusBar();
@@ -231,6 +212,7 @@ export function MainTabs() {
     persona,
   } = useDeskAuth();
   const { palette } = useAppTheme();
+  const { showDialog } = useDialog();
   const gating = Boolean(session) && (!deskReady || !schoolsReady);
   const [focusedTab, setFocusedTab] = useState<keyof MainTabParamList>('Chat');
   const onboardingPrompted = useRef(false);
@@ -238,6 +220,43 @@ export function MainTabs() {
   useEffect(() => {
     onboardingPrompted.current = false;
   }, [session?.user?.id]);
+
+  /**
+   * One gentle, dismissible nudge (never a forced screen) for a teacher with no workload or a parent
+   * with no child linked. Shown once per account and role on this device; students and everyone
+   * else are never pushed to join a school — many just use AI and courses.
+   */
+  const nudgeOnce = useCallback(
+    async (kind: 'teacher' | 'parent') => {
+      const uid = session?.user?.id;
+      if (!uid) return;
+      const key = `${JOIN_PROMPT_SEEN_KEY}:${uid}:${kind}`;
+      try {
+        if (await AsyncStorage.getItem(key)) return;
+        await AsyncStorage.setItem(key, '1');
+      } catch {
+        return;
+      }
+      showDialog({
+        title: kind === 'teacher' ? 'Add what you teach?' : 'Link your child?',
+        message:
+          kind === 'teacher'
+            ? 'Add your subjects and classes so your school dashboard fills in. You can do it any time from Dashboard → Join school.'
+            : "Find your child's school to see their results, fees and attendance. You can do it any time from Dashboard → Join school.",
+        variant: 'info',
+        icon: 'school-outline',
+        buttons: [
+          { text: 'Not now', style: 'cancel' },
+          {
+            text: kind === 'teacher' ? 'Add subjects' : 'Find school',
+            style: 'default',
+            onPress: () => navigateDashboard('JoinSchool', { preferRole: kind }),
+          },
+        ],
+      });
+    },
+    [session?.user?.id, showDialog],
+  );
 
   useEffect(() => {
     if (!session || gating || needsSchoolPick || !schoolsReady) return;
@@ -256,15 +275,8 @@ export function MainTabs() {
         const isParent =
           role === 'parent' || schoolRoles.some((r) => r === 'parent' || r === 'guardian');
 
-        // Students: no extra onboarding after school/role pick.
-        if (!isTeacher && !isParent) {
-          if (schools.length > 0) return;
-          const seen = await AsyncStorage.getItem(JOIN_PROMPT_SEEN_KEY);
-          if (cancelled || seen) return;
-          onboardingPrompted.current = true;
-          navigateDashboard('JoinSchool', { firstLogin: true });
-          return;
-        }
+        // Students / individuals: joining a school is optional — no redirect, no prompt.
+        if (!isTeacher && !isParent) return;
 
         const mem = await listMyMemberships().catch(() => ({ memberships: [] as any[] }));
         if (cancelled) return;
@@ -282,7 +294,7 @@ export function MainTabs() {
             teacherMems.some((m) => String(m.detail || '').toLowerCase().startsWith('teaching:'));
           if (!hasWorkload) {
             onboardingPrompted.current = true;
-            navigateDashboard('JoinSchool', { firstLogin: true, preferRole: 'teacher' });
+            await nudgeOnce('teacher');
             return;
           }
         }
@@ -299,7 +311,7 @@ export function MainTabs() {
             // SchoolPicker already blocks parent dashboards when kids=0; if no school yet, open join.
             if (schools.length === 0) {
               onboardingPrompted.current = true;
-              navigateDashboard('JoinSchool', { firstLogin: true, preferRole: 'parent' });
+              await nudgeOnce('parent');
             }
             return;
           }
@@ -321,6 +333,7 @@ export function MainTabs() {
     selectedRole,
     linkedStudents,
     persona,
+    nudgeOnce,
   ]);
 
   return (
