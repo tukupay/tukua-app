@@ -12,7 +12,7 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
 /** Nest-aware web shell (hosted Amplify). Mobile WebView inject targets this host. */
-const DEFAULT_WEB = 'https://v2.tukua.ai';
+const DEFAULT_WEB = 'https://tukua.ai';
 
 /** Desk SPA UI (modules) — Desk Vite (:3250) or hosted Desk build, not Amplify marketing. */
 const STAGING_DESK_WEB = 'https://desk-staging.tukua.ai';
@@ -76,7 +76,7 @@ const ENV_PROFILES: Record<TukuaEnv, EnvProfile> = {
     deskApi: 'http://localhost:3253/api',
   },
   // Desk SPA is NOT tukua.ai — set EXPO_PUBLIC_DESK_WEB_URL when a hosted Desk build exists.
-  // Web shell for inject = v2.tukua.ai (Nest SPA). Native ERP = staging Railway (not local).
+  // Web shell for inject = tukua.ai (Nest SPA). Native ERP = staging Railway (not local).
   staging: { web: DEFAULT_WEB, deskWeb: null, nestApi: STAGING_API, deskApi: STAGING_API },
   // Phone “production” builds for this product still use staging Nest + v2 until live flip.
   production: { web: DEFAULT_WEB, deskWeb: null, nestApi: STAGING_API, deskApi: STAGING_API },
