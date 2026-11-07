@@ -1,6 +1,7 @@
 import type { NavigatorScreenParams } from '@react-navigation/native';
 import type { ProfileStackParamList } from './ProfileStack';
 import type { CoursesStackParamList } from './CoursesStack';
+import type { DisciplineIncident } from '../lib/disciplineApi';
 export type RootStackParamList = {
   Login: undefined;
   Register: undefined;
@@ -24,10 +25,23 @@ export type DashboardStackParamList = {
   };
   SchoolInfo: undefined;
   Discipline: undefined;
+  /** One case: `incident` is the list row (shown at once), `id` fetches the full record for staff. */
+  DisciplineDetail: { id?: string; incident?: DisciplineIncident };
+  /** A learner's conduct history (staff); without an admission number it opens on a search. */
+  DisciplineStudent: { admissionNumber?: string; name?: string } | undefined;
+  EditDisciplineIncident: { incident: DisciplineIncident };
   Events: undefined;
   Meetings: undefined;
   MeetingRoom: { title: string; roomUrl: string; meetingId?: string; participantId?: string };
   Assessments: undefined;
+  /** Parent: one child's report form for one exam, drawn natively (summary shown at once, subjects fetched). */
+  ParentReportForm: {
+    studentId: string;
+    examId: string;
+    initial?: import('../lib/parentPortalApi').ParentReportForm;
+    /** Web print page (/parent/assessments/print?...) for the "Full school layout" link. */
+    webPath?: string;
+  };
   Teachers: undefined;
   Library: undefined;
   Clubs: undefined;
@@ -84,7 +98,7 @@ export type DashboardStackParamList = {
   TukuaPayBank: undefined;
   TukuaPayKyc: undefined;
   TeacherTimetable: undefined;
-  RecordDiscipline: undefined;
+  RecordDiscipline: { admissionNumber?: string; name?: string; classLabel?: string } | undefined;
   TeacherProgress: undefined;
 };
 

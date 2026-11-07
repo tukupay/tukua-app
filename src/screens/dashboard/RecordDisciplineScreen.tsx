@@ -1,330 +1,501 @@
 /**
- * Record discipline case — teacher native form (T24–T26).
+ * Record a discipline case (teachers, staff and the office).
+ *
+ * POST /discipline/cases/analyze takes admission numbers + one narrative (+ notify_parent, use_ai) and
+ * works out category / severity / steps itself. The phone puts the date, category, severity, action
+ * taken and witnesses into that narrative so the record keeps them; office roles (who may PATCH) then
+ * set category / severity / action taken on the saved case to exactly what was picked.
+ * (The old form posted student_id / category / narrative, which the API's whitelist refused.)
  */
-import React, { useCallback, useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ThemedBackdrop } from '../../components/theme/ThemedPage';
-import {
-  ModuleBackBar,
-  ModuleGlassCard,
-  ModuleKicker,
-  ModuleScreenHeader,
-} from './ModuleChrome';
-import { floatingHeaderInset, moduleScrollBottomPad } from '../../constants/layout';
-import { DashboardStackParamList } from '../../navigation/types';
-import { Colors } from '../../theme/yana';
+import { Ionicons } from '@expo/vector-icons';
+import { useAppTheme } from '../../context/AppThemeContext';
+import { useDeskAuth } from '../../context/DeskAuthContext';
 import { useDialog } from '../../context/DialogContext';
+import { DashboardStackParamList } from '../../navigation/types';
+import { KeyboardAwareScroll } from '../../components/auth/KeyboardAwareScroll';
+import { INK, ThemedPage } from '../../components/theme/ThemedPage';
+import { rgba } from '../../theme/color';
 import {
-  createDisciplineCase,
-  fetchDisciplineCategories,
-  searchDisciplineStudents,
-} from '../../lib/teacherPortalApi';
+  MUTED_INK,
+  ModuleHeading,
+  SelectField,
+  StatusPill,
+  SurfaceCard,
+  friendlyError,
+  useModulePadding,
+} from '../../components/ui/ModuleKit';
+import { FieldLabel, FormInput, OptionPills, PrimaryButton, ReportText } from '../../components/discipline/DisciplineParts';
+import {
+  COMMON_DISCIPLINE_CATEGORIES,
+  DISCIPLINE_SEVERITIES,
+  cap,
+  fetchDisciplineCategoryNames,
+  isDisciplineOffice,
+  recordDisciplineCase,
+  searchDisciplineStudentsList,
+  todayIso,
+  updateDisciplineIncident,
+  type RecordCaseResult,
+  type StudentHit,
+} from '../../lib/disciplineApi';
 
 type Props = NativeStackScreenProps<DashboardStackParamList, 'RecordDiscipline'>;
 
-type StudentHit = {
-  student_id?: string;
-  id?: string;
-  full_name?: string;
-  admission_number?: string;
-  class_name?: string;
-  status?: string;
-};
+type DateChoice = 'today' | 'yesterday' | 'other';
 
-export function RecordDisciplineScreen({ navigation }: Props) {
-  const insets = useSafeAreaInsets();
+function validIsoDate(v: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+  if (!m) return false;
+  const [y, mo, da] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const d = new Date(y, mo - 1, da);
+  return d.getFullYear() === y && d.getMonth() === mo - 1 && d.getDate() === da && y > 2000 && v <= todayIso();
+}
+
+export function RecordDisciplineScreen({ navigation, route }: Props) {
+  const { palette } = useAppTheme();
   const { showDialog } = useDialog();
+  const { persona, activeRoles } = useDeskAuth();
+  const office = isDisciplineOffice(activeRoles, persona);
+  const pad = useModulePadding();
+
+  const preset = route.params?.admissionNumber
+    ? [
+        {
+          id: route.params.admissionNumber,
+          admission_number: route.params.admissionNumber,
+          name: route.params.name || route.params.admissionNumber,
+          class_label: route.params.classLabel,
+        } as StudentHit,
+      ]
+    : [];
+
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<StudentHit[]>([]);
   const [searching, setSearching] = useState(false);
-  const [selected, setSelected] = useState<StudentHit | null>(null);
-  const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<StudentHit[]>(preset);
+  const [categories, setCategories] = useState<string[]>([]);
   const [category, setCategory] = useState('');
-  const [catOpen, setCatOpen] = useState(false);
+  const [severity, setSeverity] = useState<string>('');
+  const [dateChoice, setDateChoice] = useState<DateChoice>('today');
+  const [otherDate, setOtherDate] = useState('');
   const [narrative, setNarrative] = useState('');
+  const [action, setAction] = useState('');
   const [witnesses, setWitnesses] = useState('');
-  const [incidentDate, setIncidentDate] = useState(new Date().toISOString().slice(0, 10));
+  const [notifyParent, setNotifyParent] = useState(true);
+  const [useAi, setUseAi] = useState(true);
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
-  const [analysis, setAnalysis] = useState<string | null>(null);
+  const [result, setResult] = useState<(RecordCaseResult & { adjusted: boolean }) | null>(null);
+
+  const isCommendationCase = /commend|merit|award|praise/i.test(category);
 
   useEffect(() => {
-    void (async () => {
-      try {
-        const cats = await fetchDisciplineCategories();
-        if (cats.length) {
-          setCategories(cats);
-          if (!category) setCategory(cats[0].name);
-        } else {
-          setCategories([{ id: 'general', name: 'General' }]);
-          if (!category) setCategory('General');
-        }
-      } catch {
-        setCategories([{ id: 'general', name: 'General' }]);
-        if (!category) setCategory('General');
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    void fetchDisciplineCategoryNames().then(setCategories);
   }, []);
 
-  const runSearch = useCallback(async (q: string) => {
-    const trimmed = q.trim();
-    if (trimmed.length < 2) {
-      setHits([]);
-      return;
-    }
-    setSearching(true);
-    try {
-      setHits(await searchDisciplineStudents(trimmed));
-    } catch {
-      setHits([]);
-    } finally {
-      setSearching(false);
-    }
-  }, []);
+  const categoryOptions = useMemo(
+    () => [...new Set([...categories, ...COMMON_DISCIPLINE_CATEGORIES])].map((n) => ({ key: n, label: n })),
+    [categories],
+  );
 
   useEffect(() => {
-    const t = setTimeout(() => void runSearch(query), 350);
+    const q = query.trim();
+    if (q.length < 2) {
+      setHits([]);
+      setSearchError(null);
+      return undefined;
+    }
+    const t = setTimeout(() => {
+      setSearching(true);
+      searchDisciplineStudentsList(q, 10)
+        .then((list) => {
+          setHits(list);
+          setSearchError(null);
+        })
+        .catch((e) => {
+          setHits([]);
+          setSearchError(friendlyError(e instanceof Error ? e.message : String(e)));
+        })
+        .finally(() => setSearching(false));
+    }, 350);
     return () => clearTimeout(t);
-  }, [query, runSearch]);
+  }, [query]);
+
+  const clearError = (k: string) =>
+    setErrors((e) => {
+      if (!e[k]) return e;
+      const next = { ...e };
+      delete next[k];
+      return next;
+    });
+
+  const incidentDate = dateChoice === 'today' ? todayIso() : dateChoice === 'yesterday' ? todayIso(1) : otherDate.trim();
+
+  const reset = () => {
+    setSelected([]);
+    setQuery('');
+    setCategory('');
+    setSeverity('');
+    setDateChoice('today');
+    setOtherDate('');
+    setNarrative('');
+    setAction('');
+    setWitnesses('');
+    setNotifyParent(true);
+    setErrors({});
+    setResult(null);
+  };
 
   const submit = async () => {
-    const sid = selected?.student_id || selected?.id;
-    if (!sid) {
-      showDialog({ title: 'Select a student', message: 'Search and pick a student first.', variant: 'warning' });
+    const errs: Record<string, string> = {};
+    if (!selected.length) errs.students = 'Pick at least one learner.';
+    if (!category) errs.category = 'Choose a category.';
+    if (!isCommendationCase && !severity) errs.severity = 'Choose how serious it was.';
+    if (!validIsoDate(incidentDate)) errs.date = 'Use a date like 2026-11-08 (not in the future).';
+    if (narrative.trim().length < 10) errs.narrative = 'Describe what happened (at least a sentence).';
+    setErrors(errs);
+    if (Object.keys(errs).length) {
+      showDialog({ title: 'Check the form', message: Object.values(errs)[0], variant: 'warning' });
       return;
     }
-    if (!narrative.trim()) {
-      showDialog({ title: 'Describe the incident', message: 'Enter what happened.', variant: 'warning' });
-      return;
-    }
+
+    const lines = [
+      `Date of incident: ${incidentDate}`,
+      `Category: ${category}`,
+      !isCommendationCase && severity ? `Severity (recorder's assessment): ${cap(severity)}` : null,
+      '',
+      `What happened: ${narrative.trim()}`,
+      action.trim() ? `Action taken: ${action.trim()}` : null,
+      witnesses.trim() ? `Witnesses: ${witnesses.trim()}` : null,
+    ].filter((l) => l !== null) as string[];
+    const caseNarrative = lines.join('\n').slice(0, 12000);
+
     setSubmitting(true);
-    setAnalysis(null);
     try {
-      const res = await createDisciplineCase({
-        student_id: sid,
-        incident_date: incidentDate,
-        category: category.trim() || 'General',
-        narrative: narrative.trim(),
-        witnesses: witnesses.trim() || undefined,
-        use_ai: true,
+      const res = await recordDisciplineCase({
+        admission_numbers: selected.map((s) => s.admission_number),
+        case_narrative: caseNarrative,
+        notify_parent: notifyParent,
+        use_ai: useAi,
       });
-      const msg =
-        (typeof (res as { analysis_report_md?: string }).analysis_report_md === 'string' &&
-          (res as { analysis_report_md: string }).analysis_report_md) ||
-        (typeof (res as { message?: string }).message === 'string' && (res as { message: string }).message) ||
-        'Case recorded successfully.';
-      setAnalysis(msg);
-      showDialog({ title: 'Case recorded', message: 'The discipline case was submitted.', variant: 'success' });
+      // Office roles may correct the server's classification to what was picked.
+      let adjusted = false;
+      if (office && res.incident_id) {
+        try {
+          const actionLines = action
+            .split('\n')
+            .map((l) => l.trim())
+            .filter(Boolean);
+          await updateDisciplineIncident(res.incident_id, {
+            category_label: category,
+            ...(isCommendationCase ? { sentiment: 'positive', severity: 'low' } : { severity }),
+            ...(actionLines.length ? { steps_taken: JSON.stringify(actionLines) } : {}),
+          });
+          adjusted = true;
+        } catch {
+          /* the case is saved; the server's own classification stays */
+        }
+      }
+      setResult({ ...res, adjusted });
     } catch (e) {
       showDialog({
-        title: 'Could not save case',
-        message: e instanceof Error ? e.message : String(e),
-        variant: 'danger',
+        title: 'Could not save the case',
+        message: friendlyError(e instanceof Error ? e.message : String(e)),
+        variant: 'warning',
       });
     } finally {
       setSubmitting(false);
     }
   };
 
-  return (
-    <View style={styles.root}>
-      <ThemedBackdrop />
-      <ScrollView
-        contentContainerStyle={{
-          paddingTop: floatingHeaderInset(insets.top),
-          paddingBottom: moduleScrollBottomPad(insets.bottom),
-          paddingHorizontal: 16,
-        }}
-        keyboardShouldPersistTaps="handled">
-        <ModuleBackBar onBack={() => navigation.goBack()} />
-        <ModuleKicker>Discipline</ModuleKicker>
-        <ModuleScreenHeader title="Record case" description="Log a conduct incident for a student." />
-
-        <ModuleGlassCard>
-          <Text style={styles.label}>Student</Text>
-          <TextInput
-            value={selected ? selected.full_name || selected.admission_number || 'Student' : query}
-            onChangeText={(t) => {
-              setSelected(null);
-              setQuery(t);
-            }}
-            placeholder="Search by name or admission #"
-            placeholderTextColor={Colors.mutedForeground}
-            style={styles.input}
-          />
-          {searching ? <ActivityIndicator color={Colors.primary} style={{ marginTop: 8 }} /> : null}
-          {hits.length > 0 && !selected ? (
-            <View style={styles.hitList}>
-              {hits.slice(0, 8).map((h, i) => (
-                <Pressable
-                  key={String(h.student_id ?? h.id ?? i)}
-                  style={styles.hitRow}
-                  onPress={() => {
-                    setSelected(h);
-                    setQuery(h.full_name || h.admission_number || '');
-                    setHits([]);
-                  }}>
-                  <Text style={styles.hitName}>{h.full_name || 'Student'}</Text>
-                  {h.admission_number ? (
-                    <Text style={styles.hitAdm}>#{h.admission_number}</Text>
-                  ) : null}
-                </Pressable>
-              ))}
+  if (result) {
+    return (
+      <ThemedPage>
+        <KeyboardAwareScroll
+          contentContainerStyle={{ paddingTop: pad.top, paddingBottom: pad.bottom, paddingHorizontal: 16, gap: 12 }}
+          showsVerticalScrollIndicator={false}>
+          <ModuleHeading title="Case recorded" onBack={() => navigation.goBack()} />
+          <SurfaceCard>
+            <View style={styles.successHead}>
+              <View style={[styles.successIcon, { backgroundColor: 'rgba(6,118,71,0.10)' }]}>
+                <Ionicons name="checkmark-circle" size={30} color="#067647" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.successTitle}>Saved{result.case_number ? ` as ${result.case_number}` : ''}</Text>
+                <Text style={styles.successMeta}>
+                  {selected.map((s) => s.name).join(', ')}
+                  {notifyParent ? ' · parent will be notified' : ''}
+                </Text>
+              </View>
             </View>
-          ) : null}
-
-          {selected ? (
-            <View style={styles.studentCard}>
-              <Text style={styles.cardName}>{selected.full_name || 'Student'}</Text>
-              <Text style={styles.cardMeta}>
-                Adm · {selected.admission_number || '—'}
-                {selected.class_name ? ` · ${selected.class_name}` : ''}
-              </Text>
-              {selected.status ? (
-                <Text style={styles.cardMeta}>Status · {selected.status}</Text>
+            <View style={styles.pills}>
+              <StatusPill label={result.adjusted ? category : cap(result.category) || category} tone="primary" />
+              {result.adjusted && !isCommendationCase && severity ? (
+                <StatusPill label={`${cap(severity)} severity`} tone="warning" />
+              ) : result.severity ? (
+                <StatusPill label={`${cap(result.severity)} severity`} tone="warning" />
               ) : null}
             </View>
+            {!office ? (
+              <Text style={styles.hint}>
+                The school office reviews the case and may adjust its category or severity.
+              </Text>
+            ) : null}
+          </SurfaceCard>
+          {result.report_md ? (
+            <SurfaceCard>
+              <Text style={styles.reportTitle}>Case write-up</Text>
+              <ReportText text={result.report_md} />
+            </SurfaceCard>
           ) : null}
+          {result.incident_id ? (
+            <PrimaryButton
+              label="View case"
+              icon="document-text-outline"
+              onPress={() => navigation.replace('DisciplineDetail', { id: result.incident_id ?? undefined })}
+            />
+          ) : null}
+          <PrimaryButton label="Record another case" icon="add" tone="outline" onPress={reset} />
+        </KeyboardAwareScroll>
+      </ThemedPage>
+    );
+  }
 
-          <Text style={styles.label}>Date</Text>
-          <TextInput
-            value={incidentDate}
-            onChangeText={setIncidentDate}
-            placeholder="YYYY-MM-DD"
-            placeholderTextColor={Colors.mutedForeground}
-            style={styles.input}
-          />
-          <Text style={styles.label}>Category</Text>
-          <Pressable style={styles.dropdown} onPress={() => setCatOpen((v) => !v)}>
-            <Text style={styles.dropdownText}>{category || 'Select category'}</Text>
-            <Text style={styles.dropdownChevron}>{catOpen ? '▲' : '▼'}</Text>
-          </Pressable>
-          {catOpen ? (
-            <View style={styles.dropList}>
-              {categories.map((c) => (
-                <Pressable
-                  key={c.id}
-                  style={styles.dropItem}
-                  onPress={() => {
-                    setCategory(c.name);
-                    setCatOpen(false);
-                  }}>
-                  <Text style={styles.dropItemText}>{c.name}</Text>
-                </Pressable>
+  return (
+    <ThemedPage>
+      <KeyboardAwareScroll
+        contentContainerStyle={{ paddingTop: pad.top, paddingBottom: pad.bottom, paddingHorizontal: 16 }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        revealMargin={40}>
+        <ModuleHeading
+          title="Record case"
+          description="Log a conduct incident or a commendation for one or more learners."
+          onBack={() => navigation.goBack()}
+        />
+
+        <SurfaceCard style={{ marginTop: 12 }}>
+          <FieldLabel required>Learner(s)</FieldLabel>
+          {selected.length ? (
+            <View style={styles.selectedWrap}>
+              {selected.map((s) => (
+                <View key={s.admission_number} style={[styles.selectedChip, { backgroundColor: rgba(palette.primary, 0.08) }]}>
+                  <View style={{ flexShrink: 1 }}>
+                    <Text style={[styles.selectedName, { color: palette.primary }]} numberOfLines={1}>
+                      {s.name}
+                    </Text>
+                    <Text style={styles.selectedMeta} numberOfLines={1}>
+                      {[s.admission_number, s.class_label && s.class_label !== '—' ? s.class_label : null].filter(Boolean).join(' · ')}
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={() => setSelected((l) => l.filter((x) => x.admission_number !== s.admission_number))}
+                    hitSlop={10}
+                    accessibilityLabel={`Remove ${s.name}`}>
+                    <Ionicons name="close-circle" size={18} color={palette.primary} />
+                  </Pressable>
+                </View>
               ))}
             </View>
           ) : null}
-          <Text style={styles.label}>What happened</Text>
-          <TextInput
+          <FormInput
+            value={query}
+            onChangeText={(t) => {
+              setQuery(t);
+              clearError('students');
+            }}
+            placeholder={selected.length ? 'Add another learner…' : 'Search by name or admission number'}
+            autoCorrect={false}
+            error={errors.students}
+          />
+          {searching ? <ActivityIndicator color={palette.primary} style={{ marginTop: 8 }} /> : null}
+          {searchError ? <Text style={styles.errorText}>{searchError}</Text> : null}
+          {!searching && query.trim().length >= 2 && hits.length === 0 && !searchError ? (
+            <Text style={styles.hint}>No learner matches “{query.trim()}”.</Text>
+          ) : null}
+          {hits.length > 0 ? (
+            <View style={[styles.hitList, { borderColor: rgba(palette.primary, 0.12) }]}>
+              {hits.map((h) => {
+                const already = selected.some((s) => s.admission_number === h.admission_number);
+                return (
+                  <Pressable
+                    key={h.id}
+                    disabled={already}
+                    style={({ pressed }) => [styles.hitRow, pressed && { opacity: 0.7 }, already && { opacity: 0.5 }]}
+                    onPress={() => {
+                      setSelected((l) => [...l, h]);
+                      setQuery('');
+                      setHits([]);
+                    }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.hitName}>{h.name}</Text>
+                      <Text style={styles.selectedMeta}>
+                        {[h.admission_number, h.class_label && h.class_label !== '—' ? h.class_label : null].filter(Boolean).join(' · ')}
+                      </Text>
+                    </View>
+                    <Ionicons name={already ? 'checkmark' : 'add-circle-outline'} size={20} color={palette.primary} />
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : null}
+
+          <FieldLabel required>Date of incident</FieldLabel>
+          <OptionPills<DateChoice>
+            options={['today', 'yesterday', 'other']}
+            labels={{ today: 'Today', yesterday: 'Yesterday', other: 'Another day' }}
+            value={dateChoice}
+            onChange={(v) => {
+              setDateChoice(v);
+              clearError('date');
+            }}
+          />
+          {dateChoice === 'other' ? (
+            <View style={{ marginTop: 8 }}>
+              <FormInput
+                value={otherDate}
+                onChangeText={(t) => {
+                  setOtherDate(t);
+                  clearError('date');
+                }}
+                placeholder="YYYY-MM-DD"
+                keyboardType="numbers-and-punctuation"
+                maxLength={10}
+                error={errors.date}
+              />
+            </View>
+          ) : null}
+
+          <FieldLabel required>Category / offence</FieldLabel>
+          <SelectField
+            label="Category"
+            icon="pricetag-outline"
+            value={category}
+            placeholder="Choose a category"
+            onChange={(v) => {
+              setCategory(v);
+              clearError('category');
+            }}
+            options={categoryOptions}
+          />
+          {errors.category ? <Text style={styles.errorText}>{errors.category}</Text> : null}
+
+          {!isCommendationCase ? (
+            <>
+              <FieldLabel required>Severity</FieldLabel>
+              <OptionPills
+                options={DISCIPLINE_SEVERITIES}
+                value={severity as (typeof DISCIPLINE_SEVERITIES)[number] | ''}
+                onChange={(v) => {
+                  setSeverity(v);
+                  clearError('severity');
+                }}
+              />
+              {errors.severity ? <Text style={styles.errorText}>{errors.severity}</Text> : null}
+            </>
+          ) : null}
+
+          <FieldLabel required>What happened</FieldLabel>
+          <FormInput
             value={narrative}
-            onChangeText={setNarrative}
+            onChangeText={(t) => {
+              setNarrative(t);
+              clearError('narrative');
+            }}
             multiline
-            placeholder="Describe the incident…"
-            placeholderTextColor={Colors.mutedForeground}
-            style={[styles.input, styles.multiline]}
-          />
-          <Text style={styles.label}>Witnesses (optional)</Text>
-          <TextInput
-            value={witnesses}
-            onChangeText={setWitnesses}
-            placeholder="Names of witnesses"
-            placeholderTextColor={Colors.mutedForeground}
-            style={styles.input}
+            placeholder={isCommendationCase ? 'What the learner did well…' : 'Where, when and what happened…'}
+            maxLength={9000}
+            error={errors.narrative}
           />
 
-          {analysis ? <Text style={styles.analysis}>{analysis}</Text> : null}
+          <FieldLabel>Action taken</FieldLabel>
+          <FormInput
+            value={action}
+            onChangeText={setAction}
+            multiline
+            placeholder={'e.g. Spoken to by class teacher\nParent called'}
+            maxLength={2000}
+          />
 
-          <Pressable
-            style={[styles.submit, submitting && styles.submitDisabled]}
-            disabled={submitting}
-            onPress={() => void submit()}>
-            {submitting ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <Text style={styles.submitText}>Submit case</Text>
-            )}
-          </Pressable>
-        </ModuleGlassCard>
-      </ScrollView>
-    </View>
+          <FieldLabel>Witnesses</FieldLabel>
+          <FormInput value={witnesses} onChangeText={setWitnesses} placeholder="Names (optional)" maxLength={500} />
+
+          <View style={styles.switchRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.switchTitle}>Notify parent</Text>
+              <Text style={styles.switchHint}>Sends the parent an SMS / email about this case.</Text>
+            </View>
+            <Switch
+              value={notifyParent}
+              onValueChange={setNotifyParent}
+              trackColor={{ true: palette.primary, false: '#D0D5DD' }}
+              thumbColor="#FFFFFF"
+            />
+          </View>
+          <View style={styles.switchRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.switchTitle}>AI write-up</Text>
+              <Text style={styles.switchHint}>Tukua AI drafts the case report (slower). Off saves a quick summary.</Text>
+            </View>
+            <Switch
+              value={useAi}
+              onValueChange={setUseAi}
+              trackColor={{ true: palette.primary, false: '#D0D5DD' }}
+              thumbColor="#FFFFFF"
+            />
+          </View>
+        </SurfaceCard>
+
+        <View style={{ marginTop: 14 }}>
+          <PrimaryButton
+            label={submitting && useAi ? 'Saving & writing report…' : 'Submit case'}
+            icon="checkmark"
+            busy={submitting}
+            onPress={() => void submit()}
+          />
+        </View>
+      </KeyboardAwareScroll>
+    </ThemedPage>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
-  label: { fontSize: 12, fontWeight: '700', color: Colors.mutedForeground, marginBottom: 6, marginTop: 10 },
-  input: {
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.12)',
+  selectedWrap: { gap: 8, marginBottom: 8 },
+  selectedChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
     borderRadius: 12,
     paddingHorizontal: 12,
-    paddingVertical: 12,
-    fontSize: 15,
-    color: Colors.ink,
-    backgroundColor: '#fff',
+    paddingVertical: 8,
   },
-  multiline: { minHeight: 100, textAlignVertical: 'top' },
-  hitList: { marginTop: 8, borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(0,0,0,0.08)' },
+  selectedName: { fontSize: 14.5, fontWeight: '800' },
+  selectedMeta: { marginTop: 2, fontSize: 12, color: MUTED_INK },
+  hitList: { marginTop: 8, borderRadius: 12, overflow: 'hidden', borderWidth: 1, backgroundColor: '#FFFFFF' },
   hitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: 'rgba(0,0,0,0.08)',
-    backgroundColor: '#fff',
   },
-  hitName: { fontWeight: '700', color: Colors.ink },
-  hitAdm: { marginTop: 2, fontSize: 12, color: Colors.mutedForeground },
-  studentCard: {
-    marginTop: 12,
-    padding: 12,
-    borderRadius: 12,
-    backgroundColor: 'rgba(10,61,46,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(10,61,46,0.12)',
-  },
-  cardName: { fontSize: 16, fontWeight: '800', color: Colors.ink },
-  cardMeta: { marginTop: 4, fontSize: 13, color: Colors.mutedForeground },
-  dropdown: {
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.12)',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 14,
-    backgroundColor: '#fff',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  dropdownText: { fontSize: 15, color: Colors.ink, fontWeight: '600' },
-  dropdownChevron: { color: Colors.mutedForeground, fontSize: 12 },
-  dropList: {
-    marginTop: 6,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.1)',
-    overflow: 'hidden',
-    backgroundColor: '#fff',
-  },
-  dropItem: { paddingHorizontal: 12, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(0,0,0,0.06)' },
-  dropItemText: { color: Colors.ink, fontWeight: '600' },
-  analysis: { marginTop: 12, color: Colors.primary, fontSize: 13, lineHeight: 18 },
-  submit: {
-    marginTop: 16,
-    backgroundColor: Colors.primary,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  submitDisabled: { opacity: 0.7 },
-  submitText: { color: '#fff', fontWeight: '800', fontSize: 15 },
+  hitName: { fontWeight: '700', color: INK, fontSize: 14.5 },
+  hint: { marginTop: 6, fontSize: 12, color: MUTED_INK, lineHeight: 17 },
+  errorText: { marginTop: 4, fontSize: 12, color: '#B42318', fontWeight: '600' },
+  switchRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 16 },
+  switchTitle: { fontSize: 14.5, fontWeight: '700', color: INK },
+  switchHint: { marginTop: 2, fontSize: 12, color: MUTED_INK },
+  successHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  successIcon: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
+  successTitle: { fontSize: 17, fontWeight: '800', color: INK },
+  successMeta: { marginTop: 3, fontSize: 12.5, color: MUTED_INK },
+  pills: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 12 },
+  reportTitle: { fontSize: 15, fontWeight: '800', color: INK, marginBottom: 6 },
 });

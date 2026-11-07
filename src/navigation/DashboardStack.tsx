@@ -6,10 +6,14 @@ import { DeskModuleWebScreen } from '../screens/dashboard/DeskModuleWebScreen';
 import { FeaturePlaceholderScreen } from '../screens/dashboard/FeaturePlaceholderScreen';
 import { SchoolInfoScreen } from '../screens/dashboard/SchoolInfoScreen';
 import { DisciplineScreen } from '../screens/dashboard/DisciplineScreen';
+import { DisciplineDetailScreen } from '../screens/dashboard/DisciplineDetailScreen';
+import { DisciplineStudentScreen } from '../screens/dashboard/DisciplineStudentScreen';
+import { EditDisciplineIncidentScreen } from '../screens/dashboard/EditDisciplineIncidentScreen';
 import { EventsScreen } from '../screens/dashboard/EventsScreen';
 import { MeetingsScreen } from '../screens/dashboard/MeetingsScreen';
 import { MeetingRoomScreen } from '../screens/dashboard/MeetingRoomScreen';
 import { AssessmentsScreen } from '../screens/dashboard/AssessmentsScreen';
+import { ParentReportFormScreen } from '../screens/dashboard/ParentReportFormScreen';
 import { TeachersScreen } from '../screens/dashboard/TeachersScreen';
 import { LibraryScreen } from '../screens/dashboard/LibraryScreen';
 import { ClubsScreen } from '../screens/dashboard/ClubsScreen';
@@ -112,6 +116,21 @@ export function DashboardStack() {
         options={{ title: 'Discipline', headerShown: false }}
       />
       <Stack.Screen
+        name="DisciplineDetail"
+        component={DisciplineDetailScreen}
+        options={{ title: 'Discipline case', headerShown: false }}
+      />
+      <Stack.Screen
+        name="DisciplineStudent"
+        component={DisciplineStudentScreen}
+        options={{ title: 'Learner conduct', headerShown: false }}
+      />
+      <Stack.Screen
+        name="EditDisciplineIncident"
+        component={EditDisciplineIncidentScreen}
+        options={{ title: 'Edit case', headerShown: false }}
+      />
+      <Stack.Screen
         name="Events"
         component={EventsScreen}
         options={{ title: 'Events', headerShown: false }}
@@ -130,6 +149,11 @@ export function DashboardStack() {
         name="Assessments"
         component={AssessmentsScreen}
         options={{ title: 'Assessments', headerShown: false }}
+      />
+      <Stack.Screen
+        name="ParentReportForm"
+        component={ParentReportFormScreen}
+        options={{ title: 'Report form', headerShown: false }}
       />
       <Stack.Screen
         name="Teachers"

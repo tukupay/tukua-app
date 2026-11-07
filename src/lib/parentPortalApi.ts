@@ -111,6 +111,78 @@ export async function fetchParentAssessmentReports(examId?: string, studentId?: 
   return deskFetch<Record<string, unknown>>(`/parents/me/assessment-reports${q}`);
 }
 
+export type ParentReportFormSubject = {
+  subject_id?: string;
+  subject: string;
+  code?: string | null;
+  short_form?: string | null;
+  marks?: number | null;
+  max_marks?: number | null;
+  percentage?: number | null;
+  grade?: string | null;
+  points?: number | null;
+  rank_in_class?: number | null;
+  remark?: string | null;
+  status?: string;
+};
+
+export type ParentReportForm = {
+  school?: {
+    id?: string | null;
+    name?: string | null;
+    logo_url?: string | null;
+    motto?: string | null;
+    address?: string | null;
+    phone?: string | null;
+    email?: string | null;
+    principal_name?: string | null;
+  } | null;
+  student?: {
+    id: string;
+    full_name?: string | null;
+    admission_number?: string | null;
+    class_name?: string | null;
+    class_level?: string | null;
+    photo_url?: string | null;
+  } | null;
+  exam?: {
+    id: string;
+    name?: string | null;
+    exam_type?: string | null;
+    academic_year?: string | null;
+    term?: string | null;
+    marking_status?: string | null;
+  } | null;
+  summary?: {
+    total_marks?: number | null;
+    total_possible?: number | null;
+    overall_mean?: number | null;
+    overall_grade?: string | null;
+    total_grade_points?: number | null;
+    mean_grade_points?: number | null;
+    subject_count?: number | null;
+    rank_in_class?: number | null;
+    rank_out_of_class?: number | null;
+    rank_in_level?: number | null;
+    rank_out_of_level?: number | null;
+    class_mean_marks?: number | null;
+    level_mean_marks?: number | null;
+    class_teacher_comment?: string | null;
+    principal_comment?: string | null;
+    has_report?: boolean;
+  } | null;
+  subjects?: ParentReportFormSubject[];
+};
+
+/**
+ * One child's report form for one exam (GET /parents/me/report-form). 404 until the API with this route is
+ * deployed: callers fall back to the summary they already have.
+ */
+export async function fetchParentReportForm(studentId: string, examId: string) {
+  const params = new URLSearchParams({ student_id: studentId, exam_id: examId });
+  return deskFetch<ParentReportForm>(`/parents/me/report-form?${params}`, { expectStatus: [404], timeoutMs: 15000 });
+}
+
 export async function fetchParentLibraryStatement(studentId?: string | null) {
   const sid = resolveStudentId(studentId);
   const q = sid ? `?student_id=${encodeURIComponent(sid)}` : '';

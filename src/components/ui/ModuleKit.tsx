@@ -14,12 +14,15 @@
  * - <ShowMoreButton>     "Show more · 20 of 85" for batched lists.
  * - useClientPager()     shows a long in-memory list in batches.
  * - <ChipRow>            horizontal filter chips.
+ * - <SelectField>        compact dropdown: tap opens a themed bottom-sheet list (year, exam …).
  *
  * Colours come from useAppTheme(): school themes keep the layout with their own primary/secondary.
  */
 import React, { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
+  FlatList,
+  Modal,
   Pressable,
   RefreshControl,
   type RefreshControlProps,
@@ -393,6 +396,119 @@ export function ChipRow<K extends string>({
   );
 }
 
+export type SelectOption = { key: string; label: string; hint?: string | null; badge?: string | null };
+
+/**
+ * Compact themed dropdown. The trigger shows a small label above the chosen value; tapping opens a bottom
+ * sheet with the options (the chosen one ticked). Same pattern as the sign-up AuthSelect, in the school theme.
+ */
+export function SelectField({
+  label,
+  value,
+  options,
+  onChange,
+  placeholder = 'Select…',
+  title,
+  icon,
+  disabled = false,
+  style,
+}: {
+  label: string;
+  value: string | null | undefined;
+  options: SelectOption[];
+  onChange: (key: string) => void;
+  placeholder?: string;
+  title?: string;
+  icon?: keyof typeof Ionicons.glyphMap;
+  disabled?: boolean;
+  style?: StyleProp<ViewStyle>;
+}) {
+  const { palette } = useAppTheme();
+  const insets = useSafeAreaInsets();
+  const [open, setOpen] = useState(false);
+  const selected = options.find((o) => o.key === value) ?? null;
+  const canOpen = !disabled && options.length > 0;
+  return (
+    <>
+      <Pressable
+        onPress={() => canOpen && setOpen(true)}
+        accessibilityRole="button"
+        accessibilityLabel={`${label}: ${selected?.label ?? placeholder}`}
+        accessibilityState={{ disabled: !canOpen, expanded: open }}
+        style={({ pressed }) => [
+          styles.selectTrigger,
+          { borderColor: rgba(palette.primary, 0.16) },
+          pressed && canOpen && styles.pressed,
+          !canOpen && { opacity: 0.6 },
+          style,
+        ]}>
+        {icon ? (
+          <View style={[styles.selectIcon, { backgroundColor: rgba(palette.primary, 0.08) }]}>
+            <Ionicons name={icon} size={15} color={palette.primary} />
+          </View>
+        ) : null}
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={[styles.selectLabel, { color: palette.primary }]} numberOfLines={1}>
+            {label}
+          </Text>
+          <Text style={[styles.selectValue, !selected && { color: MUTED_INK }]} numberOfLines={1}>
+            {selected?.label ?? placeholder}
+          </Text>
+        </View>
+        <Ionicons name="chevron-down" size={16} color={MUTED_INK} />
+      </Pressable>
+
+      <Modal visible={open} animationType="slide" transparent onRequestClose={() => setOpen(false)}>
+        <Pressable style={styles.sheetOverlay} onPress={() => setOpen(false)}>
+          <Pressable style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, 12) + 8 }]} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.sheetHandle} />
+            <Text style={styles.sheetTitle}>{title ?? label}</Text>
+            <FlatList
+              data={options}
+              keyExtractor={(o) => o.key}
+              style={styles.sheetList}
+              renderItem={({ item }) => {
+                const on = item.key === value;
+                return (
+                  <Pressable
+                    onPress={() => {
+                      setOpen(false);
+                      if (!on) onChange(item.key);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: on }}
+                    style={({ pressed }) => [
+                      styles.sheetRow,
+                      on && { backgroundColor: rgba(palette.primary, 0.07) },
+                      pressed && { opacity: 0.8 },
+                    ]}>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={[styles.sheetRowText, on && { color: palette.primary }]} numberOfLines={2}>
+                        {item.label}
+                      </Text>
+                      {item.hint ? (
+                        <Text style={styles.sheetRowHint} numberOfLines={1}>
+                          {item.hint}
+                        </Text>
+                      ) : null}
+                    </View>
+                    {item.badge ? (
+                      <View style={[styles.pill, { backgroundColor: rgba(palette.primary, 0.1), alignSelf: 'center' }]}>
+                        <Text style={[styles.pillText, { color: palette.primary }]}>{item.badge}</Text>
+                      </View>
+                    ) : null}
+                    {on ? <Ionicons name="checkmark-circle" size={20} color={palette.primary} /> : null}
+                  </Pressable>
+                );
+              }}
+            />
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </>
+  );
+}
+
 /** Parse a number from API text ("67.0000") — null when it is not a number. */
 export function num(v: unknown): number | null {
   if (v == null || v === '') return null;
@@ -508,4 +624,43 @@ const styles = StyleSheet.create({
   chips: { gap: 8, paddingBottom: 12, paddingRight: 8 },
   chip: { borderRadius: 999, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 8 },
   chipText: { fontSize: 13, fontWeight: '700' },
+  selectTrigger: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    minHeight: 52,
+  },
+  selectIcon: { width: 30, height: 30, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
+  selectLabel: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.4 },
+  selectValue: { marginTop: 2, fontSize: 14, fontWeight: '700', color: INK },
+  sheetOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    paddingTop: 8,
+    paddingHorizontal: 16,
+    maxHeight: '75%',
+  },
+  sheetHandle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: '#D9DAD5', marginBottom: 10 },
+  sheetTitle: { fontSize: 16, fontWeight: '800', color: INK, marginBottom: 8 },
+  sheetList: { flexGrow: 0 },
+  sheetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    marginBottom: 2,
+  },
+  sheetRowText: { fontSize: 14.5, fontWeight: '700', color: INK },
+  sheetRowHint: { marginTop: 2, fontSize: 12, color: MUTED_INK },
 });
