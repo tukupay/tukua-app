@@ -14,7 +14,7 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { floatingTabBarSpace } from '../../components/navigation/FloatingTabBar';
+import { useBottomBarSpace } from '../../components/navigation/useBottomBarSpace';
 import { ThemedBackdrop } from '../../components/theme/ThemedPage';
 import {
   ModuleBackBar,
@@ -45,6 +45,7 @@ type PreviewRow = ScanMarkRow & { key: string };
 
 export function ScanMarksheetScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
+  const bottomBarSpace = useBottomBarSpace();
   const { deskUser } = useDeskAuth();
   const teacherId = String(deskUser?.id ?? deskUser?.user_id ?? '').trim();
 
@@ -335,7 +336,7 @@ export function ScanMarksheetScreen({ navigation }: Props) {
 
       {rows.length > 0 ? (
         <Pressable
-          style={[styles.saveBtn, { bottom: floatingTabBarSpace(insets.bottom) + 8 }, saving && { opacity: 0.7 }]}
+          style={[styles.saveBtn, { bottom: bottomBarSpace + 8 }, saving && { opacity: 0.7 }]}
           onPress={() => void save()}
           disabled={saving}
         >

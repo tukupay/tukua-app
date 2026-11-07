@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { floatingTabBarSpace } from '../../components/navigation/FloatingTabBar';
+import { useBottomBarSpace } from '../../components/navigation/useBottomBarSpace';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemedBackdrop } from '../../components/theme/ThemedPage';
 import {
@@ -46,6 +46,7 @@ const PAGE = 40;
 export function TeacherMarksheetScreen({ route, navigation }: Props) {
   const { examId, title, classId: initialClassId } = route.params;
   const insets = useSafeAreaInsets();
+  const bottomBarSpace = useBottomBarSpace();
   const { deskUser } = useDeskAuth();
   const teacherId = String(deskUser?.id ?? deskUser?.user_id ?? '').trim();
   const inputRefs = useRef<Record<string, TextInput | null>>({});
@@ -259,7 +260,7 @@ export function TeacherMarksheetScreen({ route, navigation }: Props) {
         )}
 
         {/* Sits on top of the floating tab bar, not under it. */}
-        <View style={[styles.saveBar, { bottom: floatingTabBarSpace(insets.bottom), paddingBottom: 10 }]}>
+        <View style={[styles.saveBar, { bottom: bottomBarSpace, paddingBottom: 10 }]}>
           <Pressable
             style={[styles.saveBtn, (saving || dirtyCount === 0) && { opacity: 0.55 }]}
             disabled={saving || dirtyCount === 0}

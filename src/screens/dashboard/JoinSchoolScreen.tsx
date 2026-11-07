@@ -24,7 +24,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '../../theme/yana';
 import { floatingHeaderInset, TAB_BAR_BODY_HEIGHT } from '../../constants/layout';
-import { floatingTabBarSpace } from '../../components/navigation/FloatingTabBar';
+import { useBottomBarSpace } from '../../components/navigation/useBottomBarSpace';
 import { useDialog } from '../../context/DialogContext';
 import { useDeskAuth } from '../../context/DeskAuthContext';
 import { useAppTheme } from '../../context/AppThemeContext';
@@ -125,6 +125,7 @@ function LogoAvatar({
 
 export function JoinSchoolScreen() {
   const insets = useSafeAreaInsets();
+  const bottomBarSpace = useBottomBarSpace();
   const navigation = useNavigation<NativeStackNavigationProp<DashboardStackParamList>>();
   const route = useRoute<RouteProp<DashboardStackParamList, 'JoinSchool'>>();
   const firstLogin = Boolean(route.params?.firstLogin);
@@ -133,7 +134,7 @@ export function JoinSchoolScreen() {
   const { palette } = useAppTheme();
   const { selectSchool, refreshSchools } = useDeskAuth();
   // Ends above the floating tab bar.
-  const bottomPad = Math.max(TAB_BAR_BODY_HEIGHT + insets.bottom + 24, floatingTabBarSpace(insets.bottom) + 16);
+  const bottomPad = Math.max(TAB_BAR_BODY_HEIGHT + insets.bottom + 24, bottomBarSpace + 16);
   const hero = palette.primary;
 
   const [step, setStep] = useState<Step>(preferRole ? 'school' : 'role');

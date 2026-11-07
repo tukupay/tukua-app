@@ -12,7 +12,7 @@ import { Feather, Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { floatingTabBarSpace } from '../../components/navigation/FloatingTabBar';
+import { useBottomBarSpace } from '../../components/navigation/useBottomBarSpace';
 import { useDeskAuth } from '../../context/DeskAuthContext';
 import { useAuth } from '../../context/AuthContext';
 import { useWebViewControl } from '../../context/WebViewControlContext';
@@ -247,6 +247,7 @@ function rowsOf<T>(items: T[]): T[][] {
 
 export function DashboardHomeScreen() {
   const insets = useSafeAreaInsets();
+  const bottomBarSpace = useBottomBarSpace();
   const navigation = useNavigation<NativeStackNavigationProp<DashboardStackParamList>>();
   const { palette } = useAppTheme();
   const { profile, session } = useAuth();
@@ -998,7 +999,7 @@ export function DashboardHomeScreen() {
       <ScrollView
         contentContainerStyle={[
           styles.content,
-          { paddingTop: floatingHeaderInset(insets.top), paddingBottom: floatingTabBarSpace(insets.bottom) + 16 },
+          { paddingTop: floatingHeaderInset(insets.top), paddingBottom: bottomBarSpace + 16 },
         ]}
         showsVerticalScrollIndicator={false}>
         <Animated.View style={{ opacity: fade, transform: [{ translateY: slide }] }}>
