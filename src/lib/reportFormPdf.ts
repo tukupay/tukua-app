@@ -8,7 +8,7 @@ import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
 import type { ParentReportForm } from './parentPortalApi';
 
-function esc(v: unknown): string {
+export function esc(v: unknown): string {
   return String(v ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -16,7 +16,7 @@ function esc(v: unknown): string {
     .replace(/"/g, '&quot;');
 }
 
-function fmt(v: number | null | undefined, digits = 1): string {
+export function fmt(v: number | null | undefined, digits = 1): string {
   if (v == null || !Number.isFinite(v)) return '—';
   return Number.isInteger(v) ? String(v) : v.toFixed(digits);
 }
@@ -129,13 +129,21 @@ export function buildReportFormHtml(r: ParentReportForm, accent = '#0F6B3E'): st
 /** Build the PDF and open the share sheet (save / WhatsApp / print). Returns the file uri. */
 export async function shareReportFormPdf(r: ParentReportForm, accent?: string): Promise<string> {
   const title = `Report form - ${r.student?.full_name || 'Learner'}`;
-  const { uri } = await Print.printToFileAsync({ html: buildReportFormHtml(r, accent), base64: false });
+  return sharePdfFromHtml(buildReportFormHtml(r, accent), title, `${title} ${r.exam?.name ?? ''}`, 'report_form');
+}
+
+/**
+ * HTML → PDF (expo-print) → copy to a readable name in the cache root → share sheet (expo-sharing).
+ * Shared by the report form and the class analysis.
+ */
+export async function sharePdfFromHtml(html: string, title: string, fileBase: string, fallbackName: string): Promise<string> {
+  const { uri } = await Print.printToFileAsync({ html, base64: false });
   let target = uri;
   try {
-    const safe = `${title} ${r.exam?.name ?? ''}`.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_').slice(0, 80);
+    const safe = fileBase.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_').slice(0, 80);
     // Cache root, not a sub-folder: Expo Go's share provider refuses files in cache sub-folders
     // ("Not allowed to read file under given URL").
-    target = `${FileSystem.cacheDirectory || ''}${safe || 'report_form'}.pdf`;
+    target = `${FileSystem.cacheDirectory || ''}${safe || fallbackName}.pdf`;
     await FileSystem.deleteAsync(target, { idempotent: true });
     await FileSystem.copyAsync({ from: uri, to: target });
   } catch {

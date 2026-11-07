@@ -1,17 +1,9 @@
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { log } from './logger';
-
-const isExpoGo = Constants.appOwnership === 'expo';
+import { getNotificationsModule, isExpoGo } from './expoNotifications';
 
 let handlerConfigured = false;
-
-async function getNotificationsModule() {
-  if (isExpoGo) {
-    return null;
-  }
-  return import('expo-notifications');
-}
 
 async function ensureNotificationHandler(
   Notifications: Awaited<ReturnType<typeof getNotificationsModule>>,

@@ -2,8 +2,11 @@
  * Parent → one child's report form for one exam, drawn natively (owner, 2026-11-08: the web print page took
  * far too long). Shows the summary the Exams screen already has at once, then fills in the subject table from
  * GET /parents/me/report-form (one small request). "Download PDF / Share" builds the PDF on the phone
- * (expo-print + expo-sharing). If the API does not have the route yet (404) the summary stays, with the
- * "Full school layout" link to the web print page as the fallback.
+ * (expo-print + expo-sharing). If the API does not have the route yet (404) the summary stays.
+ *
+ * The "Full school layout" link (web print page /parent/assessments/print) was removed 2026-11-08: that page
+ * lives only in the Desk SPA, which phones cannot reach, so it loaded forever. The native form + PDF replace it.
+ * Table sized for 360-dp phones: long subject names wrap, the number columns keep a fixed width.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -32,7 +35,7 @@ import {
 type Props = NativeStackScreenProps<DashboardStackParamList, 'ParentReportForm'>;
 
 export function ParentReportFormScreen({ navigation, route }: Props) {
-  const { studentId, examId, initial, webPath } = route.params;
+  const { studentId, examId, initial } = route.params;
   const { palette } = useAppTheme();
   const { showDialog } = useDialog();
   const [form, setForm] = useState<ParentReportForm | null>(initial ?? null);
@@ -73,7 +76,7 @@ export function ParentReportFormScreen({ navigation, route }: Props) {
       const msg = e instanceof Error ? e.message : String(e);
       log.warn('ReportForm', msg, { status });
       if (status === 404 && initial) {
-        // Route not deployed yet: the summary-only report stays, plus the web layout link.
+        // Route not deployed yet: the summary-only report stays.
         setSubjectsMissing(true);
       } else if (!initial) {
         setError(msg);
@@ -91,15 +94,6 @@ export function ParentReportFormScreen({ navigation, route }: Props) {
   useEffect(() => {
     void load();
   }, [load]);
-
-  const openWebLayout = () => {
-    if (!webPath) return;
-    navigation.navigate('DeskModule', {
-      title: 'Report form',
-      deskPath: webPath,
-      description: 'The school’s full report layout.',
-    });
-  };
 
   const onShare = async () => {
     if (!form || sharing) return;
@@ -152,7 +146,9 @@ export function ParentReportFormScreen({ navigation, route }: Props) {
                 <Text style={[styles.schoolName, { color: palette.primary }]} numberOfLines={2}>
                   {school.name || 'School report'}
                 </Text>
-                <Text style={styles.formTitle}>Learner report form</Text>
+                <Text style={styles.formTitle} numberOfLines={1}>
+                  Learner report form
+                </Text>
               </View>
             </View>
             <View style={[styles.rule, { backgroundColor: palette.primary }]} />
@@ -182,33 +178,40 @@ export function ParentReportFormScreen({ navigation, route }: Props) {
               <>
                 <View style={[styles.tr, styles.th]}>
                   <Text style={[styles.thText, styles.colSubject]}>Subject</Text>
-                  <Text style={[styles.thText, styles.colNum]}>Marks</Text>
-                  <Text style={[styles.thText, styles.colNum]}>Grade</Text>
-                  <Text style={[styles.thText, styles.colNum]}>Pts</Text>
+                  <Text style={[styles.thText, styles.colMarks]}>Marks</Text>
+                  <Text style={[styles.thText, styles.colGrade]}>Grade</Text>
+                  <Text style={[styles.thText, styles.colPts]}>Pts</Text>
                 </View>
                 {subjects.map((s, i) => (
                   <View
                     key={`${s.subject_id ?? s.subject}-${i}`}
                     style={[styles.tr, i % 2 === 1 && { backgroundColor: rgba(palette.primary, 0.03) }]}>
                     <View style={styles.colSubject}>
-                      <Text style={styles.subject} numberOfLines={2}>
+                      <Text style={styles.subject} numberOfLines={3}>
                         {s.subject}
                       </Text>
                       {s.remark ? <Text style={styles.remark}>{s.remark}</Text> : null}
                     </View>
-                    <Text style={[styles.cell, styles.colNum]}>
+                    <Text style={[styles.cell, styles.colMarks]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
                       {s.marks != null ? fmtNum(s.marks, Number.isInteger(s.marks) ? 0 : 1) : '—'}
-                      {s.max_marks ? <Text style={styles.muted}>/{fmtNum(s.max_marks, 0)}</Text> : null}
+                      {s.max_marks ? <Text style={styles.mutedSmall}>/{fmtNum(s.max_marks, 0)}</Text> : null}
                     </Text>
-                    <Text style={[styles.cell, styles.colNum, { fontWeight: '800', color: palette.primary }]}>{s.grade || '—'}</Text>
-                    <Text style={[styles.cell, styles.colNum]}>{s.points != null ? fmtNum(s.points, 0) : '—'}</Text>
+                    <Text
+                      style={[styles.cell, styles.colGrade, { fontWeight: '800', color: palette.primary }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit>
+                      {s.grade || '—'}
+                    </Text>
+                    <Text style={[styles.cell, styles.colPts]} numberOfLines={1}>
+                      {s.points != null ? fmtNum(s.points, 0) : '—'}
+                    </Text>
                   </View>
                 ))}
               </>
             ) : (
               <Text style={[styles.muted, { padding: 14 }]}>
                 {subjectsMissing
-                  ? 'Subject marks are not available in the app yet. Open the full school layout below for the subject table.'
+                  ? 'Subject marks are not available in the app yet. The summary below is up to date.'
                   : isOpen
                     ? 'No subject marks entered yet — marking is still in progress.'
                     : 'No subject marks for this exam.'}
@@ -262,16 +265,12 @@ export function ParentReportFormScreen({ navigation, route }: Props) {
             ) : (
               <>
                 <Ionicons name="download-outline" size={18} color="#FFFFFF" />
-                <Text style={styles.primaryText}>Download PDF / Share</Text>
+                <Text style={styles.primaryText} numberOfLines={1}>
+                  Download PDF / Share
+                </Text>
               </>
             )}
           </Pressable>
-          {webPath ? (
-            <Pressable onPress={openWebLayout} accessibilityRole="link" style={styles.linkBtn}>
-              <Ionicons name="open-outline" size={14} color={palette.primary} />
-              <Text style={[styles.linkText, { color: palette.primary }]}>Full school layout</Text>
-            </Pressable>
-          ) : null}
         </>
       )}
     </ModuleScrollPage>
@@ -310,20 +309,25 @@ const styles = StyleSheet.create({
   metaLabel: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.4, color: MUTED_INK },
   metaValue: { marginTop: 2, fontSize: 14, fontWeight: '700', color: INK },
   subjectsLoading: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14 },
-  tr: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 9 },
+  tr: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 9 },
   th: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#D9DAD5' },
   thText: { fontSize: 10.5, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.4, color: MUTED_INK },
   colSubject: { flex: 1, minWidth: 0, paddingRight: 8 },
-  colNum: { width: 58, textAlign: 'center' },
+  colMarks: { width: 66, textAlign: 'center' },
+  colGrade: { width: 48, textAlign: 'center' },
+  colPts: { width: 36, textAlign: 'center' },
   subject: { fontSize: 13.5, fontWeight: '700', color: INK },
   remark: { marginTop: 2, fontSize: 11.5, color: MUTED_INK, fontStyle: 'italic' },
   cell: { fontSize: 13.5, color: INK },
-  muted: { fontSize: 12.5, color: MUTED_INK },
+  muted: { fontSize: 12.5, color: MUTED_INK, flexShrink: 1 },
+  mutedSmall: { fontSize: 11.5, color: MUTED_INK },
   stats: { flexDirection: 'row', gap: 8 },
   commentLabel: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.4 },
   comment: { marginTop: 3, fontSize: 13.5, lineHeight: 19, color: INK },
   primaryBtn: {
     marginTop: 16,
+    marginBottom: 8,
+    paddingHorizontal: 12,
     borderRadius: 14,
     paddingVertical: 14,
     flexDirection: 'row',
@@ -332,7 +336,5 @@ const styles = StyleSheet.create({
     gap: 8,
     minHeight: 50,
   },
-  primaryText: { color: '#FFFFFF', fontWeight: '800', fontSize: 15 },
-  linkBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14 },
-  linkText: { fontSize: 13, fontWeight: '700', textDecorationLine: 'underline' },
+  primaryText: { color: '#FFFFFF', fontWeight: '800', fontSize: 15, flexShrink: 1 },
 });

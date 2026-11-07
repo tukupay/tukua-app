@@ -1,16 +1,14 @@
 import { useEffect, useRef } from 'react';
-import Constants from 'expo-constants';
-import { Platform } from 'react-native';
 import { useDeskAuth } from '../../context/DeskAuthContext';
 import { getNotificationHref, registerMobilePushToken } from '../../lib/pushNotifications';
 import { resolveNotificationHref } from '../../lib/notificationDeepLink';
 import { useWebViewControl } from '../../context/WebViewControlContext';
 import { navigateDashboard } from '../../navigation/rootNavigation';
 import { log } from '../../lib/logger';
+import { isExpoGo, loadNotifications } from '../../lib/expoNotifications';
 
-const isExpoGo = Constants.appOwnership === 'expo';
-/** Expo SDK 53+: remote push + response APIs throw in Expo Go on Android. */
-const pushRuntimeUnsupported = isExpoGo && Platform.OS === 'android';
+/** Expo SDK 53+: expo-notifications is not loaded in Expo Go at all (it warns there); real builds only. */
+const pushRuntimeUnsupported = isExpoGo;
 
 /**
  * Registers Expo push token after Desk login and routes notification taps
@@ -28,7 +26,7 @@ export function PushNotificationBootstrap() {
 
   useEffect(() => {
     if (pushRuntimeUnsupported) {
-      log.info('Push', 'tap listeners skipped in Expo Go Android');
+      log.info('Push', 'tap listeners skipped in Expo Go');
       return;
     }
 
@@ -52,9 +50,10 @@ export function PushNotificationBootstrap() {
       webNavigate(target.path, '/profile');
     };
 
-    void import('expo-notifications')
-      .then((Notifications) => {
-        if (cancelled) return;
+    void Promise.resolve()
+      .then(() => {
+        const Notifications = loadNotifications();
+        if (!Notifications || cancelled) return;
         sub = Notifications.addNotificationResponseReceivedListener((response) => {
           const id = response.notification.request.identifier;
           if (handledRef.current === id) return;

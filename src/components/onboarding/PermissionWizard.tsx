@@ -25,6 +25,7 @@ import { useAppTheme } from '../../context/AppThemeContext';
 import { Colors } from '../../theme/yana';
 import { requestLocationPermission } from '../../lib/location';
 import { ensurePushPermissions } from '../../lib/pushNotifications';
+import { loadNotifications } from '../../lib/expoNotifications';
 import {
   authenticateDevice,
   checkBiometricSupport,
@@ -86,11 +87,14 @@ async function cameraModule() {
 async function pendingSteps(): Promise<Step[]> {
   const out: Step[] = [];
   try {
-    const N = await import('expo-notifications');
-    const p = await N.getPermissionsAsync();
-    if (!p.granted && p.canAskAgain !== false) out.push(ALL_STEPS.notifications);
+    // Expo Go: expo-notifications is never loaded (it warns there), so the step is skipped.
+    const N = loadNotifications();
+    if (N) {
+      const p = await N.getPermissionsAsync();
+      if (!p.granted && p.canAskAgain !== false) out.push(ALL_STEPS.notifications);
+    }
   } catch {
-    /* not available in this runtime (e.g. Expo Go on Android) */
+    /* not available in this runtime */
   }
   try {
     const Location = await import('expo-location');

@@ -10,14 +10,9 @@ import { Platform } from 'react-native';
 import { deskFetch } from './deskApi';
 import { log } from './logger';
 import { Colors } from '../theme/yana';
-
-const isExpoGo = Constants.appOwnership === 'expo';
+import { getNotificationsModule as getNotifications, isExpoGo } from './expoNotifications';
 
 let handlerConfigured = false;
-
-async function getNotifications() {
-  return import('expo-notifications');
-}
 
 function getEasProjectId(): string | undefined {
   const extra = Constants.expoConfig?.extra as { eas?: { projectId?: string } } | undefined;
@@ -32,7 +27,9 @@ function getEasProjectId(): string | undefined {
 export async function ensurePushPermissions(opts: { ask?: boolean } = { ask: true }): Promise<boolean> {
   if (Platform.OS === 'web') return false;
   try {
+    // Expo Go: expo-notifications is never loaded (see expoNotifications.ts).
     const Notifications = await getNotifications();
+    if (!Notifications) return false;
     const current = await Notifications.getPermissionsAsync();
     if (current.granted) return true;
     if (!opts.ask) return false;
@@ -50,12 +47,13 @@ export async function ensurePushPermissions(opts: { ask?: boolean } = { ask: tru
  */
 export async function registerMobilePushToken(opts: { ask?: boolean } = {}): Promise<string | null> {
   try {
-    if (isExpoGo && Platform.OS === 'android') {
-      log.info('Push', 'Expo Go Android: remote notifications removed — use eas build / expo run:android');
+    if (isExpoGo) {
+      log.info('Push', 'Expo Go: push notifications skipped — use a development or release build');
       return null;
     }
 
     const Notifications = await getNotifications();
+    if (!Notifications) return null;
     if (!handlerConfigured) {
       Notifications.setNotificationHandler({
         handleNotification: async () => ({
@@ -68,7 +66,6 @@ export async function registerMobilePushToken(opts: { ask?: boolean } = {}): Pro
       handlerConfigured = true;
     }
 
-    if (isExpoGo && Platform.OS === 'android') return null;
     const ok = await ensurePushPermissions({ ask: Boolean(opts.ask) });
     if (!ok) return null;
 

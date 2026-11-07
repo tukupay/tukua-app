@@ -183,6 +183,63 @@ export async function fetchParentReportForm(studentId: string, examId: string) {
   return deskFetch<ParentReportForm>(`/parents/me/report-form?${params}`, { expectStatus: [404], timeoutMs: 15000 });
 }
 
+export type ParentClassAnalysisSubject = {
+  subject_id?: string;
+  subject: string;
+  code?: string | null;
+  max_marks?: number | null;
+  my_marks?: number | null;
+  my_grade?: string | null;
+  class_mean?: number | null;
+  class_entries?: number | null;
+  level_mean?: number | null;
+  level_entries?: number | null;
+};
+
+/** GET /parents/me/class-analysis — aggregates only (no other learner's name or marks). */
+export type ParentClassAnalysis = {
+  school?: { name?: string | null; logo_url?: string | null } | null;
+  student?: {
+    id: string;
+    full_name?: string | null;
+    admission_number?: string | null;
+    class_id?: string | null;
+    class_name?: string | null;
+    class_level?: string | null;
+  } | null;
+  exam?: ParentReportForm['exam'];
+  class?: {
+    learners?: number | null;
+    mean?: number | null;
+    mean_points?: number | null;
+    grade_distribution?: Array<{ grade: string; count: number; points?: number | null }>;
+  } | null;
+  level?: {
+    name?: string | null;
+    learners?: number | null;
+    mean?: number | null;
+    streams?: Array<{ class_id?: string; class_name?: string | null; learners?: number; mean?: number | null; is_my_class?: boolean }>;
+  } | null;
+  child?: {
+    has_report?: boolean;
+    mean?: number | null;
+    grade?: string | null;
+    mean_points?: number | null;
+    position_in_class?: number | null;
+    position_in_level?: number | null;
+  } | null;
+  subjects?: ParentClassAnalysisSubject[];
+};
+
+/**
+ * Class analysis for one child's class and one exam (GET /parents/me/class-analysis). 404 until the API with
+ * this route is deployed: callers keep the class/level means they already have.
+ */
+export async function fetchParentClassAnalysis(studentId: string, examId: string) {
+  const params = new URLSearchParams({ student_id: studentId, exam_id: examId });
+  return deskFetch<ParentClassAnalysis>(`/parents/me/class-analysis?${params}`, { expectStatus: [404], timeoutMs: 15000 });
+}
+
 export async function fetchParentLibraryStatement(studentId?: string | null) {
   const sid = resolveStudentId(studentId);
   const q = sid ? `?student_id=${encodeURIComponent(sid)}` : '';

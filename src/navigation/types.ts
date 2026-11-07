@@ -39,8 +39,15 @@ export type DashboardStackParamList = {
     studentId: string;
     examId: string;
     initial?: import('../lib/parentPortalApi').ParentReportForm;
-    /** Web print page (/parent/assessments/print?...) for the "Full school layout" link. */
-    webPath?: string;
+  };
+  /**
+   * Parent: class analysis for one child's class and one exam (aggregates only), drawn natively.
+   * `initial` is what the Exams screen already knows (class/level means), shown while the rest loads.
+   */
+  ParentClassAnalysis: {
+    studentId: string;
+    examId: string;
+    initial?: import('../lib/parentPortalApi').ParentClassAnalysis;
   };
   Teachers: undefined;
   Library: undefined;

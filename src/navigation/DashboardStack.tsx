@@ -14,6 +14,7 @@ import { MeetingsScreen } from '../screens/dashboard/MeetingsScreen';
 import { MeetingRoomScreen } from '../screens/dashboard/MeetingRoomScreen';
 import { AssessmentsScreen } from '../screens/dashboard/AssessmentsScreen';
 import { ParentReportFormScreen } from '../screens/dashboard/ParentReportFormScreen';
+import { ParentClassAnalysisScreen } from '../screens/dashboard/ParentClassAnalysisScreen';
 import { TeachersScreen } from '../screens/dashboard/TeachersScreen';
 import { LibraryScreen } from '../screens/dashboard/LibraryScreen';
 import { ClubsScreen } from '../screens/dashboard/ClubsScreen';
@@ -154,6 +155,11 @@ export function DashboardStack() {
         name="ParentReportForm"
         component={ParentReportFormScreen}
         options={{ title: 'Report form', headerShown: false }}
+      />
+      <Stack.Screen
+        name="ParentClassAnalysis"
+        component={ParentClassAnalysisScreen}
+        options={{ title: 'Class analysis', headerShown: false }}
       />
       <Stack.Screen
         name="Teachers"

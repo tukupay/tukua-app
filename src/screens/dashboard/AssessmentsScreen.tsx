@@ -9,15 +9,24 @@
  * 2026-11-08 (owner): year and exam are two dropdowns (themed bottom sheet). Year defaults to the year of the
  * current exam (else the newest); exam defaults to the open one, else the newest closed exam that year.
  * "Report form" opens the native ParentReportForm screen (summary at once, subjects from one small request,
- * PDF built on the phone) instead of the slow web print page, which stays there as "Full school layout".
+ * PDF built on the phone) instead of the slow web print page.
+ *
+ * Later 2026-11-08: "Class analysis" opens the native ParentClassAnalysis screen (aggregates only). The web
+ * print page (/parent/assessments/print) lives only in the Desk SPA, which phones cannot reach (Expo Go fell
+ * back to the PC's LAN :3250 and spun forever), so neither screen links to it any more. Layout checked for
+ * 360-dp phones: long exam names wrap, the pickers shrink with an ellipsis, buttons shrink their text.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useDeskAuth } from '../../context/DeskAuthContext';
 import { useAppTheme } from '../../context/AppThemeContext';
-import { fetchParentAssessmentReports, type ParentReportForm } from '../../lib/parentPortalApi';
+import {
+  fetchParentAssessmentReports,
+  type ParentClassAnalysis,
+  type ParentReportForm,
+} from '../../lib/parentPortalApi';
 import { DashboardStackParamList } from '../../navigation/types';
 import { log } from '../../lib/logger';
 import { INK } from '../../components/theme/ThemedPage';
@@ -71,6 +80,13 @@ function examLabel(e?: ExamRow | null): string {
   return e.name || [e.term, e.academic_year].filter(Boolean).join(' · ') || 'Exam';
 }
 
+/** Exam name plus its term, unless the name already says the term ("… · Term 2"). */
+function examHeading(e: ExamRow): string {
+  const name = examLabel(e);
+  const term = String(e.term ?? '').trim();
+  return term && !name.toLowerCase().includes(term.toLowerCase()) ? `${name} · ${term}` : name;
+}
+
 const isCurrentExam = (e: ExamRow) => e.is_current === true || Number(e.is_current) === 1;
 const isOpenExam = (e: ExamRow) => String(e.marking_status ?? '').toLowerCase() === 'open';
 
@@ -121,6 +137,9 @@ function readReport(r: Record<string, unknown>) {
 
 export function AssessmentsScreen({ navigation }: Props) {
   const { palette } = useAppTheme();
+  const { width } = useWindowDimensions();
+  // ~360-dp phones: the year picker drops its icon so both pickers keep readable text side by side.
+  const narrow = width < 400;
   const { selectedStudentId, selectedStudent } = useDeskAuth();
   const [payload, setPayload] = useState<AssessmentPayload | null>(null);
   const [examId, setExamId] = useState<string | null>(null);
@@ -225,9 +244,6 @@ export function AssessmentsScreen({ navigation }: Props) {
 
   const openReportForm = (child: ChildReport) => {
     if (!examId || !child.student_id) return;
-    const webPath = `/parent/assessments/print?exam_id=${encodeURIComponent(examId)}&student_id=${encodeURIComponent(
-      String(child.student_id),
-    )}&reportType=report_forms&title=${encodeURIComponent(`Report form — ${child.full_name || 'Student'}`)}`;
     // What this screen already has, so the report form draws at once; subjects arrive from one small request.
     const rep = child.report ? readReport(child.report) : null;
     const ex = currentExam ?? allExams.find((e) => e.id === examId) ?? null;
@@ -267,18 +283,45 @@ export function AssessmentsScreen({ navigation }: Props) {
         : {},
       subjects: [],
     };
-    navigation.navigate('ParentReportForm', { studentId: String(child.student_id), examId, initial, webPath });
+    navigation.navigate('ParentReportForm', { studentId: String(child.student_id), examId, initial });
   };
 
   const openClassAnalysis = (child: ChildReport) => {
-    if (!examId) return;
-    navigation.navigate('DeskModule', {
-      title: 'Class analysis',
-      deskPath: `/parent/assessments/print?exam_id=${encodeURIComponent(examId)}&reportType=class_performance&class_name=${encodeURIComponent(
-        String(child.class_name || ''),
-      )}&title=${encodeURIComponent('Class analysis')}`,
-      description: 'Class means — no other learners’ raw scores.',
-    });
+    if (!examId || !child.student_id) return;
+    // What this screen already has (class/level means and sizes), so the page draws at once.
+    const rep = child.report ? readReport(child.report) : null;
+    const ex = currentExam ?? allExams.find((e) => e.id === examId) ?? null;
+    const initial: ParentClassAnalysis = {
+      school: { name: child.school_name ?? null },
+      student: {
+        id: String(child.student_id),
+        full_name: child.full_name ?? null,
+        admission_number: child.admission_number ?? null,
+        class_name: child.class_name ?? null,
+      },
+      exam: ex
+        ? {
+            id: ex.id,
+            name: ex.name ?? null,
+            term: ex.term ?? null,
+            academic_year: ex.academic_year ?? null,
+            marking_status: ex.marking_status ?? null,
+          }
+        : { id: examId },
+      class: { learners: rep?.rankOf ?? null, mean: rep?.classMean ?? null },
+      level: { learners: rep?.levelOf ?? null, mean: rep?.levelMean ?? null },
+      child: rep
+        ? {
+            mean: rep.mean,
+            grade: rep.grade,
+            mean_points: rep.points,
+            position_in_class: rep.rank,
+            position_in_level: rep.levelRank,
+          }
+        : null,
+      subjects: [],
+    };
+    navigation.navigate('ParentClassAnalysis', { studentId: String(child.student_id), examId, initial });
   };
 
   return (
@@ -296,13 +339,13 @@ export function AssessmentsScreen({ navigation }: Props) {
       {payload && !error && allExams.length ? (
         <View style={styles.pickers}>
           <SelectField
-            label="Academic year"
-            icon="calendar-outline"
+            label={narrow ? 'Year' : 'Academic year'}
+            icon={narrow ? undefined : 'calendar-outline'}
             value={year ?? years[0] ?? null}
             onChange={selectYear}
             disabled={years.length < 2}
             options={years.map((y) => ({ key: y, label: y }))}
-            style={styles.yearPicker}
+            style={narrow ? styles.yearPickerNarrow : styles.yearPicker}
           />
           <SelectField
             label="Exam"
@@ -338,7 +381,7 @@ export function AssessmentsScreen({ navigation }: Props) {
           {currentExam ? (
             <SectionLabel
               right={isOpenExam(currentExam) ? <StatusPill label="Marking in progress" tone="accent" /> : undefined}>
-              {[examLabel(currentExam), currentExam.term].filter(Boolean).join(' · ')}
+              {examHeading(currentExam)}
             </SectionLabel>
           ) : null}
           {children.map((child, index) => {
@@ -423,7 +466,9 @@ export function AssessmentsScreen({ navigation }: Props) {
                       onPress={() => openReportForm(child)}
                       accessibilityRole="button">
                       <Ionicons name="document-text-outline" size={16} color="#FFFFFF" />
-                      <Text style={[styles.actionText, { color: '#FFFFFF' }]}>Report form</Text>
+                      <Text style={[styles.actionText, { color: '#FFFFFF' }]} numberOfLines={1} adjustsFontSizeToFit>
+                        Report form
+                      </Text>
                     </Pressable>
                     <Pressable
                       style={({ pressed }) => [
@@ -434,7 +479,9 @@ export function AssessmentsScreen({ navigation }: Props) {
                       onPress={() => openClassAnalysis(child)}
                       accessibilityRole="button">
                       <Ionicons name="bar-chart-outline" size={16} color={palette.primary} />
-                      <Text style={[styles.actionText, { color: palette.primary }]}>Class analysis</Text>
+                      <Text style={[styles.actionText, { color: palette.primary }]} numberOfLines={1} adjustsFontSizeToFit>
+                        Class analysis
+                      </Text>
                     </Pressable>
                   </View>
                 ) : null}
@@ -450,6 +497,7 @@ export function AssessmentsScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   pickers: { flexDirection: 'row', gap: 8, marginBottom: 12 },
   yearPicker: { flex: 0.85 },
+  yearPickerNarrow: { flex: 0.62, paddingHorizontal: 10, gap: 6 },
   examPicker: { flex: 1.4 },
   cardTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   avatar: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
@@ -465,6 +513,7 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row', gap: 8, marginTop: 14 },
   actionBtn: {
     flex: 1,
+    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -473,5 +522,5 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     paddingHorizontal: 6,
   },
-  actionText: { fontWeight: '800', fontSize: 13.5 },
+  actionText: { fontWeight: '800', fontSize: 13.5, flexShrink: 1 },
 });

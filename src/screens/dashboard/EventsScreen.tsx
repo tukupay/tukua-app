@@ -30,7 +30,12 @@ import {
   fetchCalendarReminderSettings,
   updateMyCalendarReminders,
 } from '../../lib/parentPortalApi';
-import { cancelEventReminders, ensureEventReminderPermission, scheduleEventReminders } from '../../lib/eventReminders';
+import {
+  cancelEventReminders,
+  ensureEventReminderPermission,
+  eventRemindersSupported,
+  scheduleEventReminders,
+} from '../../lib/eventReminders';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useDialog } from '../../context/DialogContext';
 import { GateDirectionToggle } from '../../components/dashboard/GateDirectionToggle';
@@ -289,11 +294,20 @@ export function EventsScreen({ navigation }: Props) {
         const allowed = await ensureEventReminderPermission(true);
         if (!allowed) {
           setMyReminders(previous);
-          showDialog({
-            title: 'Notifications are off',
-            message: 'Allow notifications for Tukua in your phone settings, then switch reminders on again.',
-            variant: 'danger',
-          });
+          showDialog(
+            eventRemindersSupported()
+              ? {
+                  title: 'Notifications are off',
+                  message: 'Allow notifications for Tukua in your phone settings, then switch reminders on again.',
+                  variant: 'danger',
+                }
+              : {
+                  // Expo Go: expo-notifications is not loaded there; the installed app schedules reminders.
+                  title: 'Not available here',
+                  message: 'Event reminders work in the installed Tukua app, not in Expo Go.',
+                  variant: 'warning',
+                },
+          );
           return;
         }
       }

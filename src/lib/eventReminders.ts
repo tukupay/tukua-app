@@ -5,10 +5,12 @@
  * (GET /events/reminder-settings → reminder_lead_hours); the phone schedules one reminder per upcoming
  * event it lists (the list is already filtered to what this person may see). Every call replaces the
  * reminders scheduled before, so a moved or cancelled event never fires a stale reminder.
- * Local notifications also work in Expo Go (only remote push does not).
+ * In Expo Go expo-notifications is not loaded at all (it prints warnings there since SDK 53), so reminders
+ * quietly do nothing there; real builds schedule them as before.
  */
 import { Platform } from 'react-native';
 import { log } from './logger';
+import { getNotificationsModule, isExpoGo } from './expoNotifications';
 
 export type ReminderEvent = {
   id?: string;
@@ -24,7 +26,14 @@ const CHANNEL = 'event-reminders';
 const MAX_SCHEDULED = 40;
 
 async function getNotifications() {
-  return import('expo-notifications');
+  const N = await getNotificationsModule();
+  if (!N) throw new Error(isExpoGo ? 'not available in Expo Go' : 'expo-notifications unavailable');
+  return N;
+}
+
+/** False in Expo Go (and on web): reminders cannot be scheduled on this runtime. */
+export function eventRemindersSupported(): boolean {
+  return Platform.OS !== 'web' && !isExpoGo;
 }
 
 /** Ask (or just check) permission to show notifications. Never throws. */

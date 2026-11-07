@@ -178,8 +178,11 @@ export function SurfaceCard({
 export function SectionLabel({ children, right }: { children: string; right?: ReactNode }) {
   return (
     <View style={styles.sectionRow}>
-      <Text style={styles.section}>{children}</Text>
-      {right}
+      {/* Long labels (e.g. exam names) wrap instead of pushing `right` off a 360-dp screen. */}
+      <Text style={styles.section} numberOfLines={3}>
+        {children}
+      </Text>
+      {right ? <View style={styles.sectionRight}>{right}</View> : null}
     </View>
   );
 }
@@ -299,14 +302,14 @@ export function StatTile({ label, value, hint, style }: { label: string; value: 
   const { palette } = useAppTheme();
   return (
     <View style={[styles.stat, { backgroundColor: rgba(palette.primary, 0.05) }, style]}>
-      <Text style={[styles.statLabel, { color: palette.primary }]} numberOfLines={1}>
+      <Text style={[styles.statLabel, { color: palette.primary }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
         {label}
       </Text>
       <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit>
         {value}
       </Text>
       {hint ? (
-        <Text style={styles.statHint} numberOfLines={1}>
+        <Text style={styles.statHint} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.85}>
           {hint}
         </Text>
       ) : null}
@@ -577,10 +580,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 8,
     marginTop: 8,
     marginBottom: 8,
   },
+  sectionRight: { flexShrink: 0 },
   section: {
+    flex: 1,
+    minWidth: 0,
     fontSize: 12,
     fontWeight: '800',
     letterSpacing: 0.8,
