@@ -133,16 +133,23 @@ export async function shareReportFormPdf(r: ParentReportForm, accent?: string): 
   let target = uri;
   try {
     const safe = `${title} ${r.exam?.name ?? ''}`.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_').slice(0, 80);
-    const dir = `${FileSystem.cacheDirectory || ''}downloads/`;
-    await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => undefined);
-    target = `${dir}${safe || 'report_form'}.pdf`;
+    // Cache root, not a sub-folder: Expo Go's share provider refuses files in cache sub-folders
+    // ("Not allowed to read file under given URL").
+    target = `${FileSystem.cacheDirectory || ''}${safe || 'report_form'}.pdf`;
     await FileSystem.deleteAsync(target, { idempotent: true });
-    await FileSystem.moveAsync({ from: uri, to: target });
+    await FileSystem.copyAsync({ from: uri, to: target });
   } catch {
     target = uri;
   }
   if (Platform.OS !== 'web' && (await Sharing.isAvailableAsync())) {
-    await Sharing.shareAsync(target, { mimeType: 'application/pdf', dialogTitle: title, UTI: 'com.adobe.pdf' });
+    const opts = { mimeType: 'application/pdf', dialogTitle: title, UTI: 'com.adobe.pdf' };
+    try {
+      await Sharing.shareAsync(target, opts);
+    } catch (e) {
+      if (target === uri) throw e;
+      await Sharing.shareAsync(uri, opts);
+      target = uri;
+    }
   } else {
     await Share.share({ title, url: target });
   }

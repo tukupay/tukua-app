@@ -106,8 +106,7 @@ function saveWebFile(msg: { name?: unknown; mime?: unknown; base64?: unknown }) 
     return;
   }
   enqueueFileShare(async () => {
-    const dir = `${FileSystem.cacheDirectory || ''}downloads/`;
-    await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => undefined);
+    const dir = FileSystem.cacheDirectory || '';
     const uri = `${dir}${name}`;
     await FileSystem.writeAsStringAsync(uri, base64, { encoding: FileSystem.EncodingType.Base64 });
     log.info('WebApp', 'web file saved', { name, mime, bytes: Math.floor((base64.length * 3) / 4) });
@@ -128,15 +127,20 @@ function printWebHtml(msg: { html?: unknown; name?: unknown }) {
     const { uri } = await Print.printToFileAsync({ html, base64: false });
     let target = uri;
     try {
-      const dir = `${FileSystem.cacheDirectory || ''}downloads/`;
-      await FileSystem.makeDirectoryAsync(dir, { intermediates: true }).catch(() => undefined);
-      target = `${dir}${name}`;
+      // Cache root, not a sub-folder: Expo Go's share provider refuses files in cache sub-folders.
+      target = `${FileSystem.cacheDirectory || ''}${name}`;
       await FileSystem.deleteAsync(target, { idempotent: true });
-      await FileSystem.moveAsync({ from: uri, to: target });
+      await FileSystem.copyAsync({ from: uri, to: target });
     } catch {
       target = uri;
     }
-    await shareLocalFile(target, 'application/pdf', name);
+    try {
+      await shareLocalFile(target, 'application/pdf', name);
+    } catch (e) {
+      if (target === uri) throw e;
+      log.warn('WebApp', 'share renamed pdf failed, sharing the printed file', String(e));
+      await shareLocalFile(uri, 'application/pdf', name);
+    }
   });
 }
 
