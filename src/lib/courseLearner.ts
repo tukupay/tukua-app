@@ -93,6 +93,7 @@ export async function probeStudentRecord(schoolId: string): Promise<StudentRecor
         token: platformToken ?? undefined,
         context: { schoolId, studentId: null, roles: ['student'] },
         timeoutMs: PROBE_TIMEOUT_MS,
+        expectStatus: [403, 404],
       });
       return 'school';
     } catch (e) {

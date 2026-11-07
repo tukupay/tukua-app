@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../theme/yana';
 import { TAB_BAR_BODY_HEIGHT } from '../constants/layout';
+import { log } from '../lib/logger';
 
 type Banner = { id: number; message: string };
 
@@ -20,7 +21,12 @@ class ErrorBoundaryInner extends React.Component<
     return { hasError: true };
   }
 
-  componentDidCatch(error: Error) {
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    // Log it: without this a screen that fails to draw leaves nothing in the Metro log.
+    log.warn('ScreenError', error?.message || String(error), {
+      stack: String(error?.stack ?? '').split(/\r?\n/).slice(0, 6).join(' | '),
+      component: String(info?.componentStack ?? '').trim().split(/\r?\n/).slice(0, 6).join(' | '),
+    });
     this.props.onError(error.message || 'Something went wrong');
   }
 
@@ -53,6 +59,7 @@ export function MobileErrorBoundary({ children }: Props) {
   const push = useCallback((message: string) => {
     const trimmed = message.trim();
     if (!trimmed) return;
+    log.warn('AppError', trimmed);
     setBanners((prev) => [...prev.slice(-2), { id: Date.now(), message: trimmed }]);
   }, []);
 

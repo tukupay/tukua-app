@@ -105,6 +105,12 @@ export function AssessmentsScreen({ navigation }: Props) {
         const data = ((await fetchParentAssessmentReports(opts.exam ?? undefined, selectedStudentId)) ??
           {}) as AssessmentPayload;
         if (id !== reqId.current) return;
+        log.info('Assessments', 'loaded', {
+          exams: Array.isArray(data.exams) ? data.exams.length : null,
+          children: Array.isArray(data.children) ? data.children.length : null,
+          examId: data.exam_id ?? null,
+          selectedStudentId,
+        });
         setPayload(data);
         const resolved = String(data.exam_id ?? data.exam?.id ?? '').trim() || null;
         if (resolved) setExamId(resolved);

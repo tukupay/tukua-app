@@ -334,6 +334,8 @@ export async function deskFetch<T = unknown>(
      * school that is not open yet). Omitted fields fall back to the active context.
      */
     context?: { schoolId?: string | null; studentId?: string | null; roles?: string[] };
+    /** HTTP statuses that are an expected answer here (e.g. a probe's 404): logged as info, not a warning. */
+    expectStatus?: number[];
   } = {},
 ): Promise<T> {
   const base = getDeskApiBaseUrl();
@@ -437,7 +439,8 @@ export async function deskFetch<T = unknown>(
       errCode && errCode.includes('_') && errCode !== baseMsg && !String(baseMsg).includes(errCode)
         ? `${baseMsg} (${errCode})`
         : String(baseMsg);
-    log.warn('DeskApi', msg, { status: res.status, path, error: errCode || undefined });
+    if (opts.expectStatus?.includes(res.status)) log.info('DeskApi', msg, { status: res.status, path, expected: true });
+    else log.warn('DeskApi', msg, { status: res.status, path, error: errCode || undefined });
     throw Object.assign(new Error(msg), { code: errCode || undefined, statusCode: res.status });
   }
 
