@@ -12,6 +12,7 @@ import { Feather, Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { floatingTabBarSpace } from '../../components/navigation/FloatingTabBar';
 import { useDeskAuth } from '../../context/DeskAuthContext';
 import { useAuth } from '../../context/AuthContext';
 import { useWebViewControl } from '../../context/WebViewControlContext';
@@ -49,6 +50,7 @@ import {
   STUDENT_DASHBOARD_ACTIONS,
   SUPER_ADMIN_DASHBOARD_ACTIONS,
   TEACHER_DASHBOARD_ACTIONS,
+  dashboardSectionsForPersona,
 } from './dashboardActions';
 import { buildHeroContent, summariseToday, type HeroLesson, type HeroTarget } from './heroContent';
 import { DashboardSkeleton } from '../../components/dashboard/DashboardSkeleton';
@@ -92,6 +94,8 @@ const PER_ROW = 4;
 /** Filled Ionicons — heavier weight than Feather strokes for dashboard tiles. */
 const TILE_ICON: Partial<Record<FeatherIconName, keyof typeof Ionicons.glyphMap>> = {
   info: 'information-circle',
+  bell: 'notifications',
+  smartphone: 'phone-portrait',
   'dollar-sign': 'cash',
   'credit-card': 'card',
   'plus-circle': 'add-circle',
@@ -289,9 +293,9 @@ export function DashboardHomeScreen() {
   } | null>(null);
 
   const baseActions = useMemo(() => actionsForPersona(persona), [persona]);
-  const actions = useMemo(() => {
-    const schoolModules = selectedSchool?.enabledModules ?? schools[0]?.enabledModules ?? null;
-    return baseActions.filter((action) => {
+  const actionAllowed = useCallback(
+    (action: DashboardAction) => {
+      const schoolModules = selectedSchool?.enabledModules ?? schools[0]?.enabledModules ?? null;
       if (action.requireAnyRole?.length && !holdsAnyRole(activeRoles, action.requireAnyRole)) {
         return false;
       }
@@ -301,9 +305,17 @@ export function DashboardHomeScreen() {
       const mod = DASHBOARD_ACTION_MODULE[action.id] ?? 'core';
       if (!schoolHasModule(schoolModules, mod)) return false;
       return true;
-    });
-  }, [activeRoles, baseActions, isClassTeacher, selectedSchool?.enabledModules, schools]);
-  const sections = useMemo(() => sectionsForActions(actions), [actions]);
+    },
+    [activeRoles, isClassTeacher, selectedSchool?.enabledModules, schools],
+  );
+  const actions = useMemo(() => baseActions.filter(actionAllowed), [baseActions, actionAllowed]);
+  /** Titled groups per user type (Quick access first); falls back to cards of eight. */
+  const sections = useMemo<ActionSection[]>(() => {
+    const grouped = dashboardSectionsForPersona(persona)
+      .map((sec, i) => ({ id: `section-${i}`, title: sec.title, actions: sec.actions.filter(actionAllowed) }))
+      .filter((sec) => sec.actions.length > 0);
+    return grouped.length ? grouped : sectionsForActions(actions);
+  }, [persona, actionAllowed, actions]);
 
   const [tokens, setTokens] = useState<number | null>(null);
   const [tokensLoading, setTokensLoading] = useState(false);
@@ -986,7 +998,7 @@ export function DashboardHomeScreen() {
       <ScrollView
         contentContainerStyle={[
           styles.content,
-          { paddingTop: floatingHeaderInset(insets.top), paddingBottom: 120 },
+          { paddingTop: floatingHeaderInset(insets.top), paddingBottom: floatingTabBarSpace(insets.bottom) + 16 },
         ]}
         showsVerticalScrollIndicator={false}>
         <Animated.View style={{ opacity: fade, transform: [{ translateY: slide }] }}>

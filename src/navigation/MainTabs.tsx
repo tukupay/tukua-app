@@ -34,6 +34,7 @@ import { JOIN_PROMPT_SEEN_KEY } from '../screens/dashboard/JoinSchoolScreen';
 import { listMyMemberships } from '../lib/joinRequestApi';
 import { TokenGateProvider, useTokenGate } from '../context/TokenGateContext';
 import { FloatingTabBar } from '../components/navigation/FloatingTabBar';
+import { TAB_SLIDE_TRANSITION_SPEC, TabSwipeLayout, tabSlideInterpolator } from './TabSwipe';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
@@ -166,6 +167,8 @@ function MainTabNavigator({
     <Tab.Navigator
       initialRouteName="Dashboard"
       tabBar={(p) => <FloatingTabBar {...p} />}
+      // Swipe left/right between tabs (full page on native tabs, screen edges on WebView tabs) — TabSwipe.tsx.
+      screenLayout={({ route, children }) => <TabSwipeLayout route={route}>{children}</TabSwipeLayout>}
       screenListeners={{
         state: (e) => {
           hideSystemStatusBar();
@@ -188,11 +191,10 @@ function MainTabNavigator({
         lazy: route.name !== 'Chat',
         unmountOnBlur: false,
         headerShown: false,
-        animation: 'fade',
-        transitionSpec: {
-          animation: 'timing',
-          config: { duration: 220 },
-        },
+        // Tab changes (tap or swipe) slide the pages sideways like a pager.
+        animation: 'shift',
+        transitionSpec: TAB_SLIDE_TRANSITION_SPEC,
+        sceneStyleInterpolator: tabSlideInterpolator,
         sceneStyle: [styles.scene, { backgroundColor: palette.muted }],
         tabBarActiveTintColor: palette.primary,
         tabBarInactiveTintColor: Colors.mutedForeground,

@@ -7,7 +7,8 @@
  * Uses each route's options.tabBarIcon / tabBarLabel / title / tabBarBadge / tabBarAccessibilityLabel,
  * emits tabPress (so `listeners` with preventDefault keep working) and tabLongPress, hides itself when
  * options.tabBarStyle has display: 'none', and steps aside for the Android keyboard.
- * Only react-native's Animated is used (no reanimated).
+ * Only react-native's Animated is used (no reanimated). Dragging sideways across the bar moves one tab
+ * (TabSwipe); taps and swipes share pressTab, so tabPress guards apply to both.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -22,8 +23,9 @@ import {
   type ViewStyle,
 } from 'react-native';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
-import { CommonActions } from '@react-navigation/native';
+import { GestureDetector } from 'react-native-gesture-handler';
 import { useAppTheme } from '../../context/AppThemeContext';
+import { pressTab, registerTabNavigator, useTabBarSwipeGesture } from '../../navigation/TabSwipe';
 
 /** The bar's own height (without margins or the safe-area inset). */
 export const FLOATING_TAB_BAR_HEIGHT = 62;
@@ -68,6 +70,9 @@ export function FloatingTabBar({ state, descriptors, navigation, insets }: Botto
   const green = palette.primary;
   const yellow = palette.secondary;
   const keyboardOpen = useKeyboardOpen();
+  const swipe = useTabBarSwipeGesture();
+  // Page swipes (TabSwipe) press tabs through the same navigator helpers as this bar.
+  registerTabNavigator(navigation, state);
 
   const focusedRoute = state.routes[state.index];
   const focusedOptions = descriptors[focusedRoute.key]?.options ?? {};
@@ -108,6 +113,7 @@ export function FloatingTabBar({ state, descriptors, navigation, insets }: Botto
         styles.wrap,
         { paddingBottom: BOTTOM_MARGIN + (insets?.bottom ?? 0) },
       ]}>
+      <GestureDetector gesture={swipe}>
       <View
         onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
         style={[
@@ -133,17 +139,12 @@ export function FloatingTabBar({ state, descriptors, navigation, insets }: Botto
                 : route.name;
 
           const onPress = () => {
-            const event = navigation.emit({
-              type: 'tabPress',
-              target: route.key,
-              canPreventDefault: true,
-            });
-            if (!focused && !event.defaultPrevented) {
-              navigation.dispatch({
-                ...CommonActions.navigate(route.name, route.params),
-                target: state.key,
-              });
+            if (focused) {
+              // Re-tapping the active tab still emits tabPress (listeners may scroll to top etc.).
+              navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+              return;
             }
+            pressTab(navigation, state, index);
           };
           const onLongPress = () => {
             navigation.emit({ type: 'tabLongPress', target: route.key });
@@ -190,6 +191,7 @@ export function FloatingTabBar({ state, descriptors, navigation, insets }: Botto
           );
         })}
       </View>
+      </GestureDetector>
     </View>
   );
 }
