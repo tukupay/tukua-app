@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, View, ViewStyle } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { LinearGradient } from '../FlatFill'; // flat fill: no gradients
 import { Colors } from '../../theme/yana';
 
 type Tone = 'clear' | 'frost' | 'tint' | 'light';

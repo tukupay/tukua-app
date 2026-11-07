@@ -1,6 +1,6 @@
 import React from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { LinearGradient } from '../FlatFill'; // flat fill: no gradients
 import { Colors } from '../../theme/yana';
 import { useAuthScale } from './useAuthScale';
 

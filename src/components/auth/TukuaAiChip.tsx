@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { LinearGradient } from '../FlatFill'; // flat fill: no gradients
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../theme/yana';
 

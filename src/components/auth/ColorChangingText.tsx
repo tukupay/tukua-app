@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
 import MaskedView from '@react-native-masked-view/masked-view';
-import { LinearGradient } from 'expo-linear-gradient';
+import { LinearGradient } from '../FlatFill'; // flat fill: no gradients
 import { Images } from '../../constants/images';
 import { RuggedGlowStar } from './RuggedGlowStar';
 import { Colors } from '../../theme/yana';

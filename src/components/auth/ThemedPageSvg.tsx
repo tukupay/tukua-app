@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { LinearGradient } from '../FlatFill'; // flat fill: no gradients
 import Svg, { Circle, Path, Polygon, Rect } from 'react-native-svg';
 import { useAppTheme } from '../../context/AppThemeContext';
 import { Colors } from '../../theme/yana';

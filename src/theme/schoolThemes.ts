@@ -19,7 +19,8 @@ export type SchoolThemeId =
   | 'monochromePearl'
   | 'gildedOnyx'
   | 'citronMoss'
-  | 'emberPine';
+  | 'emberPine'
+  | 'tukuaGold';
 
 export type ThemePalette = {
   primary: string;
@@ -102,6 +103,16 @@ const HSL_CONFIGS: Record<SchoolThemeId, Record<keyof ThemePalette, string>> = {
     secondaryForeground: 'hsl(235, 50%, 15%)',
     tertiaryForeground: 'hsl(235, 50%, 15%)',
     muted: 'hsl(235, 20%, 95%)',
+  },
+  /** Tukua default (owner, 2026-11-07): dark green + yellow, warm neutral pages (not green-tinted). */
+  tukuaGold: {
+    primary: 'hsl(132, 51%, 17%)',
+    secondary: 'hsl(45, 100%, 48%)',
+    tertiary: 'hsl(38, 85%, 36%)',
+    primaryForeground: 'hsl(0, 0%, 100%)',
+    secondaryForeground: 'hsl(132, 51%, 12%)',
+    tertiaryForeground: 'hsl(0, 0%, 100%)',
+    muted: 'hsl(45, 33%, 97%)',
   },
   forestSage: {
     primary: 'hsl(145, 40%, 25%)',
@@ -279,11 +290,12 @@ export const SCHOOL_THEME_LABELS: Record<SchoolThemeId, string> = {
   gildedOnyx: 'Gilded Onyx',
   citronMoss: 'Citron Moss',
   emberPine: 'Ember & Pine',
+  tukuaGold: 'Tukua Gold',
 };
 
 export const SCHOOL_THEME_IDS = Object.keys(SCHOOL_THEME_CONFIGS) as SchoolThemeId[];
 
-export const DEFAULT_SCHOOL_THEME: SchoolThemeId = 'forestSage';
+export const DEFAULT_SCHOOL_THEME: SchoolThemeId = 'tukuaGold';
 
 export const APP_THEME_STORAGE_KEY = 'tukua_app_theme';
 export const CHAT_BG_PATTERN_STORAGE_KEY = 'tukua_chat_bg_pattern';

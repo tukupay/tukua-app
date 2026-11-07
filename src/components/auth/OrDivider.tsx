@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { LinearGradient } from '../FlatFill'; // flat fill: no gradients
 
 /** Flutter YellowOne / YellowTwo OR dividers */
 export function OrDividerLabel({ label = 'OR' }: { label?: string }) {

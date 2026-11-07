@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { Colors } from '../../theme/yana';
 import { Animated, Dimensions, Easing, StyleSheet, View } from 'react-native';
 import Svg, {
   Circle,
@@ -9,7 +10,7 @@ import Svg, {
   RadialGradient,
   Stop,
 } from 'react-native-svg';
-import { LinearGradient } from 'expo-linear-gradient';
+import { LinearGradient } from '../FlatFill'; // flat fill: no gradients
 
 const { width: W, height: H } = Dimensions.get('window');
 
@@ -20,7 +21,15 @@ const AnimatedCircle = Animated.createAnimatedComponent(Circle);
  * Light canvas + soft liquid color blobs (design principle from TukuPay mock).
  * Glass morphism needs a patterned light surface underneath to frost.
  */
+/**
+ * Owner, 2026-11-07: no colour glows or gradients. The page is one flat warm-neutral colour;
+ * the animated blob version below is kept only as LiquidGlassBackdropBlobs (unused).
+ */
 export function LiquidGlassBackdrop() {
+  return <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: Colors.background }]} />;
+}
+
+export function LiquidGlassBackdropBlobs() {
   const a = useRef(new Animated.Value(0)).current;
   const b = useRef(new Animated.Value(0)).current;
   const c = useRef(new Animated.Value(0)).current;
