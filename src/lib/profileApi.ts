@@ -4,6 +4,8 @@ import { getNestApiBaseUrl } from './localHost';
 
 import { fetchWithPlatformAuth, resolveNestAccessTokenForWebView } from './platformNestAuth';
 
+import { apiError, fetchWithTimeout, messageForStatus, readJsonSafe, runWithTimeout, unwrapEnvelope } from './apiHttp';
+
 
 
 export type ProfileData = {
@@ -184,46 +186,20 @@ async function nestPlatformFetch<T>(
 
 
 
-  const response = await fetchWithPlatformAuth(url, {
-
-    method: opts.method ?? 'GET',
-
-    headers,
-
-    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
-
+  return runWithTimeout(async (signal) => {
+    const response = await fetchWithPlatformAuth(url, {
+      method: opts.method ?? 'GET',
+      headers,
+      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+      signal,
+    });
+    const json = await readJsonSafe(response);
+    if (!response.ok) {
+      throw apiError(messageForStatus(response.status, json), { statusCode: response.status });
+    }
+    // Empty body → {} so callers reading `.items` / `.profile` never touch null.
+    return (unwrapEnvelope<T>(json) ?? ({} as T)) as T;
   });
-
-  const json = await response.json().catch(() => null);
-
-  if (!response.ok) {
-
-    const msg =
-
-      (typeof json?.message === 'string' && json.message) ||
-
-      (typeof json?.error === 'string' && json.error) ||
-
-      `Request failed (${response.status})`;
-
-    throw new Error(msg);
-
-  }
-
-  if (json && typeof json === 'object' && 'success' in json && 'data' in json) {
-
-    return (json as { data: T }).data;
-
-  }
-
-  if (json && typeof json === 'object' && 'data' in json) {
-
-    return (json as { data: T }).data;
-
-  }
-
-  return json as T;
-
 }
 
 
@@ -492,7 +468,7 @@ export async function requestAccountDeletion(body: {
 
   const base = getNestApiBaseUrl().replace(/\/$/, '');
 
-  const response = await fetch(`${base}/platform/account/deletion-request`, {
+  const response = await fetchWithTimeout(`${base}/platform/account/deletion-request`, {
 
     method: 'POST',
 

@@ -1,5 +1,6 @@
 import { getNestApiBaseUrl } from './localHost';
 import { resolveAgencyLogoUrl } from './resolveAgencyLogo';
+import { fetchWithTimeout } from './apiHttp';
 
 export type CertifyingAgency = {
   id: string;
@@ -29,7 +30,7 @@ const FALLBACK: CertifyingAgency[] = [
 export async function fetchCertifyingAgencies(): Promise<CertifyingAgency[]> {
   try {
     const base = getNestApiBaseUrl().replace(/\/$/, '');
-    const res = await fetch(`${base}/platform/certifying-agencies`, {
+    const res = await fetchWithTimeout(`${base}/platform/certifying-agencies`, {
       headers: { Accept: 'application/json' },
     });
     if (!res.ok) return FALLBACK;

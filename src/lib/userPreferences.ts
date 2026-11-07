@@ -1,6 +1,7 @@
 import { log } from './logger';
 import { getNestApiBaseUrl } from './localHost';
 import { resolveNestAccessTokenForWebView } from './platformNestAuth';
+import { fetchWithTimeout } from './apiHttp';
 
 type UserPreferences = Record<string, unknown> & {
   sarcasm_mode?: boolean;
@@ -10,7 +11,7 @@ type UserPreferences = Record<string, unknown> & {
 async function nestSavageToggle(): Promise<boolean | null> {
   const token = await resolveNestAccessTokenForWebView();
   if (!token) return null;
-  const res = await fetch(`${getNestApiBaseUrl().replace(/\/$/, '')}/platform/preferences/savage/toggle`, {
+  const res = await fetchWithTimeout(`${getNestApiBaseUrl().replace(/\/$/, '')}/platform/preferences/savage/toggle`, {
     method: 'POST',
     headers: {
       Accept: 'application/json',
@@ -21,7 +22,7 @@ async function nestSavageToggle(): Promise<boolean | null> {
   });
   const json = await res.json().catch(() => null);
   if (!res.ok) {
-    log.warn('Preferences', 'nest savage failed', res.status, json?.message);
+    log.warn('Preferences', 'nest savage failed', { status: res.status, message: json?.message });
     return null;
   }
   const data = json?.data ?? json;
@@ -32,12 +33,12 @@ async function getCurrentPreferencesViaNest(): Promise<UserPreferences | null> {
   try {
     const token = await resolveNestAccessTokenForWebView();
     if (!token) return null;
-    const res = await fetch(`${getNestApiBaseUrl().replace(/\/$/, '')}/platform/preferences`, {
+    const res = await fetchWithTimeout(`${getNestApiBaseUrl().replace(/\/$/, '')}/platform/preferences`, {
       headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
     });
     const json = await res.json().catch(() => null);
     if (!res.ok) {
-      log.warn('Preferences', 'nest fetch failed', res.status, json?.message);
+      log.warn('Preferences', 'nest fetch failed', { status: res.status, message: json?.message });
       return null;
     }
     const data = (json?.data ?? json) as UserPreferences | null;
@@ -71,7 +72,7 @@ export async function getSavageModeEnabled(): Promise<boolean> {
   try {
     const token = await resolveNestAccessTokenForWebView();
     if (token) {
-      const res = await fetch(`${getNestApiBaseUrl().replace(/\/$/, '')}/platform/preferences`, {
+      const res = await fetchWithTimeout(`${getNestApiBaseUrl().replace(/\/$/, '')}/platform/preferences`, {
         headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
       });
       const json = await res.json().catch(() => null);

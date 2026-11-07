@@ -53,8 +53,34 @@ export async function fetchParentChildren() {
   );
 }
 
-export async function fetchParentSchool() {
-  return deskFetch<{ school?: Record<string, unknown> }>('/parents/me/school');
+/**
+ * The active school's details. `/parents/me/school` answers only for parents (403 for security and
+ * other staff, who also show the school card); everyone else reads `/schools/:id`.
+ */
+export async function fetchParentSchool(): Promise<{ school?: Record<string, unknown> }> {
+  try {
+    const data = await deskFetch<{ school?: Record<string, unknown> } | null>('/parents/me/school');
+    return data ?? {};
+  } catch (e) {
+    const status = (e as { statusCode?: number })?.statusCode;
+    const schoolId = getDeskActiveContext().schoolId;
+    if ((status !== 403 && status !== 404) || !schoolId) throw e;
+    const row = await deskFetch<Record<string, unknown> | null>(`/schools/${encodeURIComponent(schoolId)}`);
+    const school = (row && typeof row === 'object' && 'school' in row ? (row as { school?: Record<string, unknown> }).school : row) ?? undefined;
+    if (!school) return {};
+    const contact = (school.contact ?? {}) as Record<string, unknown>;
+    const details = (school.details ?? {}) as Record<string, unknown>;
+    // Same field names as /parents/me/school so the school card reads either.
+    return {
+      school: {
+        ...school,
+        address: school.address ?? contact.address ?? null,
+        phone: school.phone ?? contact.phone ?? null,
+        email: school.email ?? contact.email ?? null,
+        principal_name: school.principal_name ?? details.principal ?? null,
+      },
+    };
+  }
 }
 
 export async function fetchChildTeachers(studentId?: string | null) {

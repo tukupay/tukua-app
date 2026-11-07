@@ -7,6 +7,7 @@
 import { getNestApiBaseUrl } from './localHost';
 import { searchRegistrationSchools } from './platformAuthApi';
 import { resolveNestAccessTokenForWebView } from './platformNestAuth';
+import { apiError, fetchWithTimeout, messageForStatus, readJsonSafe, unwrapEnvelope } from './apiHttp';
 
 export type JoinSchoolHit = {
   id: string;
@@ -64,23 +65,17 @@ async function nestJoinFetch<T>(
   };
   if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
 
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method: opts.method ?? 'GET',
     headers,
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
   });
-  const json = await res.json().catch(() => null);
+  const json = await readJsonSafe(res);
   if (!res.ok) {
-    const msg =
-      (typeof json?.message === 'string' && json.message) ||
-      (typeof json?.error === 'string' && json.error) ||
-      `Nest ${res.status}`;
-    throw new Error(msg);
+    throw apiError(messageForStatus(res.status, json), { statusCode: res.status });
   }
-  if (json && typeof json === 'object' && 'data' in json) {
-    return (json as { data: T }).data;
-  }
-  return json as T;
+  // Empty body → {} so callers reading `.students` / `.memberships` never touch null.
+  return (unwrapEnvelope<T>(json) ?? ({} as T)) as T;
 }
 
 async function platformDbSelect<T = Record<string, unknown>>(opts: {
@@ -92,7 +87,7 @@ async function platformDbSelect<T = Record<string, unknown>>(opts: {
     const token = await resolveNestAccessTokenForWebView();
     if (!token) return [];
     const base = getNestApiBaseUrl().replace(/\/$/, '');
-    const res = await fetch(`${base}/platform/db`, {
+    const res = await fetchWithTimeout(`${base}/platform/db`, {
       method: 'POST',
       headers: {
         Accept: 'application/json',
@@ -106,9 +101,10 @@ async function platformDbSelect<T = Record<string, unknown>>(opts: {
         filters: opts.filters || [],
       }),
     });
-    const json = await res.json().catch(() => null);
+    const json = (await readJsonSafe(res)) as { data?: unknown } | null;
     if (!res.ok) return [];
-    const payload = json?.data?.data ?? json?.data ?? [];
+    const inner = json?.data as { data?: unknown } | unknown[] | undefined;
+    const payload = (inner && !Array.isArray(inner) ? inner.data : inner) ?? [];
     return (Array.isArray(payload) ? payload : []) as T[];
   } catch {
     return [];
@@ -176,18 +172,14 @@ export async function searchJoinSchools(
     const token = await resolveNestAccessTokenForWebView();
     if (!token) throw new Error('Sign in required');
     const base = getNestApiBaseUrl().replace(/\/$/, '');
-    const res = await fetch(`${base}/parents/join/schools?${qs}`, {
+    const res = await fetchWithTimeout(`${base}/parents/join/schools?${qs}`, {
       method: 'GET',
       headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
       signal: opts?.signal,
     });
-    const json = await res.json().catch(() => null);
+    const json = (await readJsonSafe(res)) as Record<string, unknown> | null;
     if (!res.ok) {
-      const msg =
-        (typeof json?.message === 'string' && json.message) ||
-        (typeof json?.error === 'string' && json.error) ||
-        `Nest ${res.status}`;
-      throw new Error(msg);
+      throw apiError(messageForStatus(res.status, json), { statusCode: res.status });
     }
     const data =
       json && typeof json === 'object' && 'data' in json

@@ -169,43 +169,72 @@ export async function fetchStudentDayMarks(studentId: string, date: string) {
 
 
 
-/** Best-effort recent attendance — last N calendar days with any mark. */
-
-export async function fetchStudentRecentAttendance(studentId: string, days = 14) {
-
-  const marks: StudentDayMark[] = [];
-
-  const today = new Date();
-
-  for (let i = 0; i < days; i += 1) {
-
-    const d = new Date(today);
-
-    d.setDate(today.getDate() - i);
-
-    const date = d.toISOString().slice(0, 10);
-
-    try {
-
-      const res = await fetchStudentDayMarks(studentId, date);
-
-      const batch = unwrapList<StudentDayMark>(res, ['marks']);
-
-      for (const m of batch) marks.push({ ...m, marked_at: m.marked_at ?? date });
-
-    } catch {
-
-      // skip day
-
+/** A learner's own daily attendance rows (`GET /students/me/attendance`) as check-in / check-out marks. */
+async function fetchOwnAttendanceMarks(studentId: string, days: number): Promise<StudentDayMark[] | null> {
+  try {
+    const data = await deskFetch<{ records?: Array<Record<string, unknown>> } | null>('/students/me/attendance');
+    const records = unwrapList<Record<string, unknown>>(data, ['records']);
+    const since = new Date();
+    since.setDate(since.getDate() - (days - 1));
+    const sinceDay = since.toISOString().slice(0, 10);
+    const marks: StudentDayMark[] = [];
+    for (const r of records) {
+      if (studentId && r.student_id && String(r.student_id) !== studentId) continue;
+      const day = String(r.attendance_date ?? '').slice(0, 10);
+      if (!day || day < sinceDay) continue;
+      const status = String(r.status ?? '').toLowerCase();
+      if (status === 'absent') continue;
+      const method = r.method != null ? String(r.method) : null;
+      marks.push({
+        person_type: 'student',
+        person_id: studentId || (r.student_id != null ? String(r.student_id) : null),
+        direction: 'in',
+        marked_at: String(r.check_in_at ?? day),
+        method,
+        source: status || 'daily',
+      });
+      if (r.check_out_at) {
+        marks.push({
+          person_type: 'student',
+          person_id: studentId || null,
+          direction: 'out',
+          marked_at: String(r.check_out_at),
+          method,
+          source: status || 'daily',
+        });
+      }
     }
-
+    marks.sort((a, b) => String(b.marked_at ?? '').localeCompare(String(a.marked_at ?? '')));
+    return marks;
+  } catch {
+    return null;
   }
-
-  return marks;
-
 }
 
+/**
+ * Recent attendance — last N days. The learner's own daily register (`/students/me/attendance`, one
+ * call) first; per-day gate marks (`/attendance/day-marks`, N calls) only when that is not available.
+ */
+export async function fetchStudentRecentAttendance(studentId: string, days = 14) {
+  const own = await fetchOwnAttendanceMarks(studentId, days);
+  if (own && own.length) return own;
 
+  const marks: StudentDayMark[] = [];
+  const today = new Date();
+  for (let i = 0; i < days; i += 1) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const date = d.toISOString().slice(0, 10);
+    try {
+      const res = await fetchStudentDayMarks(studentId, date);
+      const batch = unwrapList<StudentDayMark>(res, ['marks']);
+      for (const m of batch) marks.push({ ...m, marked_at: m.marked_at ?? date });
+    } catch {
+      // skip day
+    }
+  }
+  return marks;
+}
 
 /** Assignments — Nest student self-service (S11); honest empty until homework module. */
 export async function fetchStudentAssignments(_studentId: string) {
@@ -258,9 +287,33 @@ export async function fetchStudentExamMarksheet(examId: string): Promise<{
   };
 }
 
-/** Student pocket wallet — manager-only on Nest; returns null on 403 (honest hide in hero). */
+/** Student pocket balance: own wallet first, then the staff route; null when neither answers. */
+/** The learner's own pocket-money wallet (`GET /students/me/pocket-money`); null when not available. */
+async function fetchOwnPocketMoney(studentId: string): Promise<{
+  balance: number | null;
+  transactions: Array<Record<string, unknown>>;
+} | null> {
+  try {
+    const data = await deskFetch<{
+      wallets?: Array<{ student_id?: string; balance?: number | string }>;
+      transactions?: Array<Record<string, unknown>>;
+    } | null>('/students/me/pocket-money');
+    const wallets = unwrapList<{ student_id?: string; balance?: number | string }>(data, ['wallets']);
+    const wallet = wallets.find((w) => !studentId || String(w.student_id ?? '') === studentId) ?? wallets[0];
+    const n = Number(wallet?.balance);
+    return {
+      balance: wallet && Number.isFinite(n) ? n : null,
+      transactions: unwrapList<Record<string, unknown>>(data, ['transactions', 'items']),
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function tryFetchStudentPocketBalance(studentId: string): Promise<number | null> {
   if (!studentId) return null;
+  const own = await fetchOwnPocketMoney(studentId);
+  if (own && own.balance !== null) return own.balance;
   try {
     const data = await deskFetch<{ wallet?: { balance?: number }; balance?: number }>(
       `/pocket-money/wallets/${encodeURIComponent(studentId)}`,
@@ -275,7 +328,7 @@ export async function tryFetchStudentPocketBalance(studentId: string): Promise<n
   }
 }
 
-/** Read-only pocket screen — surfaces 403 without throwing. */
+/** Read-only pocket screen — own wallet first; surfaces 403 from the staff route without throwing. */
 export async function fetchStudentPocketMoneyReadOnly(studentId: string): Promise<{
   forbidden: boolean;
   balance: number | null;
@@ -284,6 +337,9 @@ export async function fetchStudentPocketMoneyReadOnly(studentId: string): Promis
   if (!studentId) {
     return { forbidden: false, balance: null, transactions: [] };
   }
+  // A learner reads their own wallet; /pocket-money/wallets/:id is for school staff (403 for learners).
+  const own = await fetchOwnPocketMoney(studentId);
+  if (own) return { forbidden: false, balance: own.balance, transactions: own.transactions };
   try {
     const data = await deskFetch<{
       wallet?: { balance?: number };
@@ -302,7 +358,7 @@ export async function fetchStudentPocketMoneyReadOnly(studentId: string): Promis
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    if (/403|forbidden|permission/i.test(msg)) {
+    if ((e as { statusCode?: number })?.statusCode === 403 || /403|forbidden|permission|not have access/i.test(msg)) {
       return { forbidden: true, balance: null, transactions: [] };
     }
     throw e;

@@ -153,19 +153,18 @@ export async function fetchExamMarksheet(examId: string, classId?: string, limit
 
 
 export async function fetchExamAggregates(examId: string, classId?: string) {
-
   const params = new URLSearchParams();
-
   if (classId) params.set('class_id', classId);
-
   const q = params.toString() ? `?${params}` : '';
-
-  return deskFetch<{ aggregates?: Array<Record<string, unknown>>; count?: number }>(
-
-    `/assessments/reports/exams/${encodeURIComponent(examId)}/aggregates${q}`,
-
-  );
-
+  const data = await deskFetch<{
+    aggregates?: Array<Record<string, unknown>>;
+    class_subjects?: Array<Record<string, unknown>>;
+    count?: number;
+  } | null>(`/assessments/reports/exams/${encodeURIComponent(examId)}/aggregates${q}`);
+  // The API answers { exam, class_subjects, level_subjects, scope_overall, narratives }: the per class ×
+  // subject rows are what the Reports hub counts as "aggregate rows".
+  const aggregates = unwrapList<Record<string, unknown>>(data, ['aggregates', 'class_subjects']);
+  return { ...(data ?? {}), aggregates, count: aggregates.length };
 }
 
 
@@ -182,7 +181,7 @@ export async function fetchClasses(limit = 60) {
 
   const data = await deskFetch<{ classes?: Array<Record<string, unknown>> }>(
 
-    `/classes?limit=${limit}&page=1`,
+    `/classes?limit=${Math.min(Math.max(limit, 1), 100)}&page=1`,
 
   );
 
@@ -193,17 +192,26 @@ export async function fetchClasses(limit = 60) {
 
 
 export async function fetchClassEnrollments(classId: string, limit = 100) {
-
-  const params = new URLSearchParams({ class_id: classId, limit: String(limit), page: '1' });
-
+  const capped = Math.min(Math.max(limit, 1), 100);
+  const params = new URLSearchParams({ class_id: classId, limit: String(capped), page: '1' });
   const data = await deskFetch<{ enrollments?: Array<Record<string, unknown>> }>(
-
     `/classes/enrollments?${params}`,
-
   );
-
-  return unwrapList<Record<string, unknown>>(data, ['enrollments']);
-
+  const rows = unwrapList<Record<string, unknown>>(data, ['enrollments']);
+  if (rows.length) return rows;
+  // Many schools never fill academic_enrollments: each learner's class is on the student record.
+  try {
+    const students = await deskFetch<{ students?: Array<Record<string, unknown>> }>(
+      `/students?${new URLSearchParams({ class_id: classId, limit: String(capped), page: '1' })}`,
+    );
+    return unwrapList<Record<string, unknown>>(students, ['students', 'items']).map((s) => ({
+      ...s,
+      student_id: s.student_id ?? s.id,
+      admission_number: s.admission_number ?? s.student_number,
+    }));
+  } catch {
+    return rows;
+  }
 }
 
 
@@ -300,7 +308,8 @@ export async function fetchClassTimetable(classId: string) {
 }
 
 export async function fetchClassTeacherClasses(teacherUserId: string) {
-  const data = await deskFetch<{ classes?: Array<Record<string, unknown>> }>('/classes?limit=120&page=1');
+  // The API caps `limit` at 100 (120 answered 400).
+  const data = await deskFetch<{ classes?: Array<Record<string, unknown>> }>('/classes?limit=100&page=1');
   const classes = unwrapList<Record<string, unknown>>(data, ['classes']);
   return classes.filter(
     (c) =>
@@ -312,11 +321,50 @@ export async function fetchTeacherDisciplineIncidents() {
   return deskFetch<unknown>('/discipline/incidents?scope=mine');
 }
 
-export async function fetchMarksEntryStatus(examId?: string) {
-  const params = examId ? `?exam_id=${encodeURIComponent(examId)}` : '';
-  return deskFetch<{ rows?: Array<Record<string, unknown>>; items?: Array<Record<string, unknown>> }>(
-    `/assessments/marks/entry-status${params}`,
+export type MarksEntryStatusRow = {
+  exam_id?: string;
+  class_id?: string;
+  class_name?: string;
+  subject_id?: string;
+  subject_name?: string;
+  teacher_name?: string;
+  pending_count?: number;
+  total_count?: number;
+  entered_count?: number;
+};
+
+/**
+ * Outstanding mark entry (class × subject rows with marks still to enter) for one exam — the latest
+ * exam when none is given (the API requires `exam_id`; calling without it answered 400).
+ */
+export async function fetchMarksEntryStatus(examId?: string): Promise<{
+  exam_id: string | null;
+  rows: MarksEntryStatusRow[];
+  items: MarksEntryStatusRow[];
+}> {
+  let id = (examId ?? '').trim();
+  if (!id) {
+    const exams = await fetchTeacherExams(5);
+    id = String(exams[0]?.id ?? '').trim();
+    if (!id) return { exam_id: null, rows: [], items: [] };
+  }
+  const data = await deskFetch<{ exam_id?: string; classes?: Array<Record<string, unknown>> } | null>(
+    `/assessments/marks/entry-status?exam_id=${encodeURIComponent(id)}`,
   );
+  const rows = unwrapList<Record<string, unknown>>(data, ['classes', 'rows', 'items'])
+    .map((c) => ({
+      exam_id: String(c.exam_id ?? id),
+      class_id: c.class_id != null ? String(c.class_id) : undefined,
+      class_name: c.class_name != null ? String(c.class_name) : undefined,
+      subject_id: c.subject_id != null ? String(c.subject_id) : undefined,
+      subject_name: c.subject_name != null ? String(c.subject_name) : undefined,
+      teacher_name: c.teacher_name != null ? String(c.teacher_name) : undefined,
+      pending_count: Number(c.pending_students ?? c.pending_count ?? 0) || 0,
+      total_count: Number(c.total_students ?? c.total_count ?? 0) || 0,
+      entered_count: Number(c.entered_students ?? c.entered_count ?? 0) || 0,
+    }))
+    .filter((r) => r.pending_count > 0);
+  return { exam_id: id, rows, items: rows };
 }
 
 export async function searchDisciplineStudents(q: string) {

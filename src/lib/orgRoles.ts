@@ -7,6 +7,7 @@ import { getNestApiBaseUrl } from './localHost';
 import { log } from './logger';
 import { resolveNestAccessTokenForWebView } from './platformNestAuth';
 import { parseEnabledModules } from './schoolModules';
+import { fetchWithTimeout } from './apiHttp';
 
 export type OrgMembership = {
   roles: string[];
@@ -67,7 +68,7 @@ async function platformDbSelect<T = Record<string, unknown>>(opts: {
     const token = await resolveNestAccessTokenForWebView();
     if (!token) return { data: opts.maybeSingle ? null : [], error: 'Sign in required' };
     const base = getNestApiBaseUrl().replace(/\/$/, '');
-    const res = await fetch(`${base}/platform/db`, {
+    const res = await fetchWithTimeout(`${base}/platform/db`, {
       method: 'POST',
       headers: {
         Accept: 'application/json',
@@ -392,7 +393,7 @@ async function nestParentsChildren(organizationId: string): Promise<SchoolStuden
     const token = await resolveNestAccessTokenForWebView();
     if (!token) return [];
     const base = getNestApiBaseUrl().replace(/\/$/, '');
-    const res = await fetch(`${base}/parents/me/children`, {
+    const res = await fetchWithTimeout(`${base}/parents/me/children`, {
       method: 'GET',
       headers: {
         Accept: 'application/json',

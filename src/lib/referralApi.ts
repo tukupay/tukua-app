@@ -32,12 +32,32 @@ export type MyReferrals = {
 
 export type ReferralCourse = { id: string; title: string; price: number; commission: number; link: string };
 
-export function fetchMyReferrals(): Promise<MyReferrals> {
-  return deskFetch<MyReferrals>('/platform/referrals/me');
+export async function fetchMyReferrals(): Promise<MyReferrals> {
+  const data = await deskFetch<Partial<MyReferrals> | null>('/platform/referrals/me');
+  const d = data ?? {};
+  // The screen reads `people.length` / `people.map` directly: always an array.
+  return {
+    ...d,
+    enabled: Boolean(d.enabled),
+    code: String(d.code ?? ''),
+    link: String(d.link ?? ''),
+    shares: (d.shares ?? {}) as MyReferrals['shares'],
+    target: { count: 0, reward: 0, reached: 0, ...(d.target ?? {}) },
+    registered: Number(d.registered ?? 0) || 0,
+    paid: Number(d.paid ?? 0) || 0,
+    course_commission_pct: Number(d.course_commission_pct ?? 0) || 0,
+    people: Array.isArray(d.people) ? d.people : [],
+  } as MyReferrals;
 }
 
-export function fetchReferralCourses(): Promise<{ commission_pct: number; items: ReferralCourse[] }> {
-  return deskFetch<{ commission_pct: number; items: ReferralCourse[] }>('/platform/referrals/me/courses');
+export async function fetchReferralCourses(): Promise<{ commission_pct: number; items: ReferralCourse[] }> {
+  const data = await deskFetch<{ commission_pct?: number; items?: ReferralCourse[] } | null>(
+    '/platform/referrals/me/courses',
+  );
+  return {
+    commission_pct: Number(data?.commission_pct ?? 0) || 0,
+    items: Array.isArray(data?.items) ? data!.items! : [],
+  };
 }
 
 export const kes = (n: number) => `KES ${Math.round(Number(n) || 0).toLocaleString('en-KE')}`;

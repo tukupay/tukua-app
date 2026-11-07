@@ -7,6 +7,7 @@ import * as SecureStore from './secureStore';
 import { getDeskApiBaseUrl, getLocalUrlDebugInfo } from './localHost';
 import { log } from './logger';
 import { normalizeDeskRoles } from './deskRoles';
+import { API_TIMEOUT_MS, NETWORK_MESSAGE, fetchWithTimeout, messageForStatus, readJsonSafe } from './apiHttp';
 
 const DESK_TOKEN_KEY = 'tukua_desk_auth_token';
 const DESK_USER_KEY = 'tukua_desk_user';
@@ -324,6 +325,8 @@ export async function deskFetch<T = unknown>(
     method?: string;
     body?: unknown;
     token?: string | null;
+    /** Give up after this long (default 20 s). */
+    timeoutMs?: number;
     /** Internal: already tried Nest soft-reconnect after 401. */
     _retriedNest?: boolean;
   } = {},
@@ -367,27 +370,19 @@ export async function deskFetch<T = unknown>(
 
   let res: Response;
   try {
-    res = await fetch(url, {
+    res = await fetchWithTimeout(url, {
       method: opts.method ?? 'GET',
       headers,
       body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
-    });
+    }, opts.timeoutMs ?? API_TIMEOUT_MS);
   } catch (error) {
-    const hosted = /^https:\/\//i.test(url);
-    const hint = hosted
-      ? `Cannot reach ${url}. Check network / VPN, or Railway API status (GET /api/health).`
-      : `Cannot reach ${url}. Desk Electron must listen on LAN :3251 (not 127.0.0.1-only). Restart Desk after API_HOST=0.0.0.0.`;
-    log.warn('DeskApi', 'network error', String(error));
-    throw new Error(hint);
+    // Clean sentence for the screen; the URL and the cause go to the log only.
+    log.warn('DeskApi', 'network error', { url, error: String(error) });
+    throw error instanceof Error ? error : new Error(NETWORK_MESSAGE);
   }
 
-  const text = await res.text();
-  let json: unknown = null;
-  try {
-    json = text ? JSON.parse(text) : null;
-  } catch {
-    json = { message: text };
-  }
+  // Non-JSON (an HTML error page from a proxy, an empty body) reads as null, never as the message.
+  const json: unknown = await readJsonSafe(res);
 
   if (!res.ok) {
     const isLogin = path.includes('/auth/login');
@@ -406,13 +401,12 @@ export async function deskFetch<T = unknown>(
           ? String((json as { code: string }).code).trim()
           : '';
     const baseMsg =
-      res.status === 401
+      res.status === 401 && !isLogin
         ? 'Session expired. Please login to continue'
-        : (json as { message?: string; error?: string })?.message ||
-          (json as { error?: string })?.error ||
-          `Desk API ${res.status}`;
+        : messageForStatus(res.status, json);
+    // Append machine codes (mpesa_not_configured) but not HTTP phrases ("Forbidden", "Bad Request").
     const msg =
-      errCode && errCode !== baseMsg && !String(baseMsg).includes(errCode)
+      errCode && errCode.includes('_') && errCode !== baseMsg && !String(baseMsg).includes(errCode)
         ? `${baseMsg} (${errCode})`
         : String(baseMsg);
     log.warn('DeskApi', msg, { status: res.status, path, error: errCode || undefined });
@@ -420,8 +414,8 @@ export async function deskFetch<T = unknown>(
   }
 
   if (json && typeof json === 'object' && 'success' in json && (json as { success: boolean }).success === false) {
-    const msg = (json as { message?: string }).message || 'Desk request failed';
-    throw new Error(msg);
+    const msg = messageForStatus(res.status, json) || 'Desk request failed';
+    throw Object.assign(new Error(msg), { statusCode: res.status });
   }
 
   return unwrapData<T>(json);
@@ -447,8 +441,8 @@ export async function deskLogin(email: string, password: string): Promise<DeskLo
       token: null,
     });
 
-    const token = data.token || data.access_token || '';
-    const user = data.user ?? (data as unknown as DeskUser);
+    const token = data?.token || data?.access_token || '';
+    const user = data?.user ?? ((data ?? {}) as unknown as DeskUser);
 
     if (!token) {
       throw new Error('Desk login response missing token');
@@ -474,7 +468,7 @@ export async function deskLogin(email: string, password: string): Promise<DeskLo
     return {
       token,
       user: deskUser,
-      loginType: data.loginType,
+      loginType: data?.loginType,
     };
   })();
 
