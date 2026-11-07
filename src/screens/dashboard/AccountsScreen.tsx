@@ -11,7 +11,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import * as DocumentPicker from 'expo-document-picker';
+import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -314,15 +314,12 @@ export function AccountsScreen({ navigation }: Props) {
 
   const pickSlipImage = async () => {
     try {
-      const picked = await DocumentPicker.getDocumentAsync({
-        type: ['image/*'],
-        copyToCacheDirectory: true,
-        multiple: false,
-      });
+      // Re-encoded JPEG (quality 0.7): a full-size phone photo sent as base64 would pass the API's 12 MB limit.
+      const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7 });
       if (picked.canceled || !picked.assets?.[0]) return;
       const asset = picked.assets[0];
       setSlipFileUri(asset.uri);
-      setSlipFileName(asset.name || 'bank-slip.jpg');
+      setSlipFileName(asset.fileName || 'bank-slip.jpg');
     } catch (e) {
       showDialog({
         title: 'Could not open photo',

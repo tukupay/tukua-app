@@ -14,7 +14,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
 import { useDialog } from '../../context/DialogContext';
 import { useWebViewControl } from '../../context/WebViewControlContext';
-import { useTokenGate } from '../../context/TokenGateContext';
 import { biometricEnableMessage, enableBiometrics } from '../../lib/biometrics';
 import { toggleSavageMode } from '../../lib/userPreferences';
 import { hideSystemStatusBar } from '../ImmersiveSystemBars';
@@ -50,8 +49,7 @@ export function NativeAppHeader() {
   const { palette } = useAppTheme();
   const { profile, logout, session, savageMode, setSavageMode } = useAuth();
   const { showDialog } = useDialog();
-  const { navigate, sendChatCommand, jumpToTab, activeTabPath } = useWebViewControl();
-  const { guardNavigation } = useTokenGate();
+  const { jumpToTab, activeTabPath } = useWebViewControl();
   const [open, setOpen] = useState(false);
   const [chatsOpen, setChatsOpen] = useState(false);
   const savageOpacity = useRef(new Animated.Value(SAVAGE_OFF_OPACITY)).current;
@@ -168,42 +166,16 @@ export function NativeAppHeader() {
     });
   }, [logout, showDialog]);
 
+  /**
+   * Account menu only (owner, 2026-11-07: "remove apps and etc."). Gone from here: New chat and AI models
+   * (chat drawer and chat screen), Apps, Balances & tokens (the balance pill in this bar), Courses and
+   * Dashboard (bottom tabs).
+   */
   const menuSections = useMemo(
     () => [
       {
-        title: 'AI',
-        items: [
-          {
-            id: 'new-chat',
-            label: 'New chat',
-            icon: 'sparkles-outline' as const,
-            onPress: (): void => {
-              sendChatCommand('new_chat');
-            },
-          },
-          {
-            id: 'models',
-            label: 'AI models',
-            icon: 'sparkles-outline' as const,
-            onPress: () => sendChatCommand('open_models'),
-          },
-          {
-            id: 'apps',
-            label: 'Apps (e-Post and others)',
-            icon: 'apps-outline' as const,
-            onPress: () => sendChatCommand('open_apps'),
-          },
-        ],
-      },
-      {
         title: 'Account',
         items: [
-          {
-            id: 'notifications',
-            label: 'Notifications',
-            icon: 'notifications-outline' as const,
-            onPress: () => navigateDashboard('Notifications'),
-          },
           {
             id: 'profile',
             label: 'Profile',
@@ -211,16 +183,22 @@ export function NativeAppHeader() {
             onPress: () => openProfileScreen('ProfileHome'),
           },
           {
-            id: 'balances',
-            label: 'Balances & tokens',
-            icon: 'wallet-outline' as const,
-            onPress: () => openProfileScreen('Balances'),
+            id: 'notifications',
+            label: 'Notifications',
+            icon: 'notifications-outline' as const,
+            onPress: () => navigateDashboard('Notifications'),
           },
           {
             id: 'settings',
             label: 'Settings',
             icon: 'settings-outline' as const,
             onPress: () => openProfileScreen('Preferences'),
+          },
+          {
+            id: 'themes',
+            label: 'Theme',
+            icon: 'color-palette-outline' as const,
+            onPress: () => openProfileScreen('ProfileThemes'),
           },
           {
             id: 'biometrics',
@@ -237,25 +215,8 @@ export function NativeAppHeader() {
           },
         ],
       },
-      {
-        title: 'Explore',
-        items: [
-          {
-            id: 'courses',
-            label: 'Courses',
-            icon: 'book-outline' as const,
-            onPress: () => guardNavigation(() => navigate('/courses', '/courses')),
-          },
-          {
-            id: 'dashboard',
-            label: 'Dashboard',
-            icon: 'grid-outline' as const,
-            onPress: () => guardNavigation(() => jumpToTab('Dashboard')),
-          },
-        ],
-      },
     ],
-    [guardNavigation, handleEnableBiometrics, handleLogout, jumpToTab, navigate, openProfileScreen, sendChatCommand],
+    [handleEnableBiometrics, handleLogout, openProfileScreen],
   );
 
   return (

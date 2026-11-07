@@ -1,3 +1,5 @@
+import { File as FsFile } from 'expo-file-system';
+
 import { getNestApiBaseUrl } from './localHost';
 
 import { fetchWithPlatformAuth, resolveNestAccessTokenForWebView } from './platformNestAuth';
@@ -651,6 +653,23 @@ export async function createSignedDownload(path: string): Promise<string> {
 
 
 
+/**
+ * A multipart file part for a local file (file:// from the image or document picker).
+ *
+ * Expo SDK 57 replaces the global `fetch` with `expo/fetch`, which cannot send React Native's
+ * `{ uri, name, type }` parts: it throws "Unsupported FormDataPart implementation" before any request
+ * leaves the phone. `expo/fetch` reads a part through `bytes()`, so the part carries that too; `uri` stays
+ * for React Native's own fetch (EXPO_PUBLIC_USE_RN_FETCH=1).
+ */
+export function localFilePart(uri: string, name: string, mimeType?: string | null) {
+  return {
+    uri,
+    name,
+    type: mimeType || 'application/octet-stream',
+    bytes: () => new FsFile(uri).bytes(),
+  };
+}
+
 export async function uploadProfileFile(input: {
 
   uri: string;
@@ -673,29 +692,15 @@ export async function uploadProfileFile(input: {
 
   const form = new FormData();
 
-  form.append(
-
-    'file',
-
-    {
-
-      uri: input.uri,
-
-      name: input.name,
-
-      type: input.mimeType || 'application/octet-stream',
-
-    } as unknown as Blob,
-
-  );
+  form.append('file', localFilePart(input.uri, input.name, input.mimeType) as unknown as Blob);
 
   const url = `${base}/platform/storage/upload?bucket=${encodeURIComponent(input.bucket)}&path=${encodeURIComponent(input.path)}`;
 
-  const response = await fetch(url, {
+  const response = await fetchWithPlatformAuth(url, {
 
     method: 'POST',
 
-    headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+    headers: { Accept: 'application/json' },
 
     body: form,
 
@@ -711,7 +716,15 @@ export async function uploadProfileFile(input: {
 
   const data = json?.data ?? json;
 
-  return { path: String(data?.path || input.path), publicUrl: data?.publicUrl };
+  // An API without PUBLIC_API_BASE_URL (Desk, local) answers "/api/platform/storage/public/…": anchor it
+  // to the API host, else the image would be looked up on the website.
+  let publicUrl: string | undefined = data?.publicUrl;
+  if (publicUrl && publicUrl.startsWith('/')) {
+    const origin = base.replace(/\/api$/i, '');
+    publicUrl = `${origin}${publicUrl.startsWith('/api/') ? '' : '/api'}${publicUrl}`;
+  }
+
+  return { path: String(data?.path || input.path), publicUrl };
 
 }
 

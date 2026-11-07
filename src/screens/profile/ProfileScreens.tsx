@@ -65,7 +65,7 @@ import {
   type PortfolioSettings,
   type TokenShareLookup,
 } from '../../lib/profileApi';
-import { pollMpesaTopUpStatus, tokensFromKes, topUpViaMpesa, TOPUP_PRESETS } from '../../lib/wallet';
+import { pollMpesaTopUpStatus, tokensFromKes, topUpOutcome, topUpViaMpesa, TOPUP_PRESETS } from '../../lib/wallet';
 import type { ProfileStackParamList } from '../../navigation/ProfileStack';
 import { navigateDashboard } from '../../navigation/rootNavigation';
 import { useAppTheme } from '../../context/AppThemeContext';
@@ -125,6 +125,24 @@ async function pickFromCamera(): Promise<PickedAsset | null> {
   const extension = (asset.mimeType || 'image/jpeg').split('/').pop() || 'jpg';
   const name = asset.fileName || `photo-${Date.now()}.${extension}`;
   return { uri: asset.uri, name, mimeType: asset.mimeType || 'image/jpeg', size: asset.fileSize };
+}
+
+/**
+ * Gallery image for an avatar or cover: cropped to `aspect` and re-encoded as JPEG (quality 0.8), so a
+ * 10 MB camera photo goes up as a few hundred KB with a known type and a .jpg name.
+ */
+async function pickImageForUpload(aspect: [number, number]): Promise<PickedAsset | null> {
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ['images'],
+    allowsEditing: true,
+    aspect,
+    quality: 0.8,
+  });
+  if (result.canceled || !result.assets?.[0]) return null;
+  const asset = result.assets[0];
+  const mimeType = asset.mimeType || 'image/jpeg';
+  const extension = mimeType.split('/').pop()?.replace('jpeg', 'jpg') || 'jpg';
+  return { uri: asset.uri, name: `photo-${Date.now()}.${extension}`, mimeType, size: asset.fileSize };
 }
 
 /** Native Alert action sheet — Take photo / Choose photo / Choose file. */
@@ -490,9 +508,8 @@ export function ProfileEditScreen({}: EditProps) {
   };
 
   const chooseAvatar = async () => {
-    const picked = await DocumentPicker.getDocumentAsync({ type: 'image/*', copyToCacheDirectory: true });
-    if (picked.canceled || !picked.assets[0]) return;
-    const asset = picked.assets[0];
+    const asset = await pickImageForUpload([1, 1]);
+    if (!asset) return;
     setAvatarBusy(true);
     try {
       const extension = asset.name.split('.').pop() || 'jpg';
@@ -513,9 +530,8 @@ export function ProfileEditScreen({}: EditProps) {
   };
 
   const chooseCoverPhoto = async () => {
-    const picked = await DocumentPicker.getDocumentAsync({ type: 'image/*', copyToCacheDirectory: true });
-    if (picked.canceled || !picked.assets[0]) return;
-    const asset = picked.assets[0];
+    const asset = await pickImageForUpload([3, 1]);
+    if (!asset) return;
     setCoverBusy(true);
     try {
       const extension = asset.name.split('.').pop() || 'jpg';
@@ -1271,30 +1287,18 @@ export function BalancesScreen({ navigation }: NativeStackScreenProps<ProfileSta
         amount: numericAmount,
         user_id: session?.user?.id,
       });
-      setTopUpStatus('Check your phone for the M-Pesa prompt…');
+      setTopUpStatus('Prompt sent — enter your M-Pesa PIN on your phone…');
       const result = await pollMpesaTopUpStatus(checkout_request_id, {
         onTick: (s) => {
           if (s.status === 'pending') setTopUpStatus('Waiting for M-Pesa confirmation…');
         },
       });
-      if (result.status === 'completed') {
-        setTopUpStatus('');
-        showDialog({
-          title: 'Top-up successful',
-          message: result.message || `${(result.tokens || tokens).toLocaleString()} tokens have been added to your balance.`,
-          variant: 'success',
-        });
-        void load();
-      } else if (result.status === 'failed' || result.status === 'cancelled') {
-        setTopUpStatus('');
-        showDialog({ title: 'Top-up not completed', message: result.message || 'The M-Pesa payment was not completed.', variant: 'warning' });
-      } else {
-        setTopUpStatus('');
-        showDialog({ title: 'Still processing', message: 'We could not confirm the payment yet — check Balances shortly.', variant: 'warning' });
-      }
+      setTopUpStatus('');
+      showDialog(topUpOutcome(result, tokens));
+      if (result.status === 'completed' || result.status === 'unknown') void load();
     } catch (e) {
       setTopUpStatus('');
-      showDialog({ title: 'Top-up failed', message: errorMessage(e), variant: 'danger' });
+      showDialog({ title: 'Could not start the top-up', message: errorMessage(e), variant: 'danger' });
     } finally {
       setTopUpBusy(false);
     }
