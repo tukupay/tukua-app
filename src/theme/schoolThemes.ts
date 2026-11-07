@@ -1,5 +1,7 @@
 /** Minimal school theme palettes (ported from shared/desk-theme) — hex for RN. */
 
+import { Colors } from './yana';
+
 export type SchoolThemeId =
   | 'royalNavy'
   | 'emeraldGold'
@@ -35,7 +37,7 @@ export type ThemePalette = {
 /** hsl(h, s%, l%) → #rrggbb */
 function hslToHex(hsl: string): string {
   const m = hsl.match(/hsl\(\s*([\d.]+)\s*,\s*([\d.]+)%\s*,\s*([\d.]+)%\s*\)/i);
-  if (!m) return '#0A3D2E';
+  if (!m) return Colors.primary;
   const h = Number(m[1]) / 360;
   const s = Number(m[2]) / 100;
   const l = Number(m[3]) / 100;

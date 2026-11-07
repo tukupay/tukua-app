@@ -164,7 +164,7 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: 'rgba(10,61,46,0.12)',
     alignItems: 'center',
-    shadowColor: '#041F18',
+    shadowColor: Colors.primaryDark,
     shadowOpacity: 0.2,
     shadowRadius: 22,
     shadowOffset: { width: 0, height: 10 },

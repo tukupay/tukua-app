@@ -66,7 +66,7 @@ const courseWebStyles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'rgba(10,61,46,0.55)',
     backgroundColor: 'rgba(255,255,255,0.96)',
-    shadowColor: '#0A3D2E',
+    shadowColor: Colors.primaryDark,
     shadowOpacity: 0.18,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 2 },

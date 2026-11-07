@@ -9,6 +9,7 @@ import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { deskFetch } from './deskApi';
 import { log } from './logger';
+import { Colors } from '../theme/yana';
 
 const isExpoGo = Constants.appOwnership === 'expo';
 
@@ -67,7 +68,7 @@ export async function registerMobilePushToken(): Promise<string | null> {
         name: 'Tukua',
         importance: Notifications.AndroidImportance.HIGH,
         vibrationPattern: [0, 220, 120, 220],
-        lightColor: '#0A3D2E',
+        lightColor: Colors.primary,
       });
     }
 

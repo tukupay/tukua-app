@@ -7,6 +7,7 @@
  * (`desktop/apps/frontend/src/pages/transport/lib/vehicleMarker.ts`); keep the two alike.
  */
 import { deskFetch } from './deskApi';
+import { Colors } from '../theme/yana';
 
 export type FleetMapTrip = {
   id: string;
@@ -241,7 +242,7 @@ export function pinMapHtml(pins: Array<{ lat: number; lng: number; label?: strin
   var map = L.map('map').setView(${JSON.stringify(centre)}, 15);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(map);
   function icon(p) {
-    var c = p.colour || '#0A3D2E';
+    var c = p.colour || '${Colors.primary}';
     var label = p.label ? '<div style="margin-top:2px;text-align:center"><span style="background:#fff;border:1.5px solid ' + c +
       ';border-radius:6px;padding:2px 6px;font:700 11px sans-serif;color:#111827;box-shadow:0 1px 3px rgba(0,0,0,.3)">' +
       String(p.label).replace(/[&<>]/g, '') + '</span></div>' : '';

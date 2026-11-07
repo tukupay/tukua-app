@@ -862,7 +862,7 @@ const styles = StyleSheet.create({
   heroElevate: {
     borderRadius: 16,
     marginTop: 4,
-    shadowColor: '#0A3D2E',
+    shadowColor: Colors.primaryDark,
     shadowOpacity: 0.22,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 8 },

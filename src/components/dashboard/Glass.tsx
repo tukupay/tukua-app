@@ -94,7 +94,7 @@ export const glassStyles = StyleSheet.create({
 const styles = StyleSheet.create({
   elevated: {
     overflow: 'hidden',
-    shadowColor: '#0A3D2E',
+    shadowColor: Colors.primaryDark,
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 6 },
   },
