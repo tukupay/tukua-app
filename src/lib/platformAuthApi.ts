@@ -155,7 +155,8 @@ export async function verifyOtp(opts: {
   phone_number?: string;
   code: string;
 }) {
-  return nestPost<{ verified: boolean }>('/platform/auth/otp/verify', opts);
+  // phone_proof: when the phone code matched, the proof sign-up sends back (auth/register phone_proof).
+  return nestPost<{ verified: boolean; phone_proof?: string }>('/platform/auth/otp/verify', opts);
 }
 
 export async function forgotPassword(opts: {
@@ -191,6 +192,8 @@ export async function platformRegister(body: {
   role?: string;
   activation_status?: string;
   registration_payment_status?: string;
+  /** From verifyOtp: the phone was confirmed with the SMS code before sign-up. */
+  phone_proof?: string;
 }) {
   return nestPost<{ access_token?: string; refresh_token?: string; user?: unknown }>(
     '/platform/auth/register',

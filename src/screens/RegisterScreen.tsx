@@ -27,6 +27,7 @@ import { AuthTextField } from '../components/auth/AuthTextField';
 import { CountyPicker } from '../components/auth/CountyPicker';
 import { ThemedPageSvg } from '../components/auth/ThemedPageSvg';
 import { PeaRegistrationCard } from '../components/auth/PeaRegistrationCard';
+import { PhoneCodeModal } from '../components/auth/PhoneCodeModal';
 import { DEFAULT_PEA_CONFIG, fetchPeaConfig, PeaConfig } from '../lib/peaConfig';
 import {
   checkBlockedPhone,
@@ -62,7 +63,7 @@ function registerFailMessage(err: unknown, fallback: string, scope = 'Register')
   const clean = userMessageFromError(err, fallback);
   return humanizeError(clean, fallback);
 }
-import { kenyaMobileError } from '../lib/phoneUtils';
+import { kenyaMobileError, toE164Kenya } from '../lib/phoneUtils';
 import { hideSystemStatusBar } from '../components/ImmersiveSystemBars';
 import { log } from '../lib/logger';
 
@@ -160,6 +161,9 @@ export function RegisterScreen({ navigation }: Props) {
   } | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   const deferredOkRef = useRef(false);
+  // Phone first: the SMS code is confirmed before the account is saved (the proof goes with sign-up).
+  const phoneProofRef = useRef<{ phone: string; proof: string } | null>(null);
+  const [phoneCodeFor, setPhoneCodeFor] = useState('');
   const accessTokenRef = useRef<string | null>(null);
   const keyboardTopRef = useRef(0);
   const scrollYRef = useRef(0);
@@ -500,6 +504,14 @@ export function RegisterScreen({ navigation }: Props) {
         return;
       }
 
+      // Phone first: confirm the SMS code before anything is saved (an account already saved skips this).
+      const phoneE164 = toE164Kenya(form.phone);
+      if (!deferredOkRef.current && phoneProofRef.current?.phone !== phoneE164) {
+        setLoading(false);
+        setPhoneCodeFor(phoneE164);
+        return;
+      }
+
       try {
         attemptIdRef.current = await logRegistrationAttempt(form, { status: 'initiated' });
       } catch (e) {
@@ -508,7 +520,7 @@ export function RegisterScreen({ navigation }: Props) {
 
       if (!deferredOkRef.current) {
         const { registerDeferredAccount } = await import('../lib/peaRegistrationFlow');
-        const reg = await registerDeferredAccount(form);
+        const reg = await registerDeferredAccount(form, phoneProofRef.current?.proof);
         if (!reg.ok) {
           setLoading(false);
           setPeaStatus('idle');
@@ -1298,6 +1310,16 @@ export function RegisterScreen({ navigation }: Props) {
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
+      <PhoneCodeModal
+        visible={Boolean(phoneCodeFor)}
+        phone={phoneCodeFor}
+        onClose={() => setPhoneCodeFor('')}
+        onVerified={(proof) => {
+          phoneProofRef.current = { phone: phoneCodeFor, proof };
+          setPhoneCodeFor('');
+          void beginRegistrationPayment();
+        }}
+      />
     </View>
   );
 }

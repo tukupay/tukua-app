@@ -261,7 +261,7 @@ function unpaidPea(user?: {
 }
 
 /** Deferred / remind-me — Nest register without PEA (same as web nestRegister). */
-export async function registerDeferredAccount(form: RegistrationForm): Promise<{
+export async function registerDeferredAccount(form: RegistrationForm, phoneProof?: string): Promise<{
   ok: boolean;
   userId?: string;
   error?: string;
@@ -277,6 +277,7 @@ export async function registerDeferredAccount(form: RegistrationForm): Promise<{
     role: form.role || form.accountType || 'individual',
     activation_status: 'pending_payment',
     registration_payment_status: 'unpaid',
+    phone_proof: phoneProof,
   });
   if (!reg.ok) {
     const code = String(reg.error || '');
