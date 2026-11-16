@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 import type { Session } from './auth';
 import { TukuaWeb } from '../theme/yana';
-import { getNestApiBaseUrl, isAppWebHost } from './localHost';
+import { appWebHostCheckJs, getNestApiBaseUrl, isAppWebHost } from './localHost';
 import { log } from './logger';
 
 const TUKUA_SESSION_KEY = 'tukua_session';
@@ -299,7 +299,9 @@ function nestStorageJs(session: Session, nestAccessToken?: string | null) {
   return {
     nestTok,
     webSession,
+    // Host-guarded: tokens are only written on our own web hosts (see appWebHostCheckJs).
     writes: `
+        if (!${appWebHostCheckJs()}) { throw new Error('tukua: not an app host'); }
         localStorage.setItem('${TUKUA_SESSION_KEY}', ${JSON.stringify(webSession)});
         localStorage.setItem('tukua_nest_api_base', ${JSON.stringify(NEST_API_BASE)});
         localStorage.setItem('${NEST_ACCESS_KEY}', ${JSON.stringify(nestTok)});

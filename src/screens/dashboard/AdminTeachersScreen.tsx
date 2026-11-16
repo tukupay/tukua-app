@@ -135,7 +135,7 @@ export function AdminTeachersScreen({ navigation }: Props) {
           </Pressable>
         ) : (
           <Text style={styles.deskHint}>
-            Workload assign/edit is Desk-only (set EXPO_PUBLIC_DESK_WEB_URL to :3250).
+            Assigning or changing a teacher's subjects is done on Tukua Desk (Admin → Teachers).
           </Text>
         )}
 

@@ -745,7 +745,7 @@ export function DashboardHomeScreen() {
           navigation.navigate('FeaturePlaceholder', {
             title: action.title,
             description:
-              'Users needs Desk Web (EXPO_PUBLIC_DESK_WEB_URL → :3250) for Schools → Users, or EXPO_PUBLIC_WEB_URL pointing at a Nest JWT SPA. Live tukua.ai returns 401 with staging tokens.',
+              'Managing users is not on the phone yet. Open Schools → Users on Tukua Desk or tukua.ai on a computer.',
             apiHint: action.deskPath,
           });
           return;
@@ -773,7 +773,7 @@ export function DashboardHomeScreen() {
             navigation.navigate('FeaturePlaceholder', {
               title: action.title,
               description:
-                'Desk WebView is not configured (tukua.ai has no /teacher or /admin routes). Use native tiles or set EXPO_PUBLIC_DESK_WEB_URL to Desk Vite :3250.',
+                'This page is not on the phone yet. Open it on Tukua Desk or tukua.ai on a computer.',
               apiHint: action.deskPath,
             });
             return;

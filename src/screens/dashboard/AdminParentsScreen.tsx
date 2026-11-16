@@ -83,7 +83,7 @@ export function AdminParentsScreen({ navigation }: Props) {
 
   const deskHint = isDeskWebModuleAvailable()
     ? 'Full parent edit, join requests, and linking live on Desk Admin → Parents.'
-    : 'Join requests and parent linking need Desk Admin (set EXPO_PUBLIC_DESK_WEB_URL to :3250).';
+    : 'Join requests and linking parents to learners are done on Tukua Desk (Admin → Parents).';
 
   return (
     <View style={styles.root}>

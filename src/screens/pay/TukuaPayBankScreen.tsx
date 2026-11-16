@@ -29,11 +29,11 @@ export function TukuaPayBankScreen({ navigation }: Props) {
         }}>
         <ModuleBackBar onBack={() => navigation.goBack()} />
         <ModuleKicker>Tukua Pay</ModuleKicker>
-        <ModuleScreenHeader title="Send to bank" description="Withdraw to a linked bank account." />
+        <ModuleScreenHeader title="Send to bank" description="Money to a bank goes through TukuPay." />
         <ModuleGlassCard>
           <ModuleEmpty
-            title="Bank transfer coming soon"
-            body="We haven’t enabled bank withdrawals yet. Use M-Pesa deposit or send to a Tukua ID for now."
+            title="Use the TukuPay app"
+            body="Tukua does not send money out. To pay into a bank account, open the TukuPay app and confirm there with your PIN."
           />
           <Text style={styles.note}>No charge was made.</Text>
         </ModuleGlassCard>

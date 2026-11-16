@@ -164,13 +164,18 @@ const GLYPHS: Record<string, string> = {
     '<path d="M15.3 10.4h1.6l2.2 2.2h-3.8z" fill="{c}"/><circle cx="7" cy="17.6" r="2.1" fill="#fff"/><circle cx="17.4" cy="17.6" r="2.1" fill="#fff"/>',
 };
 
+/** JSON for inside an HTML <script>: "<" is escaped so a name like "</script>" cannot end the block. */
+function jsonForScript(value: unknown): string {
+  return JSON.stringify(value).replace(/</g, '\\u003c');
+}
+
 /** What the page is asked to draw. `pickedId` is the vehicle being followed, if any. */
 export type FleetMapDrawing = { vehicles: FleetMapVehicle[]; live: boolean; pickedId: string | null; showPaths: boolean };
 
 /** The call that redraws the map inside the WebView without loading the page again. */
 export function fleetMapUpdateScript(drawing: FleetMapDrawing): string {
   // JSON is valid JavaScript here; `true` keeps the WebView from warning about a return value.
-  return `window.__fleet && window.__fleet.draw(${JSON.stringify(drawing)}); true;`;
+  return `window.__fleet && window.__fleet.draw(${jsonForScript(drawing)}); true;`;
 }
 
 /**
@@ -201,11 +206,11 @@ export function fleetMapHtml(drawing: FleetMapDrawing, centre: [number, number] 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 (function () {
-  var GLYPHS = ${JSON.stringify(GLYPHS)};
+  var GLYPHS = ${jsonForScript(GLYPHS)};
   var note = document.getElementById('note');
   if (!window.L) { note.style.display = 'block'; note.textContent = 'The map needs an internet connection.'; return; }
 
-  var map = L.map('map', { zoomControl: true, attributionControl: true }).setView(${JSON.stringify(centre)}, 12);
+  var map = L.map('map', { zoomControl: true, attributionControl: true }).setView(${jsonForScript(centre)}, 12);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(map);
   var layer = L.layerGroup().addTo(map);
   var fitted = '';
@@ -278,7 +283,7 @@ export function fleetMapHtml(drawing: FleetMapDrawing, centre: [number, number] 
   }
 
   window.__fleet = { draw: draw };
-  draw(${JSON.stringify(drawing)});
+  draw(${jsonForScript(drawing)});
 })();
 </script>
 </body>
@@ -310,9 +315,9 @@ export function pinMapHtml(pins: Array<{ lat: number; lng: number; label?: strin
 <script>
 (function () {
   if (!window.L) { document.body.innerHTML = '<p style="font:14px sans-serif;padding:16px">The map needs an internet connection.</p>'; return; }
-  var pins = ${JSON.stringify(clean)};
+  var pins = ${jsonForScript(clean)};
   var pick = ${opts?.pick ? 'true' : 'false'};
-  var map = L.map('map').setView(${JSON.stringify(centre)}, 15);
+  var map = L.map('map').setView(${jsonForScript(centre)}, 15);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(map);
   function icon(p) {
     var c = p.colour || '${Colors.primary}';

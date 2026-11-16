@@ -958,7 +958,18 @@ export function WebAppScreen({ path, label }: Props) {
           return allowed;
         }}
         nestedScrollEnabled={Platform.OS === 'android'}
-        onMessage={(e) => handleWebMessage(e.nativeEvent.data)}
+        onMessage={(e) => {
+          // Only our own pages may talk to the app (session tokens, contacts, file saves).
+          try {
+            if (!isAppWebHost(new URL(e.nativeEvent.url).hostname)) {
+              log.warn('WebApp', 'ignored message from non-app page');
+              return;
+            }
+          } catch {
+            return;
+          }
+          handleWebMessage(e.nativeEvent.data);
+        }}
         injectedJavaScriptBeforeContentLoaded={preInject}
         cacheEnabled
         cacheMode={Platform.OS === 'android' ? 'LOAD_CACHE_ELSE_NETWORK' : undefined}
@@ -972,8 +983,6 @@ export function WebAppScreen({ path, label }: Props) {
         geolocationEnabled
         setSupportMultipleWindows={false}
         allowFileAccess
-        allowFileAccessFromFileURLs
-        allowUniversalAccessFromFileURLs
         mixedContentMode={Platform.OS === 'android' ? 'always' : undefined}
         keyboardDisplayRequiresUserAction={false}
         contentInsetAdjustmentBehavior="never"

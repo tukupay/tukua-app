@@ -165,17 +165,47 @@ export function isDeskWebModuleAvailable(): boolean {
 
 /** True if URL belongs to our configured web SPA (production or local). */
 export function isAppWebHost(hostname: string): boolean {
-  const h = hostname.toLowerCase();
-  if (h.includes('tukua.ai')) return true;
+  const h = String(hostname || '').toLowerCase();
+  if (!h) return false;
+  // Exact tukua.ai or a real subdomain — never "tukua.ai.example.com" or "nottukua.ai".
+  if (h === 'tukua.ai' || h.endsWith('.tukua.ai')) return true;
   try {
     const webHost = new URL(getWebBaseUrl()).hostname.toLowerCase();
     if (h === webHost) return true;
   } catch {
     // ignore
   }
+  // LAN / loopback pages only count as ours in dev or the local profile (store builds never trust them).
+  if (!allowLocalWebHosts()) return false;
   if (h === 'localhost' || h === '127.0.0.1' || h === '10.0.2.2') return true;
   if (/^192\.168\.\d+\.\d+$/.test(h) || /^10\.\d+\.\d+\.\d+$/.test(h)) return true;
   return false;
+}
+
+function allowLocalWebHosts(): boolean {
+  return (typeof __DEV__ !== 'undefined' && __DEV__) || getTukuaEnv() === 'local';
+}
+
+/**
+ * JS expression (for injected scripts) that is true only when the page is on one of our web hosts.
+ * Session tokens are written into localStorage only behind this check, so a third-party page that
+ * ends up in the WebView (link, redirect) never receives them.
+ */
+export function appWebHostCheckJs(): string {
+  const extra: string[] = [];
+  try {
+    extra.push(new URL(getWebBaseUrl()).hostname.toLowerCase());
+  } catch {
+    // ignore
+  }
+  const local = allowLocalWebHosts();
+  return `(function(){try{var h=String(location.hostname||'').toLowerCase();if(!h)return false;` +
+    `if(h==='tukua.ai'||/\\.tukua\\.ai$/.test(h))return true;` +
+    `if(${JSON.stringify(extra)}.indexOf(h)>=0)return true;` +
+    (local
+      ? `if(h==='localhost'||h==='127.0.0.1'||h==='10.0.2.2'||/^192\\.168\\.\\d+\\.\\d+$/.test(h)||/^10\\.\\d+\\.\\d+\\.\\d+$/.test(h))return true;`
+      : '') +
+    `return false;}catch(e){return false;}})()`;
 }
 
 export function getLocalUrlDebugInfo() {

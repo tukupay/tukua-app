@@ -602,22 +602,6 @@ export async function putParentTransportHome(body: {
   });
 }
 
-export async function faceBoardParentTransport(body: {
-  student_id?: string;
-  trip_id?: string;
-  face_event_id?: string;
-}) {
-  const sid = resolveStudentId(body.student_id);
-  if (!sid) throw new Error('Select a student first');
-  return deskFetch<{ trip?: ParentTransportTrip; demo?: boolean }>(
-    '/parents/me/transport/face-board',
-    {
-      method: 'POST',
-      body: { ...body, student_id: sid },
-    },
-  );
-}
-
 /** One page of a parent's attendance records (newest first) plus per-child totals over every recorded day. */
 export type AttendancePage = {
   records: Array<ParentAttendanceRecord & { check_in_at?: string | null; check_out_at?: string | null; method?: string | null; notes?: string | null }>;

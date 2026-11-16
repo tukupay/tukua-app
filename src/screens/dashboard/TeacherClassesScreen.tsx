@@ -202,7 +202,7 @@ export function TeacherClassesScreen({ navigation }: Props) {
     navigation.navigate('FeaturePlaceholder', {
       title: 'Enroll student',
       description:
-        'Class enrollment is Desk-only today (POST /classes/enrollments needs school admin). View roll here; enroll on Desk.',
+        'You can see the class list here. To add or move a learner, a school admin uses Tukua Desk (Admin → Classes).',
       apiHint: '/classes/enrollments',
     });
   }, [navigation]);

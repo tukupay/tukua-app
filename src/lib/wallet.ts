@@ -51,7 +51,7 @@ async function nestAuthedGet<T>(path: string, accessToken?: string): Promise<T> 
  */
 export async function listWallets(accessToken?: string): Promise<Wallet[]> {
   const token = accessToken || (await resolveNestAccessTokenForWebView());
-  if (!token) throw new Error('Sign in required — use Nest login');
+  if (!token) throw new Error('Please sign in again.');
 
   // 1) Platform token balance (always available for signed-in Nest users).
   try {
@@ -99,9 +99,10 @@ export async function listWallets(accessToken?: string): Promise<Wallet[]> {
       /* not a finance user or route unavailable */
     }
 
-    throw new Error(
-      `Wallet listing requires Nest (/platform/me/balances or /accounts/wallets). ${balErr}. TukuPay edge is retired — top up via Nest POST /payments/mpesa/stk.`,
-    );
+    if (typeof __DEV__ !== 'undefined' && __DEV__) {
+      console.warn('[wallet] balances failed (/platform/me/balances, /accounts/wallets):', balErr);
+    }
+    throw new Error('We could not load your balance. Check your connection and try again.');
   }
 }
 

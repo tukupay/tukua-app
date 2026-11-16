@@ -47,22 +47,23 @@ export function FeaturePlaceholderScreen({ route, navigation }: Props) {
 
         <GlassPanel tone="frost" intensity={42} radius={16} style={styles.card}>
           <View style={styles.cardInner}>
-            <Text style={styles.label}>Status</Text>
+            <Text style={styles.label}>Not on the phone yet</Text>
             <Text style={styles.value}>
-              {apiHint
-                ? `Will call Nest: ${apiHint}`
-                : 'Native shell — open from a module that has a desk path, or wire Nest when ready.'}
+              Open this on Tukua Desk or on tukua.ai on a computer.
             </Text>
           </View>
         </GlassPanel>
 
-        <GlassPanel tone="frost" intensity={42} radius={16} style={styles.card}>
-          <View style={styles.cardInner}>
-            <Text style={styles.label}>Desk API</Text>
-            <Text style={styles.value}>{deskApiUrl}</Text>
-            <Text style={styles.meta}>{deskToken ? 'Authenticated' : 'Not connected'}</Text>
-          </View>
-        </GlassPanel>
+        {__DEV__ ? (
+          <GlassPanel tone="frost" intensity={42} radius={16} style={styles.card}>
+            <View style={styles.cardInner}>
+              <Text style={styles.label}>Dev only</Text>
+              {apiHint ? <Text style={styles.value}>Route: {apiHint}</Text> : null}
+              <Text style={styles.value}>{deskApiUrl}</Text>
+              <Text style={styles.meta}>{deskToken ? 'Authenticated' : 'Not connected'}</Text>
+            </View>
+          </GlassPanel>
+        ) : null}
 
         <Pressable style={styles.backBtn} onPress={() => navigation.goBack()}>
           <View style={styles.backBtnSolid}>

@@ -84,14 +84,24 @@ export function DeskModuleWebScreen({ route, navigation }: Props) {
     if (session) {
       parts.push(buildPreloadSessionScript(session));
     }
-    return parts.length ? `${parts.join('\n')}\ntrue;` : 'true;';
-  }, [bearer, userJson, session, path, selectedSchoolId, selectedStudentId]);
+    if (!parts.length) return 'true;';
+    // Tokens only on the Desk web host itself, never on a page the WebView was sent on to.
+    let deskOrigin = '';
+    try {
+      deskOrigin = base ? new URL(base).origin : '';
+    } catch {
+      deskOrigin = '';
+    }
+    return `if (${JSON.stringify(deskOrigin)} && window.location.origin === ${JSON.stringify(deskOrigin)}) {\n${parts.join('\n')}\n}\ntrue;`;
+  }, [bearer, userJson, session, path, selectedSchoolId, selectedStudentId, base]);
 
   const onError = useCallback(
     (e: { nativeEvent: { description?: string } }) => {
       log.warn('DeskModule', 'webview error', e.nativeEvent.description);
       setError(
-        `Could not load Desk UI at ${uri}. Start Desk Vite (npm run dev:desk → :3250) or set EXPO_PUBLIC_DESK_WEB_URL. API: ${deskApiUrl}`,
+        __DEV__
+          ? `Could not load Desk UI at ${uri}. Start Desk Vite (npm run dev:desk → :3250) or set EXPO_PUBLIC_DESK_WEB_URL. API: ${deskApiUrl}`
+          : 'This page could not open. Check your connection and try again, or open it on Tukua Desk.',
       );
     },
     [deskApiUrl, uri],
@@ -119,15 +129,16 @@ export function DeskModuleWebScreen({ route, navigation }: Props) {
         </Pressable>
         <ModuleScreenHeader
           title={title}
-          description="This module needs the Desk app UI, not tukua.ai."
+          description="This page is not on the phone yet."
         />
         <Text style={styles.msg}>
-          Mobile was pointing Desk pages at tukua.ai (empty). Run Desk on this PC
-          (`npm run dev:desk` → port 3250) on the same Wi‑Fi, or set
-          EXPO_PUBLIC_DESK_WEB_URL to your Desk host. Native screens are being added
-          so this WebView is not required.
+          Open it on Tukua Desk or on tukua.ai on a computer.
         </Text>
-        <Text style={[styles.msg, { marginTop: 12, opacity: 0.7 }]}>Tried: {uri}</Text>
+        {__DEV__ ? (
+          <Text style={[styles.msg, { marginTop: 12, opacity: 0.7 }]}>
+            Dev: run Desk Vite (npm run dev:desk → :3250) or set EXPO_PUBLIC_DESK_WEB_URL. Tried: {uri}
+          </Text>
+        ) : null}
       </View>
     );
   }

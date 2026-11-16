@@ -18,6 +18,7 @@
         "applinks:www.tukua.ai"
       ],
       "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
         "UIStatusBarHidden": true,
         "UIViewControllerBasedStatusBarAppearance": false,
         "NSCameraUsageDescription": "Tukua needs camera access for ID photos, document capture, and KYC.",
@@ -53,7 +54,16 @@
               "scheme": "https",
               "host": "www.tukua.ai",
               "pathPrefix": "/"
-            },
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        },
+        {
+          "action": "VIEW",
+          "data": [
             {
               "scheme": "tukua",
               "host": "*"
@@ -74,19 +84,9 @@
         "android.permission.USE_BIOMETRIC",
         "android.permission.USE_FINGERPRINT",
         "android.permission.POST_NOTIFICATIONS",
-        "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
-        "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.INTERNET",
-        "android.permission.USE_BIOMETRIC",
-        "android.permission.USE_FINGERPRINT",
-        "android.permission.READ_CONTACTS",
-        "android.permission.READ_CONTACTS",
-        "android.permission.WRITE_CONTACTS",
-        "android.permission.READ_EXTERNAL_STORAGE"
+        "android.permission.READ_CONTACTS"
       ]
     },
     "androidStatusBar": {
