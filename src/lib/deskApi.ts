@@ -8,6 +8,7 @@ import { getDeskApiBaseUrl, getLocalUrlDebugInfo } from './localHost';
 import { log } from './logger';
 import { normalizeDeskRoles } from './deskRoles';
 import { API_TIMEOUT_MS, NETWORK_MESSAGE, fetchWithTimeout, messageForStatus, readJsonSafe } from './apiHttp';
+import { activationCodeOf, activationMessage, announceActivationRequired } from './activation';
 
 const DESK_TOKEN_KEY = 'tukua_desk_auth_token';
 const DESK_USER_KEY = 'tukua_desk_user';
@@ -423,6 +424,14 @@ export async function deskFetch<T = unknown>(
       if (next && next !== token) {
         return deskFetch<T>(path, { ...opts, token: next, _retriedNest: true });
       }
+    }
+    // Not activated (403): one prompt for the whole app, and a plain sentence without the code.
+    const activation = res.status === 403 ? activationCodeOf(json) : null;
+    if (activation) {
+      const message = activationMessage(activation, json);
+      announceActivationRequired({ code: activation, message });
+      log.info('DeskApi', message, { status: res.status, path, error: activation });
+      throw Object.assign(new Error(message), { code: activation, statusCode: res.status });
     }
     const errCode =
       typeof (json as { error?: unknown })?.error === 'string'
