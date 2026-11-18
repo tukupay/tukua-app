@@ -7,7 +7,19 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const file = path.join(__dirname, '..', 'android', 'app', 'build.gradle');
+const androidDir = path.join(__dirname, '..', 'android');
+
+// prebuild --clean also drops these: the SDK path, and Gradle memory big enough for release lint (Metaspace OOM at 512m).
+const sdk = process.env.ANDROID_HOME || path.join(process.env.LOCALAPPDATA || '', 'Android', 'Sdk');
+fs.writeFileSync(path.join(androidDir, 'local.properties'), `sdk.dir=${sdk.replace(/\\/g, '/')}\n`);
+const propsFile = path.join(androidDir, 'gradle.properties');
+const props = fs.readFileSync(propsFile, 'utf8');
+fs.writeFileSync(
+  propsFile,
+  props.replace(/^org\.gradle\.jvmargs=.*$/m, 'org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m -XX:+HeapDumpOnOutOfMemoryError'),
+);
+
+const file = path.join(androidDir, 'app', 'build.gradle');
 let s = fs.readFileSync(file, 'utf8');
 if (s.includes('tukuaUpload')) {
   console.log('Upload signing already in build.gradle');
