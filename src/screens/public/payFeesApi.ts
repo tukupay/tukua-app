@@ -51,7 +51,19 @@ export type FeeQuote = {
   bank_app_charge_kes: number;
   total_kes: number;
   pays_for: Array<{ label: string; amount: number }>;
+  /**
+   * The same lines grouped for the screen (owner, 18 Nov 2026): a long list shows arrears in one row and the rest one
+   * row per invoice, each closed until tapped. Worked out by the API (shared rule, as on the school websites and the
+   * web). Display only: the receipt lists every line. Older APIs leave it out.
+   */
+  pays_for_groups?: ClearsView;
 };
+
+export type ClearsLine = { name: string; amount: number };
+export type ClearsRow =
+  | { kind: 'line'; line: ClearsLine }
+  | { kind: 'group'; id: string; label: string; arrears: boolean; count: number; amount: number; lines: ClearsLine[] };
+export type ClearsView = { grouped: boolean; total: number; rows: ClearsRow[] };
 
 export type FeePaymentStatus = { status: string; message?: string; receipt?: string };
 

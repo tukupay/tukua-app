@@ -30,6 +30,7 @@ import {
   searchFeeSchools,
   startFeePayment,
   type DirectorySchool,
+  type ClearsRow,
   type FeeQuote,
   type FoundLearner,
   type LearnerSearchBy,
@@ -242,6 +243,7 @@ export function PayFeesScreen({ bottomSpace = 0 }: { bottomSpace?: number }) {
   const badge = s(layout.compact ? 58 : 66);
   const voteheads = useMemo(() => mergeVoteheads(quote?.pays_for), [quote?.pays_for]);
   const clearedTotal = voteheads.reduce((a, v) => a + v.amount, 0);
+  const groups = quote?.pays_for_groups;
   const years = (quote?.balance_years ?? []).filter((y) => Number(y?.balance) > 0);
 
   return (
@@ -433,10 +435,26 @@ export function PayFeesScreen({ bottomSpace = 0 }: { bottomSpace?: number }) {
                   <View style={[styles.cardHead, { paddingHorizontal: s(16), paddingTop: s(14), paddingBottom: s(8) }]}>
                     <Text style={[styles.cardTitle, { fontSize: font(14) }]}>This payment clears</Text>
                     <Text style={[styles.cardHint, { fontSize: font(11) }]}>
-                      {voteheads.length} {voteheads.length === 1 ? 'votehead' : 'voteheads'}, oldest first
+                      {groups?.grouped ? 'Grouped, oldest first. Tap a group to see its vote heads' : `${voteheads.length} ${voteheads.length === 1 ? 'votehead' : 'voteheads'}, oldest first`}
                     </Text>
                   </View>
-                  {voteheads.map((v, i) => (
+                  {groups?.grouped
+                    ? groups.rows.map((r, i) =>
+                        r.kind === 'group' ? (
+                          <ClearsGroupRow key={r.id} row={r} first={i === 0} s={s} font={font} />
+                        ) : (
+                          <View
+                            key={`${r.line.name}-${i}`}
+                            style={[styles.vhRow, { paddingHorizontal: s(16), paddingVertical: s(11), gap: s(12) }, i > 0 ? styles.vhDivider : null]}>
+                            <View style={[styles.vhDot, { width: s(8), height: s(8), borderRadius: s(4) }]} />
+                            <Text style={[styles.vhName, { fontSize: font(14) }]} numberOfLines={2}>
+                              {r.line.name}
+                            </Text>
+                            <Text style={[styles.vhAmount, { fontSize: font(14) }]}>{kes(r.line.amount)}</Text>
+                          </View>
+                        ),
+                      )
+                    : voteheads.map((v, i) => (
                     <View
                       key={`${v.label}-${i}`}
                       style={[
@@ -603,6 +621,37 @@ function Steps({ at, s, font }: { at: number } & Scale) {
           </React.Fragment>
         );
       })}
+    </View>
+  );
+}
+
+/** One collapsed group of "This payment clears" ("Arrears brought forward · 5 vote heads"); tap to open its lines. */
+function ClearsGroupRow({ row, first, s, font }: { row: Extract<ClearsRow, { kind: 'group' }>; first: boolean } & Scale) {
+  const [open, setOpen] = useState(false);
+  return (
+    <View style={first ? null : styles.vhDivider}>
+      <Pressable
+        onPress={() => setOpen((o) => !o)}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        accessibilityLabel={`${row.label}, ${row.count} vote heads, ${kes(row.amount)}. ${open ? 'Hide' : 'Show'} the vote heads`}
+        style={[styles.vhRow, { paddingHorizontal: s(16), paddingVertical: s(11), gap: s(10) }]}>
+        <Ionicons name={open ? 'chevron-down' : 'chevron-forward'} size={s(16)} color={Colors.mutedForeground} />
+        <Text style={[styles.vhName, { fontSize: font(14) }]} numberOfLines={2}>
+          {row.label} · {row.count} vote heads
+        </Text>
+        <Text style={[styles.vhAmount, { fontSize: font(14) }]}>{kes(row.amount)}</Text>
+      </Pressable>
+      {open
+        ? row.lines.map((l, i) => (
+            <View key={`${l.name}-${i}`} style={[styles.vhRow, { paddingLeft: s(42), paddingRight: s(16), paddingBottom: s(9), gap: s(12) }]}>
+              <Text style={[styles.vhName, { fontSize: font(13), color: Colors.mutedForeground }]} numberOfLines={2}>
+                {l.name}
+              </Text>
+              <Text style={[styles.vhAmount, { fontSize: font(13), color: Colors.mutedForeground }]}>{kes(l.amount)}</Text>
+            </View>
+          ))
+        : null}
     </View>
   );
 }

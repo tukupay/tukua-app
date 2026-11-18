@@ -32,6 +32,7 @@ import { darajaUserError, type DarajaUserError } from '../../lib/darajaErrors';
 import { useAppTheme } from '../../context/AppThemeContext';
 import { Colors } from '../../theme/yana';
 import { initialsOf, kes } from '../../lib/moneyFormat';
+import { clearsGroupTitle, groupClearsLines, type ClearsRow } from '../../lib/clearsGroups';
 import { INK } from '../theme/ThemedPage';
 import { rgba } from '../../theme/color';
 
@@ -348,6 +349,21 @@ export function PaymentProcessCard({
   const total = quote?.total_kes != null ? Number(quote.total_kes) : null;
   const breakdown = (quote?.breakdown ?? []).filter((b) => Number(b.amount) > 0);
   const invoiceNos = [...new Set(breakdown.map((b) => b.invoice_number).filter(Boolean))] as string[];
+  // Long lists grouped for the screen (owner, 18 Nov 2026): arrears in one row, the rest one row per invoice, closed
+  // until tapped. Same rule as the web and the school websites; the receipt keeps every line.
+  const clearsView = useMemo(
+    () =>
+      groupClearsLines(
+        breakdown.map((b) => ({
+          name: b.label || b.vote_head || 'Fees',
+          amount: Number(b.amount) || 0,
+          vote_head: b.vote_head ?? null,
+          group: b.invoice_number ?? null,
+          group_label: b.invoice_number ?? null,
+        })),
+      ),
+    [breakdown],
+  );
 
   const header = (
     <View style={styles.headRow}>
@@ -474,7 +490,20 @@ export function PaymentProcessCard({
             <Text style={styles.voteTitle}>This payment clears</Text>
             {invoiceNos.length === 1 ? <Text style={styles.voteMeta}>{invoiceNos[0]}</Text> : null}
           </View>
-          {breakdown.map((b, i) => {
+          {clearsView.grouped
+            ? clearsView.rows.map((r, i) =>
+                r.kind === 'group' ? (
+                  <VoteGroup key={r.id} row={r} last={i === clearsView.rows.length - 1} />
+                ) : (
+                  <View key={`${r.line.name}-${i}`} style={[styles.voteRow, i < clearsView.rows.length - 1 && styles.voteDivider]}>
+                    <Text style={[styles.voteLabel, { flex: 1 }]} numberOfLines={2}>
+                      {splitVoteHead(r.line.name).name}
+                    </Text>
+                    <Text style={styles.voteAmt}>{kes(r.line.amount)}</Text>
+                  </View>
+                ),
+              )
+            : breakdown.map((b, i) => {
             const { code, name } = splitVoteHead(b.label || b.vote_head || 'Fees');
             return (
               <View key={`${b.label}-${i}`} style={[styles.voteRow, i < breakdown.length - 1 && styles.voteDivider]}>
@@ -787,6 +816,37 @@ function ReceiptLine({
         selectable>
         {value}
       </Text>
+    </View>
+  );
+}
+
+
+/** One closed group of "This payment clears" ("Arrears brought forward · 5 vote heads"); tap to see its lines. */
+function VoteGroup({ row, last }: { row: Extract<ClearsRow, { kind: 'group' }>; last: boolean }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <View style={!last ? styles.voteDivider : null}>
+      <Pressable
+        onPress={() => setOpen((o) => !o)}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        style={styles.voteRow}>
+        <Ionicons name={open ? 'chevron-down' : 'chevron-forward'} size={16} color={Colors.mutedForeground} />
+        <Text style={[styles.voteLabel, { flex: 1 }]} numberOfLines={2}>
+          {clearsGroupTitle(row)}
+        </Text>
+        <Text style={styles.voteAmt}>{kes(row.amount)}</Text>
+      </Pressable>
+      {open
+        ? row.lines.map((l, i) => (
+            <View key={`${l.name}-${i}`} style={[styles.voteRow, { paddingLeft: 26, paddingVertical: 5 }]}>
+              <Text style={[styles.voteLabel, { flex: 1, color: Colors.mutedForeground }]} numberOfLines={2}>
+                {splitVoteHead(l.name).name}
+              </Text>
+              <Text style={[styles.voteAmt, { color: Colors.mutedForeground }]}>{kes(l.amount)}</Text>
+            </View>
+          ))
+        : null}
     </View>
   );
 }
