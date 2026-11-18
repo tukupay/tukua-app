@@ -358,6 +358,8 @@ export async function quoteSchoolCollection(body: {
     total_kes?: number;
     balance_kes?: number;
     breakdown?: Array<{ label: string; vote_head?: string; invoice_number?: string | null; amount: number }>;
+    /** TukuPay's own charges, worded by the API from its preview (never worked out in the app). */
+    charges_text?: string;
   }>('/accounts/collections/quote', { method: 'POST', body });
 }
 
@@ -369,9 +371,16 @@ export async function promptSchoolCollectionStk(body: {
   teacher_id?: string;
   description?: string;
 }) {
+  // School money goes only to the school's own TukuPay paypoint (owner, 18 Nov 2026): the answer is a TukuPay prompt's
+  // reference (checkout_id, also checkout_request_id), followed with schoolPromptStatus. A school without TukuPay for
+  // this money is refused with what to set up.
   return deskFetch<{
+    checkout_id?: string;
     checkout_request_id?: string;
+    message?: string;
     customer_message?: string;
+    amount?: number;
+    phone?: string;
     quote?: {
       amount_kes?: number;
       bank_app_charge_pct?: number;
@@ -379,6 +388,37 @@ export async function promptSchoolCollectionStk(body: {
       total_kes?: number;
     };
   }>('/accounts/collections/stk-prompt', { method: 'POST', body });
+}
+
+/** Where a school money prompt is (a paid one gets its receipt, once): pending, completed, failed, cancelled, amount_mismatch. */
+export async function schoolPromptStatus(checkoutId: string) {
+  return deskFetch<{ checkout_id?: string; status?: string; message?: string; reason?: string; receipt_number?: string | null; mpesa_code?: string | null }>(
+    `/tukupay/fees/checkout/${encodeURIComponent(checkoutId)}`,
+  );
+}
+
+/** Follows a school money prompt until it ends (default every 4 s, 30 times). Never throws. */
+export async function pollSchoolPrompt(
+  checkoutId: string,
+  opts: { intervalMs?: number; maxAttempts?: number; isCancelled?: () => boolean; onTick?: () => void } = {},
+): Promise<{ status: 'completed' | 'failed' | 'cancelled' | 'unknown'; message?: string; mpesa_receipt?: string; receipt_number?: string | null }> {
+  const every = opts.intervalMs ?? 4000;
+  for (let n = 0; n < (opts.maxAttempts ?? 30); n++) {
+    await new Promise((r) => setTimeout(r, every));
+    if (opts.isCancelled?.()) break;
+    opts.onTick?.();
+    try {
+      const s = await schoolPromptStatus(checkoutId);
+      const st = String(s?.status || '').toLowerCase();
+      if (st === 'completed' || st === 'paid') return { status: 'completed', message: s?.message, mpesa_receipt: s?.mpesa_code || undefined, receipt_number: s?.receipt_number ?? null };
+      if (st === 'cancelled') return { status: 'cancelled', message: s?.message };
+      if (st === 'failed' || st === 'expired') return { status: 'failed', message: s?.message };
+      if (st === 'amount_mismatch') return { status: 'completed', message: s?.message || 'Paid a different amount: the school will issue the receipt.' };
+    } catch {
+      /* try again */
+    }
+  }
+  return { status: 'unknown', message: 'M-Pesa has not answered yet.' };
 }
 
 export async function payParentEvent(

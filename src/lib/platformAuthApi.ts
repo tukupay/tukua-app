@@ -81,21 +81,26 @@ type NestResult<T> = { ok: boolean; data?: T; message?: string; error?: string; 
 
 /** POST to Nest. Never throws: network, timeout, bad JSON and server errors come back as { ok: false, message }. */
 async function nestPost<T>(path: string, body: unknown, bearer?: string | null): Promise<NestResult<T>> {
+  return nestSend<T>('POST', path, body, bearer);
+}
+
+/** GET or POST to Nest (see nestPost). */
+async function nestSend<T>(method: 'GET' | 'POST', path: string, body: unknown, bearer?: string | null): Promise<NestResult<T>> {
   let res: Response;
   try {
     const headers: Record<string, string> = {
       Accept: 'application/json',
-      'Content-Type': 'application/json',
+      ...(method === 'POST' ? { 'Content-Type': 'application/json' } : {}),
     };
     if (bearer) headers.Authorization = `Bearer ${bearer}`;
     res = await fetchWithTimeout(
       `${nestBase()}${path}`,
-      { method: 'POST', headers, body: JSON.stringify(body ?? {}) },
+      method === 'POST' ? { method, headers, body: JSON.stringify(body ?? {}) } : { method, headers },
       45_000,
     );
   } catch (e) {
     const timeout = Boolean((e as ApiError)?.timeout);
-    log.warn('NestAuth', `POST ${path} ${timeout ? 'timeout' : 'network'}`, String(e));
+    log.warn('NestAuth', `${method} ${path} ${timeout ? 'timeout' : 'network'}`, String(e));
     warnDev('NestAuth', e, { path });
     return {
       ok: false,
@@ -112,7 +117,7 @@ async function nestPost<T>(path: string, body: unknown, bearer?: string | null):
       json && typeof json === 'object' && 'data' in json ? (json as { data: T }).data : (json as T);
     const ok = res.ok && json?.success !== false;
     if (!ok) {
-      log.warn('NestAuth', `POST ${path} ${res.status}`, JSON.stringify(json).slice(0, 220));
+      log.warn('NestAuth', `${method} ${path} ${res.status}`, JSON.stringify(json).slice(0, 220));
       warnDev('NestAuth', { message: nestRawMessage(json) || 'no JSON body', statusCode: res.status }, { path });
     }
     const message = ok
@@ -224,6 +229,24 @@ export async function mpesaStk(body: Record<string, unknown>, bearer?: string | 
  */
 export async function mpesaGwInit(body: Record<string, unknown>, bearer?: string | null) {
   return mpesaStk(body, bearer);
+}
+
+/**
+ * Buy Tukua tokens (owner, 18 Nov 2026): Tukua's own money goes to Tukua's token paypoint on TukuPay, as an M-Pesa prompt
+ * to the phone (POST /tokens/buy, mode prompt). amount_kes is before VAT; the API adds VAT and credits once when paid.
+ */
+export async function tokensBuyPrompt(body: { amount_kes: number; phone: string; for?: 'me' | 'school' }, bearer?: string | null) {
+  return nestPost<Record<string, unknown>>('/tokens/buy', { amount_kes: body.amount_kes, for: body.for || 'me', phone: body.phone, mode: 'prompt' }, bearer);
+}
+
+/** One token purchase: pending, credited, failed, expired or amount_mismatch (a pending one is checked with TukuPay). */
+export async function tokenPurchaseStatus(purchaseId: string, bearer?: string | null) {
+  return nestSend<Record<string, unknown>>('GET', `/tokens/purchases/${encodeURIComponent(purchaseId)}`, null, bearer);
+}
+
+/** TukuPay's own charge line for a top-up (its preview), worded by the API. */
+export async function tokenQuote(amountKes: number, bearer?: string | null) {
+  return nestPost<Record<string, unknown>>('/tokens/quote', { amount_kes: Math.round(amountKes), for: 'me' }, bearer);
 }
 
 export async function mpesaCheckStatus(checkout_request_id: string, bearer?: string | null) {

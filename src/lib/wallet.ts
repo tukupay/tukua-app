@@ -4,7 +4,7 @@
  * Top-up: POST /payments/mpesa/stk.
  */
 import { getNestApiBaseUrl } from './localHost';
-import { mpesaCheckStatus, mpesaStk } from './platformAuthApi';
+import { mpesaCheckStatus, mpesaStk, tokenPurchaseStatus, tokenQuote, tokensBuyPrompt } from './platformAuthApi';
 import { recoverPlatformTokenAfter401, resolveNestAccessTokenForWebView } from './platformNestAuth';
 import { mpesaMsisdn } from './phoneUtils';
 import { fetchWithTimeout } from './apiHttp';
@@ -164,8 +164,15 @@ async function withPaymentAuth(call: (bearer: string) => Promise<NestPostResult>
   return call(next);
 }
 
-/** M-Pesa STK top-up via Nest (never /platform/edge). Computes `tokens` client-side so the STK
- * callback credits the wallet — the Nest `mpesa_transactions.tokens` column drives crediting.
+/** A purchase id from topUpViaMpesa (Tukua's token paypoint on TukuPay), told apart from an old M-Pesa checkout id. */
+const PURCHASE_PREFIX = 'tok:';
+
+/**
+ * Buy your own Tukua tokens (owner, 18 Nov 2026): an M-Pesa prompt through TukuPay on Tukua's token paypoint
+ * (POST /tokens/buy, mode prompt), never Tukua's own internal M-Pesa. `amount` is KES before VAT (the API adds VAT and
+ * works out the tokens); the tokens are added once, by the API, after TukuPay says it was paid. Answers a
+ * `checkout_request_id` for {@link pollMpesaTopUpStatus} (a purchase reference) and the tokens the purchase buys.
+ * Purposes other than 'tokens' (a gift, the first-activation fee) keep the old prompt for now.
  * Throws {@link MpesaTopUpError} with a user-facing message. */
 export async function topUpViaMpesa(body: {
   phone_number: string;
@@ -182,6 +189,18 @@ export async function topUpViaMpesa(body: {
   const amount = Math.round(Number(body.amount));
   if (!(amount >= 1)) throw new MpesaTopUpError('Enter an amount of at least KES 1.', 'invalid_amount');
   const tokens = body.tokens != null ? Math.max(0, Math.floor(body.tokens)) : tokensFromKes(amount);
+
+  if (!body.purpose || body.purpose === 'tokens') {
+    const bought = await withPaymentAuth((bearer) => tokensBuyPrompt({ amount_kes: amount, phone }, bearer));
+    if (!bought.ok) {
+      if (bought.status === 401 || bought.status === 403) throw new MpesaTopUpError(SESSION_ENDED, 'auth_required');
+      if (bought.status === 0) throw new MpesaTopUpError('No connection to Tukua. Check your internet and try again.', bought.error);
+      throw new MpesaTopUpError(bought.message || 'Could not start the M-Pesa payment. Try again.', bought.error);
+    }
+    const d = (bought.data || {}) as { purchase_id?: string; tokens?: number };
+    if (!d.purchase_id) throw new MpesaTopUpError('M-Pesa did not confirm the prompt. Try again.', 'no_checkout_id');
+    return { checkout_request_id: `${PURCHASE_PREFIX}${d.purchase_id}`, tokens: Number(d.tokens) || tokens };
+  }
 
   const res = await withPaymentAuth((bearer) =>
     mpesaStk(
@@ -232,6 +251,17 @@ function normaliseStatus(raw: string, resultCode: unknown): MpesaTopUpStatus['st
   return 'unknown';
 }
 
+/** TukuPay's own charge line for a top-up of `amountKes` (before VAT), or "Charges are shown on the M-Pesa prompt". */
+export async function topUpChargesText(amountKes: number): Promise<string> {
+  try {
+    const r = await withPaymentAuth((bearer) => tokenQuote(amountKes, bearer));
+    const t = String(((r.data || {}) as { charges_text?: unknown }).charges_text || '').trim();
+    return r.ok && t ? t : 'Charges are shown on the M-Pesa prompt';
+  } catch {
+    return 'Charges are shown on the M-Pesa prompt';
+  }
+}
+
 /** Poll a checkout request until it resolves, or maxAttempts is hit (default 5s interval, 3 min).
  * Never throws: network blips and token refreshes keep polling; the end of the wait is `unknown`. */
 export async function pollMpesaTopUpStatus(
@@ -252,12 +282,29 @@ export async function pollMpesaTopUpStatus(
     await new Promise((resolve) => setTimeout(resolve, attempt === 0 ? Math.min(intervalMs, 4000) : intervalMs));
     if (opts?.isCancelled?.()) break;
     let res: NestPostResult;
+    const purchaseId = checkoutRequestId.startsWith(PURCHASE_PREFIX) ? checkoutRequestId.slice(PURCHASE_PREFIX.length) : '';
     try {
-      res = await withPaymentAuth((bearer) => mpesaCheckStatus(checkoutRequestId, bearer));
+      res = await withPaymentAuth((bearer) => (purchaseId ? tokenPurchaseStatus(purchaseId, bearer) : mpesaCheckStatus(checkoutRequestId, bearer)));
     } catch {
       continue; // no token right now (e.g. offline refresh) — try again on the next tick
     }
     if (!res.ok) continue;
+    if (purchaseId) {
+      // A TukuPay token purchase: credited (tokens added once), failed / expired, or a different amount paid.
+      const p = (res.data || {}) as Record<string, unknown>;
+      const raw = String(p.status || '').toLowerCase();
+      const st: MpesaTopUpStatus =
+        raw === 'credited'
+          ? { status: 'completed', tokens: Number(p.tokens) || undefined }
+          : raw === 'failed' || raw === 'expired'
+            ? { status: /cancel/i.test(String(p.problem || '')) ? 'cancelled' : 'failed', message: typeof p.problem === 'string' ? p.problem : undefined }
+            : raw === 'amount_mismatch'
+              ? { status: 'failed', message: typeof p.problem === 'string' ? p.problem : 'TukuPay received a different amount. Tukua support will sort it out.' }
+              : { status: 'pending' };
+      opts?.onTick?.(st);
+      if (st.status !== 'pending') return st;
+      continue;
+    }
     const data = (res.data || {}) as Record<string, unknown>;
     const status: MpesaTopUpStatus = {
       status: normaliseStatus(String(data.status || ''), data.result_code),

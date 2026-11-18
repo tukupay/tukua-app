@@ -21,11 +21,12 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
+  pollSchoolPrompt,
   promptSchoolCollectionStk,
   quoteSchoolCollection,
   type SchoolCollectionPurpose,
 } from '../../lib/parentPortalApi';
-import { pollMpesaTopUpStatus, type MpesaTopUpStatus } from '../../lib/wallet';
+import { type MpesaTopUpStatus } from '../../lib/wallet';
 import { kenyaMobileError } from '../../lib/phoneUtils';
 import { darajaUserError, type DarajaUserError } from '../../lib/darajaErrors';
 import { useAppTheme } from '../../context/AppThemeContext';
@@ -50,6 +51,8 @@ type Quote = {
   total_kes?: number;
   balance_kes?: number;
   breakdown?: Array<{ label: string; vote_head?: string; invoice_number?: string | null; amount: number }>;
+  /** TukuPay's own charges, worded by the API (never worked out here). */
+  charges_text?: string;
 };
 
 /** Who the money goes to, shown on the form and on the outcome (teacher tip: name + photo). */
@@ -219,16 +222,8 @@ export function PaymentProcessCard({
       const checkoutId = checkoutRef.current;
       setMpesaReceipt(st.mpesa_receipt);
       setPaidAt(timeNow());
+      // TukuPay's status check has already posted the receipt (once); the refresh below shows it.
       setStatusLine('Paid. Posting it to the school books…');
-      try {
-        const { deskFetch } = await import('../../lib/deskApi');
-        await deskFetch('/accounts/collections/apply-completed', {
-          method: 'POST',
-          body: { checkout_request_id: checkoutId },
-        });
-      } catch {
-        /* the M-Pesa callback posts it too; the refresh below shows whichever landed */
-      }
       let posted: boolean | null = null;
       if (onRefresh) {
         try {
@@ -257,15 +252,12 @@ export function PaymentProcessCard({
       const checkoutId = checkoutRef.current;
       setPhase('awaiting');
       setStatusLine('Check your phone and enter your M-Pesa PIN.');
-      const st = await pollMpesaTopUpStatus(checkoutId, {
+      const st = await pollSchoolPrompt(checkoutId, {
         intervalMs: 4000,
         maxAttempts,
         isCancelled: () => cancelled.current,
-        onTick: (s) => {
-          if (cancelled.current) return;
-          if (s.status === 'pending' || s.status === 'unknown') {
-            setStatusLine('Waiting for M-Pesa to confirm your PIN…');
-          }
+        onTick: () => {
+          if (!cancelled.current) setStatusLine('Waiting for M-Pesa to confirm your PIN…');
         },
       });
       if (cancelled.current) return;
@@ -324,7 +316,7 @@ export function PaymentProcessCard({
         description: titleFor(mode, title),
       });
       if (cancelled.current) return;
-      const checkoutId = String(res?.checkout_request_id || '').trim();
+      const checkoutId = String(res?.checkout_id || res?.checkout_request_id || '').trim();
       if (!checkoutId) throw new Error('M-Pesa did not confirm the prompt. Try again.');
       checkoutRef.current = checkoutId;
       await waitForResult(30);
@@ -518,17 +510,10 @@ export function PaymentProcessCard({
             <Text style={styles.chargeLabel}>Amount</Text>
             <Text style={styles.chargeVal}>{kes(quote?.amount_kes ?? amountNum)}</Text>
           </View>
-          <View style={styles.chargeRow}>
-            <Text style={styles.chargeLabel}>Bank & app charge</Text>
-            <Text style={styles.chargeVal}>{kes(quote?.bank_app_charge_kes ?? 0)}</Text>
-          </View>
-          <View style={[styles.chargeRow, styles.chargeTotalRow]}>
-            <Text style={[styles.chargeTotalLabel, { color: palette.primary }]}>You pay</Text>
-            <Text style={[styles.chargeTotalVal, { color: palette.primary }]}>{kes(total)}</Text>
-          </View>
+          <Text style={styles.meta}>{quote?.charges_text || 'Charges are shown on the M-Pesa prompt'}</Text>
         </View>
       ) : amountNum >= 1 && quoting ? (
-        <Text style={styles.meta}>Working out the charge…</Text>
+        <Text style={styles.meta}>Checking TukuPay's charges…</Text>
       ) : null}
 
       {formError ? (
